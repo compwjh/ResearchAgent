@@ -1,0 +1,46 @@
+{
+  "map": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "revision": 182,
+    "view_settings": {
+      "label_mode": "all",
+      "layers": {
+        "citation": true,
+        "similarity": true
+      },
+      "node_style": {
+        "fill_mode": "filled",
+        "fill_opacity": 0.3
+      },
+      "viewport": {
+        "scale": 2.1036814425244175,
+        "x": -394.5353875595408,
+        "y": -369.61409623670295
+      }
+    }
+  },
+  "node_count": 21,
+  "edge_count": 18,
+  "target_nodes": [
+    {
+      "node_id": "21041260a5394f42891b020128fa60fa",
+      "color_override": null,
+      "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+      "position": {
+        "x": 331.4170526437208,
+        "y": 160.62102457777183
+      },
+      "removed": false
+    },
+    {
+      "node_id": "28d6f9065abd47f9975875ef88634afa",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 655.9441479298705,
+        "y": 128.7444567427548
+      },
+      "removed": false
+    }
+  ]
+}

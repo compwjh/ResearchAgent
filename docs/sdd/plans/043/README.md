@@ -5,7 +5,7 @@
 
 ## 交付主线
 
-2026-10-27当前增量：**实施中**，[Task10](task-10-map-usability.md)完成Grilling Q1–Q10选择，独立需求/技术评审已GO，用户已确认共同理解；在独立工作目录按Task10实施。
+2026-10-27当前增量：Task10已完成（498b6ded，JS31/CSS19，部署8000，双签READY_FOR_USER）；Task11**实施中**。历史实施记录：[Task10](task-10-map-usability.md)完成Grilling Q1–Q10选择，独立需求/技术评审已GO，用户已确认共同理解；在独立工作目录按Task10实施。
 
 2026-10-24历史修订：**已完成**；Task09独立复核、真实入库/全文/浏览器、最终全量3384通过与覆盖率82.38%均通过，tester与architect双签READY_FOR_USER（10/10），已部署8000JSv18。本轮[Task09](task-09-map-interaction-analysis.md)承接图谱交互、自动摘要、全文指引、提问草稿及最后导入接缝修复；[人工步骤](task-09-manual-acceptance.md)、[最终回归](task-09-final-regression.md)、[复盘](../../retro/2026-10-24-spec043-map-interaction.md)。主会话仅同步文档，不替代独立签字；来源partial保留，不等同用户已实际验收。
 
@@ -25,7 +25,7 @@
 | [07](./task-07-mobile-map.md) | 手机适配 | 05、06 | 阶段已完成（候选`1a3ff26`真实375/390/1440浏览器PASS；非物理真机） |
 | [08](./task-08-acceptance-deploy-retro.md) | 最终验收与收口 | 02–07全部完成 | 已完成（a328932 runtime/browser/full regression/deployment PASS；tester 与 architect 双签） |
 | [09](./task-09-map-interaction-analysis.md) | 图谱交互与自动摘要修订 | 03、05、07旧版资产 | 已完成：不可用操作反馈；最新51项前端测试、独立签字及真实页面通过 |
-| [10](./task-10-map-usability.md) | 地图间距、配色与详情反馈 | 03、05、06、07、09历史资产；本轮确认与门禁 | 实施中（已确认共同理解） |
+| [10](./task-10-map-usability.md) | 地图间距、配色与详情反馈 | 03、05、06、07、09历史资产；本轮确认与门禁 | 已完成（498b6ded，双签READY_FOR_USER） |
 
 ## 执行约定
 
@@ -70,3 +70,5 @@ Task08准备逐步可执行手工案例，记录每步点击/提示/等待/恢�
 Task11规划更新：Q1–Q15均采用推荐，独立需求／技术评审已GO；[接口合同](task-11-interface-contract.md)冻结分页、跨预览原子确认及后台恢复设计。修订待用户共同理解确认，任务仍待执行，不实施。
 
 Task11当前：用户在共同理解摘要后要求继续，需求／技术GO，修订已确认、任务待执行；先完成Task10未部署全文提示候选收尾，再按冻结合同分端开发。历史待确认文字保留为过程记录。
+
+当前状态覆盖说明：上文保留的“Task10待执行”“Task11待确认”仅为历史过程。Task10已完成；Task11用户已确认、正在实施，以Task文档及台账最新记录为准。

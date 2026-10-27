@@ -1,0 +1,238 @@
+{
+  "map": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "name": "API E2E graph attention networks r2",
+    "topic": "graph attention networks",
+    "status": "partial",
+    "view_settings": {
+      "label_mode": "all",
+      "layers": {
+        "citation": true,
+        "similarity": true
+      },
+      "node_style": {
+        "fill_mode": "filled",
+        "fill_opacity": 0.3
+      },
+      "viewport": {
+        "scale": 2.1036814425244175,
+        "x": -394.5353875595408,
+        "y": -369.61409623670295
+      }
+    }
+  },
+  "node_count": 21,
+  "edge_count": 18,
+  "nodes": [
+    {
+      "node_id": "065389f0f0b64acda6c5a043cc9b6269",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 603.2033877265656,
+        "y": 367.85324500102274
+      },
+      "removed": false
+    },
+    {
+      "node_id": "066643eeafc74318af0605bdc9febc68",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 615.1051958537155,
+        "y": 234.66796739854166
+      },
+      "removed": false
+    },
+    {
+      "node_id": "0dd64965d19240c08cdddacf08777067",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 610.7431419816791,
+        "y": 439.58493383712295
+      },
+      "removed": false
+    },
+    {
+      "node_id": "0ea0b3f736db4b7f8482c70e83cdc145",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 472.9896607636749,
+        "y": 111.99030300376897
+      },
+      "removed": false
+    },
+    {
+      "node_id": "21041260a5394f42891b020128fa60fa",
+      "color_override": null,
+      "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+      "position": {
+        "x": 331.4170526437208,
+        "y": 160.62102457777183
+      },
+      "removed": false
+    },
+    {
+      "node_id": "24e44e61d9d44d1b85918fa8f7362ff0",
+      "color_override": null,
+      "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+      "position": {
+        "x": 295.3221858802754,
+        "y": 343.062295290929
+      },
+      "removed": false
+    },
+    {
+      "node_id": "28d6f9065abd47f9975875ef88634afa",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 655.9441479298705,
+        "y": 128.7444567427548
+      },
+      "removed": false
+    },
+    {
+      "node_id": "2e45cfdbec4d4c48b41fe8091e0fe742",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 369.92594744724124,
+        "y": 387.6967550151584
+      },
+      "removed": false
+    },
+    {
+      "node_id": "425e2585894346c4a9d38f8175637dd1",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 603.4630627873855,
+        "y": 406.86633287359626
+      },
+      "removed": false
+    },
+    {
+      "node_id": "5147950948f54bb89d3a5b948a35b569",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 351.68154166222695,
+        "y": 443.0726539738523
+      },
+      "removed": false
+    },
+    {
+      "node_id": "56c7189f4f9343c98be3f9a95563cfd6",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 483.1109517287472,
+        "y": 284.49469378583547
+      },
+      "removed": false
+    },
+    {
+      "node_id": "59a13b1f48424edfa53423989c847d9c",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 564.5027008806043,
+        "y": 177.1576655069231
+      },
+      "removed": false
+    },
+    {
+      "node_id": "5af29395e3424a2298447d44a3e09f01",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 482.1394261347109,
+        "y": 482.6468013204598
+      },
+      "removed": false
+    },
+    {
+      "node_id": "5cb84f3b60d547c7a114d2357d5f196c",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 542.3514293417277,
+        "y": 427.2042095072905
+      },
+      "removed": false
+    },
+    {
+      "node_id": "9141b232d312420aab38c4585f4db2ad",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 445.61370146121334,
+        "y": 434.97358778430925
+      },
+      "removed": false
+    },
+    {
+      "node_id": "a4917994555846c79f7e1af80f398bd3",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 478.6516842495872,
+        "y": 397.5461236629152
+      },
+      "removed": false
+    },
+    {
+      "node_id": "c6e208e158a1418a8b529d96b5592777",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 662.8971832837523,
+        "y": 339.18000315027354
+      },
+      "removed": false
+    },
+    {
+      "node_id": "e23c0392b9f641da9ec3f34c3b3cc027",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 531.9401179871304,
+        "y": 303.5206063270633
+      },
+      "removed": false
+    },
+    {
+      "node_id": "e2c645878ebe4bf5a06c7bd3c1ef42e0",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 497.1460064824367,
+        "y": 182.49403278914238
+      },
+      "removed": false
+    },
+    {
+      "node_id": "f59c83c01b5f48dbbef04e054e1a91b0",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 427.2949496279562,
+        "y": 379.06525907889943
+      },
+      "removed": false
+    },
+    {
+      "node_id": "f7608bf2990c4bd6b6e40ea92856acad",
+      "color_override": null,
+      "group_id": null,
+      "position": {
+        "x": 587.6270029765774,
+        "y": 291.1702093177265
+      },
+      "removed": false
+    }
+  ]
+}

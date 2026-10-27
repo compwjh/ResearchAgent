@@ -1,0 +1,558 @@
+[
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 182,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "filled",
+            "fill_opacity": 0.3
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T05:55:51.585587+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": null,
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/node-styles",
+    "request": {
+      "expected_revision": 182,
+      "node_ids": [
+        "21041260a5394f42891b020128fa60fa"
+      ],
+      "color_override": "#FF8A3D"
+    },
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "revision": 183,
+      "node_ids": [
+        "21041260a5394f42891b020128fa60fa"
+      ],
+      "color_override": "#FF8A3D",
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": "#FF8A3D",
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7"
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 183,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "filled",
+            "fill_opacity": 0.3
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T13:48:08.923086+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": "#FF8A3D",
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/view",
+    "request": {
+      "expected_revision": 183,
+      "node_style": {
+        "fill_mode": "outline",
+        "fill_opacity": 0.55
+      }
+    },
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "revision": 184,
+      "node_style": {
+        "fill_mode": "outline",
+        "fill_opacity": 0.55
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 184,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "outline",
+            "fill_opacity": 0.55
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T13:48:08.943626+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": "#FF8A3D",
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/node-styles",
+    "request": {
+      "expected_revision": 182,
+      "node_ids": [
+        "21041260a5394f42891b020128fa60fa"
+      ],
+      "color_override": null
+    },
+    "status": 409,
+    "response": {
+      "detail": {
+        "code": "MAP_CONFLICT",
+        "message": "地图版本或作业状态已变化，请重新读取后重试",
+        "retryable": false
+      },
+      "error": null
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 184,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "outline",
+            "fill_opacity": 0.55
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T13:48:08.943626+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": "#FF8A3D",
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/export",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-export-v2",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "node_count": 21,
+      "map_view_settings": {
+        "filters": {},
+        "viewport": {
+          "x": -394.5353875595408,
+          "y": -369.61409623670295,
+          "scale": 2.1036814425244175
+        },
+        "layers": {
+          "citation": true,
+          "similarity": true
+        },
+        "label_mode": "all",
+        "node_style": {
+          "fill_mode": "outline",
+          "fill_opacity": 0.55
+        }
+      },
+      "node": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": "#FF8A3D",
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          }
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 184,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "outline",
+            "fill_opacity": 0.55
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T13:48:08.943626+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": "#FF8A3D",
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/node-styles",
+    "request": {
+      "expected_revision": 184,
+      "node_ids": [
+        "21041260a5394f42891b020128fa60fa"
+      ],
+      "color_override": null
+    },
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "revision": 185,
+      "node_ids": [
+        "21041260a5394f42891b020128fa60fa"
+      ],
+      "color_override": null,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": null,
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7"
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 185,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "outline",
+            "fill_opacity": 0.55
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T13:48:08.987127+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": null,
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  },
+  {
+    "method": "PATCH",
+    "path": "/view",
+    "request": {
+      "expected_revision": 185,
+      "node_style": {
+        "fill_mode": "filled",
+        "fill_opacity": 0.3
+      }
+    },
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "revision": 186,
+      "node_style": {
+        "fill_mode": "filled",
+        "fill_opacity": 0.3
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/graph",
+    "request": null,
+    "status": 200,
+    "response": {
+      "schema_version": "literature-map-v1",
+      "map": {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "name": "API E2E graph attention networks r2",
+        "topic": "graph attention networks",
+        "owner_id": "local-user",
+        "project_id": null,
+        "filters": {
+          "conference_ids": [],
+          "source_ids": [],
+          "year_end": null,
+          "year_start": null
+        },
+        "requested_count": 20,
+        "revision": 186,
+        "status": "partial",
+        "view_settings": {
+          "label_mode": "all",
+          "layers": {
+            "citation": true,
+            "similarity": true
+          },
+          "node_style": {
+            "fill_mode": "filled",
+            "fill_opacity": 0.3
+          },
+          "viewport": {
+            "scale": 2.1036814425244175,
+            "x": -394.5353875595408,
+            "y": -369.61409623670295
+          }
+        },
+        "created_at": "2026-10-19T14:06:06.042255+00:00",
+        "updated_at": "2026-10-27T13:48:08.999462+00:00"
+      },
+      "node_count": 21,
+      "edge_count": 18,
+      "nodes": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "color_override": null,
+          "group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+          "position": {
+            "x": 331.4170526437208,
+            "y": 160.62102457777183
+          },
+          "removed": false
+        }
+      ]
+    }
+  }
+]

@@ -179,3 +179,43 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - 限定边界：`task-09-cross-feature-diagnosis.md` 所列新 KB/memory/login 问题以及 ACL 来源缺口仅完成只读诊断，本次未修复、未签收，也不因本签字关闭；true busy/native import disabled 及其原因保持既有策略。
 
 **Architect：独立增量签字通过（2026-10-26）。** 本签字仅确认不可用动作反馈前端增量可交给用户验收，不改变此前各项前端结论、未修复跨功能问题或已完成 Spec043 的历史证据分类。
+
+## 2026-10-27 Task10 增量跨端验收（tester）
+
+范围：Spec043 Task10「地图间距、配色与详情反馈」；本次只判 Task10，不签 Task11 或整个 Spec043。当前候选 `498b6ded`，页面资源 JS v31/CSS v19。人工验收步骤与十项矩阵见 [`2026-10-27-usability-final-acceptance.md`](../plans/043/2026-10-27-usability-final-acceptance.md)。
+
+### 单端回归与独立评审汇总
+
+- 最终前端候选报告 [`2026-10-27-usability-final-frontend-test.md`](../plans/043/2026-10-27-usability-final-frontend-test.md)：364 passed、0 failed、0 skipped；Node 合同 33 passed，退出码 0。
+- 最终后端候选报告 [`2026-10-27-usability-final-backend-test.md`](../plans/043/2026-10-27-usability-final-backend-test.md)：3130 passed、0 failed、3 个合法 skip、67 subtests，coverage 82.31%，退出码 0。
+- 后端、布局、配色和全文反馈最终独立评审均未留 P0/P1；相关报告为 `2026-10-27-usability-backend-review.md`、`2026-10-27-usability-layout-review.md`、`2026-10-27-usability-palette-review.md`、`2026-10-27-usability-fulltext-feedback-review.md`。
+- 本次没有重复执行两端回归或全量测试。
+
+### 当前候选真实 API / 页面集成结果
+
+**Task10 已确认的现存地图样式 API 链：PASS。** 当前候选公共 API 运行 ID `task10-styles-current-20261027-134618`，map `0baabeae7268429c9f7e4de8098ae1d0`。13 个 HTTP 请求及响应见 [`trace.json`](../plans/043/task-10-runs/task10-styles-current-20261027-134618/trace.json)：颜色 PATCH 200、view PATCH 200、旧 revision PATCH 409、冲突后 GET 确认数据未变、export-v2 GET 200，随后用最新 revision 恢复颜色和地图样式。前后快照对比见 [`invariants-before.json`](../plans/043/task-10-runs/task10-styles-current-20261027-134618/invariants-before.json) 与 [`invariants-after.json`](../plans/043/task-10-runs/task10-styles-current-20261027-134618/invariants-after.json)：21 节点、18 边、所有节点位置/分组/颜色覆盖和完整 view settings 均恢复一致；revision 按四次成功写入从 182 增至 186。没有创建地图、下载 PDF 或提交分析。
+
+**全文反馈与新分析成功链：PASS。** 当前候选的真实 GAT 页面点击“基于全文分析”后显示运行中提示；analysis `74c6245585dd4f6ab81ffc3ca6bd58ba`（version 5、evidence `full`）与 job `9283fdd06bec4faf8828897813a2d670` 随后均为 completed。原始响应、运行/完成截图和步骤说明位于 [`20261027-fulltext-current`](../plans/043/task-10-runs/20261027-fulltext-current/)；新结果有 601 字符 summary、5 citations、1 source_ref，页面自动显示“全文分析已完成”。NULL 状态 API 与“未入库”提示、手动入库 CTA 一致，部署截图见 [`after.png`](../plans/043/task-10-runs/20261027-null-status-deployed/after.png)。
+
+**地图创建失败保留为独立限制。** 新图实际创建请求曾返回 202，但 S2 discovery 返回 `SEMANTIC_SCHOLAR_RATE_LIMITED`，一次有界重试后仍 0 节点；官方目录运行也被同一限流阻断，详见 [`task10-smoke`](../plans/043/task-10-runs/task10-smoke-20261027-125456/) 和 [`task10-official`](../plans/043/task-10-runs/task10-official-20261027-130257/)。本次 Task10 已确认以现存地图为验收起点，因此上述失败不被记作创建成功，也不阻断已确认的现存图样式/全文反馈范围。
+
+### 人工验收准备度与结论
+
+十项准备度矩阵已逐项落盘于 [`2026-10-27-usability-final-acceptance.md`](../plans/043/2026-10-27-usability-final-acceptance.md)：**9 PASS、1 N/A、0 BLOCKED**。N/A 仅表示 Task10 允许从现存地图读取起步；对应新建地图的 429 失败仍显式保留。关键 API E2E、核心产物、失败恢复、页面/API 状态一致性与无上下文人工步骤均有当前候选证据；无未解决 P0/P1。
+
+**Tester 结论：Task10 `PASS / READY_FOR_USER`。** 该结论仅交付 Task10 人工验收，不代表用户已经完成验收，也不签 Task11 或整个 Spec043。
+
+- Tester：**PASS / READY_FOR_USER**（2026-10-27；当前候选 `498b6ded`；证据见本节与 Task10 准备度文档）。
+- 架构师签字：见下方“2026-10-27 Task10 最终架构签字”。
+
+## 2026-10-27 Task10 最终架构签字
+
+**Architect：独立签字通过；Task10 `PASS / READY_FOR_USER`。** 本签字仅覆盖 Task10「地图间距、配色与详情反馈」，不签 Task11、用户尚未执行的人工验收或整个 Spec043 的收口。
+
+- **候选与前端版本一致：**验收报告、样式 API 运行、全文运行均绑定候选 `498b6ded`，并记录部署资源 JS v31 / CSS v19。最终前端回归 Attempt 3 为 364 passed、0 failed、0 skipped；Node 合同 33 passed，退出码均为 0。回归报告中的 JS/CSS/index/fixture SHA256 与当前工作树一致。前面已保留的失败尝试仍作为历史，不取代 Attempt 3 的最终结果。
+- **后端回归可追溯：**最终报告记录 3130 passed、3 个合法 skip、67 subtests、82.31% coverage、退出码 0；报告说明测试提交 `c17e3f5a` 的后端树与候选 `498b6ded` 一致。此结论限于后端回归和 coverage。
+- **独立评审无未解决 P0/P1：**后端复审解除两项首轮 P1；布局与配色最终复审为 PASS；全文反馈复审的 P2 已在 NULL 导入状态独立窄复审中关闭。历史初审结论保留，最终复审结论已明确取代。
+- **当前候选运行证据存在且互相吻合：**样式运行 `task10-styles-current-20261027-134618` 保存 13 次 HTTP 调用，覆盖写入/读回、旧 revision 的 409、冲突后无变更、export-v2，以及恢复到基线语义状态；地图仍为 21 节点/18 边，仅 revision 因四次成功写入由 182 增至 186。全文运行的原始启动快照为 running，完成响应中 analysis v5 与 job 均为 completed、`evidence_level=full`，包含 5 citations、1 source_ref、601 字符 summary；运行截图及原始响应文件均存在。
+- **验收边界诚实：**十项准备度为 9 PASS、1 N/A、0 BLOCKED。N/A 仅是 Task10 按已确认合同从现存图开始；新图创建的 `SEMANTIC_SCHOLAR_RATE_LIMITED`、0 节点结果仍明确保留，不冒充成功。人工步骤给出地图/节点入口、操作提示、等待条件、下一步与失败恢复；用户尚未实际执行步骤。
+
+未重跑全量回归，也未对 Task11 或 Spec043 作完成裁定。基于上述可复核证据，Task10 可交付用户人工验收；本签字不表示用户已通过人工验收。

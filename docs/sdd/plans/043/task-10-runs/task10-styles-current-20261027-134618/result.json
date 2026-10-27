@@ -1,0 +1,38 @@
+{
+  "result": "success",
+  "spec": "043",
+  "task": "10",
+  "candidate": "498b6ded",
+  "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+  "node_id": "21041260a5394f42891b020128fa60fa",
+  "original_revision": 182,
+  "temporary_color_revision": 183,
+  "temporary_view_revision": 184,
+  "restore_color_revision": 185,
+  "final_revision": 186,
+  "original_color_override": null,
+  "restored_color_override": null,
+  "original_group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+  "restored_group_id": "8c8f20f7a4c04e0e92f9cdd78fc01ce7",
+  "original_node_style": {
+    "fill_mode": "filled",
+    "fill_opacity": 0.3
+  },
+  "restored_node_style": {
+    "fill_mode": "filled",
+    "fill_opacity": 0.3
+  },
+  "original_node_count": 21,
+  "final_node_count": 21,
+  "original_edge_count": 18,
+  "final_edge_count": 18,
+  "semantic_state_restored": true,
+  "revision_advanced_by": 4,
+  "export_schema": "literature-map-export-v2",
+  "export_verified": true,
+  "export_failure": null,
+  "request_count": 13,
+  "started_at": "2026-10-27T13:48:08.887268+00:00",
+  "ended_at": "2026-10-27T13:48:09.010326+00:00",
+  "no_map_creation_download_or_analysis_post": true
+}

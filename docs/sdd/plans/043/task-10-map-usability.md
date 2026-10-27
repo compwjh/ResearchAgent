@@ -1,7 +1,7 @@
 # Task10 — 地图间距、配色与详情反馈
 
 关联：[Spec043](../../specs/043-literature-map-topic-exploration.md)；[索引](README.md)；[Grilling记录](2026-10-27-map-usability-grilling.md)。
-状态：实施中。用户已明确确认共同理解并要求继续；独立需求/技术评审GO，按既定范围实施。
+状态：已完成（Task10增量；READY_FOR_USER，不表示用户已人工验收）。源码498b6ded已部署8000，tester与architect双签通过；Task11独立实施中。
 
 ## 目标与前置条件
 
@@ -105,3 +105,7 @@ API E2E须从已部署服务真实创建/读取地图开始，经批量改色→
 全文卡片及中文入库状态候选JS30/CSS19完成：原独立回归92项通过；最后权威bool与列表矛盾P2已核实，作者12浏览器+3静态通过，独立P2/版本各1项通过，review无未关闭项。原额度中断没有丢失已写代码，本轮读取后补齐验证和交接。当前前后端最终全量运行中，未完成签字，不标Task10或Spec完成。
 
 新Task11方案已单独本地提交bdca8bdf，已确认但待本Task收尾后执行，不能把Task11规划当成代码成果。
+
+### 2026-10-27 最终收口
+
+源码498b6ded（JS31/CSS19），前端364/Node33通过，后端3130通过/3合法跳过/67子测试，覆盖率82.31%，均exit0。当前候选真实样式13请求及原值恢复、真实UI新全文v5完成、NULL旧记录提示均通过。见[人工验收](2026-10-27-usability-final-acceptance.md)、[双签](../../reviews/043-acceptance-review.md)、[复盘](../../retro/2026-10-27-spec043-map-usability.md)。新建图429失败保留，确认从现存地图读取验收；不宣告Task11或整个Spec完成。
