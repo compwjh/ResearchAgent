@@ -1,0 +1,9 @@
+Candidate: 1f03e9e545027aaf1852634803a55d22dbea383f
+Chromium pytest start: 2026-10-28T14:29:49Z
+Chromium pytest finish: 2026-10-28T14:31:44Z
+Chromium pytest duration: 115.12s
+Chromium pytest permission: require_escalated
+Chromium pytest result: exit 1; 384 passed, 1 failed, 0 skipped
+Node contract result: exit 0; 33 passed, 0 failed, 0 skipped; 127.77ms
+Node syntax app.js: exit 0
+Node syntax literature-maps.js: exit 0

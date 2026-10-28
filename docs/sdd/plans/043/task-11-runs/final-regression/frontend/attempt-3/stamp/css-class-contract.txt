@@ -1,0 +1,24 @@
+frontend/literature-maps.css:58:#literature-maps-view .literature-map-canvas-panel { display: flex; flex-direction: column; min-width: 0; min-height: min(700px, calc(100vh - 160px)); }
+frontend/literature-maps.css:59:#literature-maps-view .literature-map-canvas-head { align-items: flex-start; }
+frontend/literature-maps.css:60:#literature-maps-view .literature-map-canvas-title { min-width: 0; }
+frontend/literature-maps.css:61:#literature-maps-view .literature-map-canvas-title h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+frontend/literature-maps.css:62:#literature-maps-view .literature-map-canvas-meta { margin: 5px 0 0; color: var(--muted); font: 9px 'DM Mono', monospace; }
+frontend/literature-maps.css:71:#literature-maps-view .literature-map-canvas { position: relative; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 460px; overflow: hidden; background: radial-gradient(circle at 50% 35%, #fff 0, #fbfaff 55%, #f4f1ff 100%); }
+frontend/literature-maps.css:73:#literature-maps-view .literature-map-canvas-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--muted); font: 11px 'DM Mono', monospace; text-align: center; pointer-events: none; }
+frontend/literature-maps.css:74:#literature-maps-view .literature-map-canvas-empty[hidden] { display: none; }
+frontend/literature-maps.css:145:#literature-maps-view .literature-map-preview-panel { display: grid; gap: 8px; margin: 10px 12px 12px; padding: 11px 12px; border: 1px solid #e2dcff; border-radius: 9px; background: rgba(250,249,255,.92); }
+frontend/literature-maps.css:146:#literature-maps-view .literature-map-preview-panel[hidden] { display: none !important; }
+frontend/literature-maps.css:153:#literature-maps-view .literature-map-preview-panel h3 { margin: 0; color: var(--ink); font-size: 12px; }
+frontend/literature-maps.css:252:  #literature-maps-view .literature-map-canvas-panel { width: 100%; box-sizing: border-box; min-height: calc(100dvh - 190px); height: calc(100dvh - 190px); }
+frontend/literature-maps.css:253:  #literature-maps-view .literature-map-canvas { flex: 1 1 0; min-height: 0; height: auto; }
+frontend/literature-maps.css:254:  #literature-maps-view .literature-map-preview-panel { flex: 0 1 34dvh; min-height: min(240px, 30dvh); max-height: 42dvh; margin: 8px; padding: 9px; overflow: auto; overscroll-behavior: contain; }
+frontend/literature-maps.js:1111:    const canvasPanel = createElement('main', 'literature-map-panel literature-map-canvas-panel');
+frontend/literature-maps.js:1112:    const canvasHead = createElement('header', 'literature-map-panel-head literature-map-canvas-head');
+frontend/literature-maps.js:1113:    const canvasTitle = createElement('div', 'literature-map-canvas-title');
+frontend/literature-maps.js:1116:    const currentMeta = createElement('p', 'literature-map-canvas-meta', '图谱会在后台分阶段生成。');
+frontend/literature-maps.js:1225:    const canvas = createElement('div', 'literature-map-canvas');
+frontend/literature-maps.js:1244:    const empty = createElement('div', 'literature-map-canvas-empty', '选择左侧地图后查看图谱。');
+frontend/literature-maps.js:1245:    empty.id = 'literature-map-canvas-empty';
+frontend/literature-maps.js:1261:    const previewPanel = createElement('section', 'literature-map-preview-panel');
+frontend/literature-maps.js:1262:    previewPanel.id = 'literature-map-preview-panel';
+frontend/literature-maps.js:4771:    const canvasRect = refs.svg.closest('.literature-map-canvas')?.getBoundingClientRect() || svgRect;

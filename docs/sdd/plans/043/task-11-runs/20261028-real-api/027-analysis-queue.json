@@ -1,0 +1,30 @@
+{
+  "started_at": "2026-10-28T13:53:40.161442+00:00",
+  "finished_at": "2026-10-28T13:53:40.179932+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\",\"state\":\"completed\",\"pause_reason\":null,\"counts\":{\"total\":23,\"completed\":21,\"queued\":0,\"running\":0,\"failed\":0,\"skipped\":2},\"current\":null,\"failed_items\":[]}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+      "state": "completed",
+      "pause_reason": null,
+      "counts": {
+        "total": 23,
+        "completed": 21,
+        "queued": 0,
+        "running": 0,
+        "failed": 0,
+        "skipped": 2
+      },
+      "current": null,
+      "failed_items": []
+    }
+  }
+}

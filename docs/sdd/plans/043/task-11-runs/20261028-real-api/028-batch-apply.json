@@ -1,0 +1,32 @@
+{
+  "started_at": "2026-10-28T13:54:43.022676+00:00",
+  "finished_at": "2026-10-28T13:54:43.053471+00:00",
+  "request": {
+    "method": "POST",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/batch-apply",
+    "body": {
+      "expected_revision": 188,
+      "idempotency_key": "task11-e2e-20261028-stale-3",
+      "selections": [
+        {
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "expected_preview_revision": 7,
+          "selected_candidate_ids": [
+            "candidate-39238cebf9b85ca3578221b4"
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 409,
+    "body_text": "{\"detail\":{\"code\":\"MAP_PREVIEW_VERSION_CONFLICT\",\"message\":\"预览版本已更新，请重新读取后使用最新版本重试\",\"retryable\":false}}",
+    "json": {
+      "detail": {
+        "code": "MAP_PREVIEW_VERSION_CONFLICT",
+        "message": "预览版本已更新，请重新读取后使用最新版本重试",
+        "retryable": false
+      }
+    }
+  }
+}

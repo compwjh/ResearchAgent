@@ -1,0 +1,42 @@
+{
+  "time_utc": "2026-10-28T13:43:16.946039+00:00",
+  "candidate": "9721cbcb",
+  "checks": {
+    "/": {
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 64333,
+      "js36": true,
+      "css22": true
+    },
+    "/api/models": {
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 2971
+    },
+    "/api/conversations": {
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 9148
+    },
+    "/api/literature-maps": {
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 4353
+    },
+    "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph": {
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 52490
+    }
+  },
+  "map_schema_after": 8,
+  "counts_after_start": {
+    "literature_maps": 8,
+    "literature_map_nodes": 102,
+    "literature_map_edges": 69,
+    "literature_map_previews": 9,
+    "literature_map_jobs": 129
+  },
+  "memory_schema": 8
+}

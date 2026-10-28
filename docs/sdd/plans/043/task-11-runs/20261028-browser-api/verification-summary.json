@@ -1,0 +1,339 @@
+{
+  "run_started_at": "2026-10-28T14:43:11.460928+00:00",
+  "run_finished_at": "2026-10-28T14:43:11.538010+00:00",
+  "service": "http://127.0.0.1:8000",
+  "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+  "method_scope": "GET only; no request bodies, auth headers, or secrets recorded",
+  "requests": [
+    {
+      "file": "01-ui-batch-1.json",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/db39f31b8a4545acadec45968ea773fb",
+      "http_status": 200,
+      "started_at": "2026-10-28T14:43:11.460928+00:00",
+      "finished_at": "2026-10-28T14:43:11.488764+00:00"
+    },
+    {
+      "file": "02-ui-batch-2.json",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/5a9d46dc70304ff8ba55edf5261b1424",
+      "http_status": 200,
+      "started_at": "2026-10-28T14:43:11.489261+00:00",
+      "finished_at": "2026-10-28T14:43:11.492942+00:00"
+    },
+    {
+      "file": "03-graph-after-ui.json",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph",
+      "http_status": 200,
+      "started_at": "2026-10-28T14:43:11.493496+00:00",
+      "finished_at": "2026-10-28T14:43:11.513568+00:00"
+    },
+    {
+      "file": "04-analysis-0997c1774f2348c1bc9c07e5c526ae3c.json",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/19269bc67d1249dba79b178a54a33955",
+      "http_status": 200,
+      "started_at": "2026-10-28T14:43:11.516307+00:00",
+      "finished_at": "2026-10-28T14:43:11.524091+00:00"
+    },
+    {
+      "file": "05-analysis-33c9baddfd284c2ea8088f430ad63a95.json",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/e44bacad6cd04a449fee882f9a010e2e",
+      "http_status": 200,
+      "started_at": "2026-10-28T14:43:11.524705+00:00",
+      "finished_at": "2026-10-28T14:43:11.531713+00:00"
+    },
+    {
+      "file": "06-analysis-558415d254e043f09d711b770aaf5076.json",
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/8826e71b23004b2f99367117f32b9908",
+      "http_status": 200,
+      "started_at": "2026-10-28T14:43:11.532103+00:00",
+      "finished_at": "2026-10-28T14:43:11.538010+00:00"
+    }
+  ],
+  "batches": {
+    "db39f31b8a4545acadec45968ea773fb": {
+      "label": "ui-batch-1",
+      "http_status": 200,
+      "job_status": "completed",
+      "operation": "expand_batch",
+      "step": "finished",
+      "counts": {
+        "added_count": 2,
+        "analysis_queued": 0,
+        "completed": 2,
+        "existing_count": 0,
+        "failed": 0,
+        "identity_unresolved": 0,
+        "metadata_failed": 0,
+        "metadata_pending": 0,
+        "skipped_no_abstract": 0,
+        "skipped_removed": 0,
+        "total": 2
+      },
+      "item_ids": [
+        "33c9baddfd284c2ea8088f430ad63a95",
+        "558415d254e043f09d711b770aaf5076"
+      ],
+      "items": {
+        "33c9baddfd284c2ea8088f430ad63a95": {
+          "analysis_id": "e44bacad6cd04a449fee882f9a010e2e",
+          "attempts": 0,
+          "metadata_status": "complete",
+          "node_id": "33c9baddfd284c2ea8088f430ad63a95",
+          "retryable": false,
+          "source_version": "2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53",
+          "status": "completed"
+        },
+        "558415d254e043f09d711b770aaf5076": {
+          "analysis_id": "8826e71b23004b2f99367117f32b9908",
+          "attempts": 0,
+          "metadata_status": "complete",
+          "node_id": "558415d254e043f09d711b770aaf5076",
+          "retryable": false,
+          "source_version": "30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120",
+          "status": "completed"
+        }
+      }
+    },
+    "5a9d46dc70304ff8ba55edf5261b1424": {
+      "label": "ui-batch-2",
+      "http_status": 200,
+      "job_status": "completed",
+      "operation": "expand_batch",
+      "step": "finished",
+      "counts": {
+        "added_count": 1,
+        "analysis_queued": 0,
+        "completed": 1,
+        "existing_count": 0,
+        "failed": 0,
+        "identity_unresolved": 0,
+        "metadata_failed": 0,
+        "metadata_pending": 0,
+        "skipped_no_abstract": 0,
+        "skipped_removed": 0,
+        "total": 1
+      },
+      "item_ids": [
+        "0997c1774f2348c1bc9c07e5c526ae3c"
+      ],
+      "items": {
+        "0997c1774f2348c1bc9c07e5c526ae3c": {
+          "analysis_id": "19269bc67d1249dba79b178a54a33955",
+          "attempts": 0,
+          "metadata_status": "complete",
+          "node_id": "0997c1774f2348c1bc9c07e5c526ae3c",
+          "retryable": false,
+          "source_version": "ef9f3f27ddea4d9d75a27a532e8d2269ace2a97ecb20c3659dbc6e7783384c94",
+          "status": "completed"
+        }
+      }
+    }
+  },
+  "analyses": {
+    "0997c1774f2348c1bc9c07e5c526ae3c": {
+      "batch_id": "5a9d46dc70304ff8ba55edf5261b1424",
+      "batch_label": "ui-batch-2",
+      "analysis_id": "19269bc67d1249dba79b178a54a33955",
+      "source_version_from_batch": "ef9f3f27ddea4d9d75a27a532e8d2269ace2a97ecb20c3659dbc6e7783384c94",
+      "item_status": "completed",
+      "metadata_status": "complete",
+      "attempts": 0,
+      "retryable": false,
+      "http_status": 200,
+      "analysis_status": "completed",
+      "node_id_from_analysis": "0997c1774f2348c1bc9c07e5c526ae3c",
+      "analysis_job_id": "f7d970b745e04fa9a9c2b6733107fe21",
+      "evidence_level": "abstract",
+      "source_version": "ef9f3f27ddea4d9d75a27a532e8d2269ace2a97ecb20c3659dbc6e7783384c94",
+      "model_id": "qwen3.8:27b",
+      "summary_nonempty": true,
+      "summary_length": 408,
+      "analysis_job_status": "completed"
+    },
+    "33c9baddfd284c2ea8088f430ad63a95": {
+      "batch_id": "db39f31b8a4545acadec45968ea773fb",
+      "batch_label": "ui-batch-1",
+      "analysis_id": "e44bacad6cd04a449fee882f9a010e2e",
+      "source_version_from_batch": "2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53",
+      "item_status": "completed",
+      "metadata_status": "complete",
+      "attempts": 0,
+      "retryable": false,
+      "http_status": 200,
+      "analysis_status": "completed",
+      "node_id_from_analysis": "33c9baddfd284c2ea8088f430ad63a95",
+      "analysis_job_id": "9a378651e6a34741ad79e0dfc8805bcd",
+      "evidence_level": "abstract",
+      "source_version": "2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53",
+      "model_id": "qwen3.8:27b",
+      "summary_nonempty": true,
+      "summary_length": 487,
+      "analysis_job_status": "completed"
+    },
+    "558415d254e043f09d711b770aaf5076": {
+      "batch_id": "db39f31b8a4545acadec45968ea773fb",
+      "batch_label": "ui-batch-1",
+      "analysis_id": "8826e71b23004b2f99367117f32b9908",
+      "source_version_from_batch": "30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120",
+      "item_status": "completed",
+      "metadata_status": "complete",
+      "attempts": 0,
+      "retryable": false,
+      "http_status": 200,
+      "analysis_status": "completed",
+      "node_id_from_analysis": "558415d254e043f09d711b770aaf5076",
+      "analysis_job_id": "2b981087e42348cda797ff9215e5241e",
+      "evidence_level": "abstract",
+      "source_version": "30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120",
+      "model_id": "qwen3.8:27b",
+      "summary_nonempty": true,
+      "summary_length": 420,
+      "analysis_job_status": "completed"
+    }
+  },
+  "graph_comparison": {
+    "baseline_file": "docs/sdd/plans/043/task-11-runs/20261028-real-api/038-graph-after-browser-layout.json",
+    "baseline_revision": 191,
+    "current_revision": 195,
+    "baseline_node_count": 24,
+    "current_node_count": 27,
+    "expected_new_node_ids": [
+      "0997c1774f2348c1bc9c07e5c526ae3c",
+      "33c9baddfd284c2ea8088f430ad63a95",
+      "558415d254e043f09d711b770aaf5076"
+    ],
+    "actual_new_node_ids": [
+      "0997c1774f2348c1bc9c07e5c526ae3c",
+      "33c9baddfd284c2ea8088f430ad63a95",
+      "558415d254e043f09d711b770aaf5076"
+    ],
+    "new_node_set_matches_expected": true,
+    "old_node_fields_compared": [
+      "node_id",
+      "external_ids",
+      "position",
+      "group_id",
+      "color_override"
+    ],
+    "old_node_diffs": [],
+    "baseline_edge_count": 21,
+    "current_edge_count": 24,
+    "new_edge_ids": [
+      "026e20cbd6454b8f8df205b39c8f2296",
+      "209188aff73044aca132ec9c873c9b24",
+      "3507b76461b243489770a3f45da50f32"
+    ],
+    "new_edge_count": 3,
+    "old_edge_diffs": []
+  },
+  "parent_browser_evidence": {
+    "ui_before": "/tmp/task11-ui-before.json",
+    "ui_after_both": "/tmp/task11-ui-after-both.json",
+    "spacing": [
+      {
+        "id": "33c9baddfd284c2ea8088f430ad63a95",
+        "minMargin": 24.117577815990643
+      },
+      {
+        "id": "558415d254e043f09d711b770aaf5076",
+        "minMargin": 11.563158277865568
+      },
+      {
+        "id": "0997c1774f2348c1bc9c07e5c526ae3c",
+        "minMargin": 77.60036962366559
+      }
+    ],
+    "source_note": "These are parent/root-provided UI artifacts; this agent did not operate the browser.",
+    "ui_before_copy": "docs/sdd/plans/043/task-11-runs/20261028-browser-api/parent-provided-task11-ui-before.json",
+    "ui_after_both_copy": "docs/sdd/plans/043/task-11-runs/20261028-browser-api/parent-provided-task11-ui-after-both.json",
+    "spacing_copy": "docs/sdd/plans/043/task-11-runs/20261028-browser-api/parent-provided-task11-ui-spacing.json",
+    "provenance": "Parent/root-provided snapshots and spacing calculation; this agent did not operate the browser.",
+    "old_24_dom_nodes_before": 24,
+    "old_24_dom_nodes_after": 24,
+    "old_24_dom_rows_identical": true,
+    "viewport_transform_identical": true,
+    "before_dom_edge_rows": 0,
+    "after_dom_edge_rows": 0,
+    "after_dom_node_ids": [
+      "065389f0f0b64acda6c5a043cc9b6269",
+      "066643eeafc74318af0605bdc9febc68",
+      "0997c1774f2348c1bc9c07e5c526ae3c",
+      "0dd64965d19240c08cdddacf08777067",
+      "0ea0b3f736db4b7f8482c70e83cdc145",
+      "1bdf6773eadc401cb106b2fcc9a4cbc1",
+      "21041260a5394f42891b020128fa60fa",
+      "24e44e61d9d44d1b85918fa8f7362ff0",
+      "28d6f9065abd47f9975875ef88634afa",
+      "2e45cfdbec4d4c48b41fe8091e0fe742",
+      "33c9baddfd284c2ea8088f430ad63a95",
+      "3c18411a87c34a96a4f0cda1d023d2d2",
+      "425e2585894346c4a9d38f8175637dd1",
+      "5147950948f54bb89d3a5b948a35b569",
+      "558415d254e043f09d711b770aaf5076",
+      "56c7189f4f9343c98be3f9a95563cfd6",
+      "59a13b1f48424edfa53423989c847d9c",
+      "5af29395e3424a2298447d44a3e09f01",
+      "5cb84f3b60d547c7a114d2357d5f196c",
+      "9141b232d312420aab38c4585f4db2ad",
+      "a4917994555846c79f7e1af80f398bd3",
+      "b261e3e50d16421a8d2d9eb18d1995af",
+      "c6e208e158a1418a8b529d96b5592777",
+      "e23c0392b9f641da9ec3f34c3b3cc027",
+      "e2c645878ebe4bf5a06c7bd3c1ef42e0",
+      "f59c83c01b5f48dbbef04e054e1a91b0",
+      "f7608bf2990c4bd6b6e40ea92856acad"
+    ]
+  },
+  "new_nodes": {
+    "33c9baddfd284c2ea8088f430ad63a95": {
+      "title": "Inductive Representation Learning on Large Graphs",
+      "external_ids": {
+        "arxiv": "1706.02216",
+        "semantic_scholar": "6b7d6e6416343b2a122f8416e69059ce919026ef"
+      },
+      "abstract_nonempty": true,
+      "abstract_length": 1098,
+      "position": {
+        "x": -12.582947356279192,
+        "y": -183.37897542222817
+      },
+      "group_id": null,
+      "color_override": null
+    },
+    "558415d254e043f09d711b770aaf5076": {
+      "title": "LLM-Enhanced MARL for Multi-Hop UAV Networking: An Edge-Cloud Protocol Aware Framework",
+      "external_ids": {
+        "doi": "10.1109/tmc.2026.3713358",
+        "semantic_scholar": "841483b3f6de18cc711d3f4187313f5673bfb401"
+      },
+      "abstract_nonempty": true,
+      "abstract_length": 1515,
+      "position": {
+        "x": 159.4170526437208,
+        "y": -183.37897542222817
+      },
+      "group_id": null,
+      "color_override": null
+    },
+    "0997c1774f2348c1bc9c07e5c526ae3c": {
+      "title": "Programmable Agents",
+      "external_ids": {
+        "arxiv": "1706.06383",
+        "semantic_scholar": "046c4ff0b08361b1ee84fecf1292d385d7bca277"
+      },
+      "abstract_nonempty": true,
+      "abstract_length": 437,
+      "position": {
+        "x": 331.4170526437208,
+        "y": -183.37897542222817
+      },
+      "group_id": null,
+      "color_override": null
+    }
+  }
+}

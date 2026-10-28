@@ -1,0 +1,58 @@
+{
+  "started_at": "2026-10-28T13:52:59.819239+00:00",
+  "finished_at": "2026-10-28T13:52:59.844311+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/3f6137cf451a463bb4e015cb17109c66",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"analysis\":{\"analysis_id\":\"3f6137cf451a463bb4e015cb17109c66\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"node_id\":\"1bdf6773eadc401cb106b2fcc9a4cbc1\",\"version\":1,\"status\":\"completed\",\"evidence_level\":\"abstract\",\"source_version\":\"386f492df3b979e6d10ae147c638bd7f959e4724079b1079b946386d3d8f0b72\",\"model_id\":\"qwen3.8:27b\",\"job_id\":\"de62c89b78f04fc2b44bc95703ff0f92\",\"created_at\":\"2026-10-28T13:51:11.297319+00:00\",\"updated_at\":\"2026-10-28T13:51:39.409258+00:00\",\"result\":{\"citations\":[],\"source_refs\":[{\"kind\":\"abstract\",\"node_id\":\"1bdf6773eadc401cb106b2fcc9a4cbc1\"}],\"summary\":\"《Attention is All you Need》提出仅依赖注意力机制的 Transformer 架构，完全摒弃循环与卷积结构。该模型在 WMT 2014 英德翻译任务上取得 28.4 BLEU，超越当时最佳结果 2 BLEU 以上；在英法翻译任务上以单模型创下 41.8 BLEU 新纪录，训练成本显著更低且并行化能力更强。此外，论文验证了 Transformer 在英语成分句法分析等任务上的泛化能力。\"}},\"job\":{\"job_id\":\"de62c89b78f04fc2b44bc95703ff0f92\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"analysis\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"analysis_id\":\"3f6137cf451a463bb4e015cb17109c66\",\"evidence_level\":\"abstract\",\"node_id\":\"1bdf6773eadc401cb106b2fcc9a4cbc1\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\"},\"counts\":{\"analysis_version\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T13:51:11.297319+00:00\",\"updated_at\":\"2026-10-28T13:51:39.409258+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "analysis": {
+        "analysis_id": "3f6137cf451a463bb4e015cb17109c66",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "1bdf6773eadc401cb106b2fcc9a4cbc1",
+        "version": 1,
+        "status": "completed",
+        "evidence_level": "abstract",
+        "source_version": "386f492df3b979e6d10ae147c638bd7f959e4724079b1079b946386d3d8f0b72",
+        "model_id": "qwen3.8:27b",
+        "job_id": "de62c89b78f04fc2b44bc95703ff0f92",
+        "created_at": "2026-10-28T13:51:11.297319+00:00",
+        "updated_at": "2026-10-28T13:51:39.409258+00:00",
+        "result": {
+          "citations": [],
+          "source_refs": [
+            {
+              "kind": "abstract",
+              "node_id": "1bdf6773eadc401cb106b2fcc9a4cbc1"
+            }
+          ],
+          "summary": "《Attention is All you Need》提出仅依赖注意力机制的 Transformer 架构，完全摒弃循环与卷积结构。该模型在 WMT 2014 英德翻译任务上取得 28.4 BLEU，超越当时最佳结果 2 BLEU 以上；在英法翻译任务上以单模型创下 41.8 BLEU 新纪录，训练成本显著更低且并行化能力更强。此外，论文验证了 Transformer 在英语成分句法分析等任务上的泛化能力。"
+        }
+      },
+      "job": {
+        "job_id": "de62c89b78f04fc2b44bc95703ff0f92",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "analysis_id": "3f6137cf451a463bb4e015cb17109c66",
+          "evidence_level": "abstract",
+          "node_id": "1bdf6773eadc401cb106b2fcc9a4cbc1",
+          "queue_job_id": "92f382a294da4beba25f16aaab7976ad"
+        },
+        "counts": {
+          "analysis_version": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T13:51:11.297319+00:00",
+        "updated_at": "2026-10-28T13:51:39.409258+00:00"
+      }
+    }
+  }
+}

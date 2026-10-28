@@ -1,0 +1,2 @@
+node --test frontend/contract-tests/*.test.mjs
+Exit 0; 33 passed, 0 failed, 0 skipped

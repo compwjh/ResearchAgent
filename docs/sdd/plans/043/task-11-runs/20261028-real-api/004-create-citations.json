@@ -1,0 +1,78 @@
+{
+  "started_at": "2026-10-28T13:47:01.594963+00:00",
+  "finished_at": "2026-10-28T13:47:01.619259+00:00",
+  "request": {
+    "method": "POST",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews",
+    "body": {
+      "kind": "citations",
+      "node_id": "21041260a5394f42891b020128fa60fa",
+      "pagination": {
+        "version": 1,
+        "page_size": 50,
+        "max_candidates": 500
+      },
+      "idempotency_key": "task11-e2e-20261028-cite-create"
+    }
+  },
+  "response": {
+    "status": 202,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"job_id\":\"962bb5b0fa174ac5802d6c5109f3bf40\",\"status\":\"queued\",\"base_revision\":188,\"preview\":{\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"kind\":\"citations\",\"status\":\"queued\",\"base_revision\":188,\"candidates\":[],\"diff\":[],\"warnings\":[],\"preview_revision\":1,\"pagination\":{\"failed_cursor\":null,\"has_more\":null,\"last_error\":null,\"limit_reached\":false,\"loaded_count\":0,\"max_candidates\":500,\"next_cursor\":0,\"page_job_id\":\"962bb5b0fa174ac5802d6c5109f3bf40\",\"page_size\":50,\"seed_identity_key\":\"doi:10.17863/cam.48429\",\"state\":\"loading\",\"total\":null,\"version\":1},\"created_at\":\"2026-10-28T13:47:01.609731+00:00\",\"updated_at\":\"2026-10-28T13:47:01.609731+00:00\"},\"job\":{\"job_id\":\"962bb5b0fa174ac5802d6c5109f3bf40\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"preview_page\",\"status\":\"queued\",\"step\":\"preview_page\",\"cursor\":{\"cursor_history\":[],\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"preview_revision\":1,\"target_cursor\":0},\"counts\":{\"candidate_count\":0,\"provider_request_count\":0},\"failed_units\":[],\"created_at\":\"2026-10-28T13:47:01.609731+00:00\",\"updated_at\":\"2026-10-28T13:47:01.609731+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "job_id": "962bb5b0fa174ac5802d6c5109f3bf40",
+      "status": "queued",
+      "base_revision": 188,
+      "preview": {
+        "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "kind": "citations",
+        "status": "queued",
+        "base_revision": 188,
+        "candidates": [],
+        "diff": [],
+        "warnings": [],
+        "preview_revision": 1,
+        "pagination": {
+          "failed_cursor": null,
+          "has_more": null,
+          "last_error": null,
+          "limit_reached": false,
+          "loaded_count": 0,
+          "max_candidates": 500,
+          "next_cursor": 0,
+          "page_job_id": "962bb5b0fa174ac5802d6c5109f3bf40",
+          "page_size": 50,
+          "seed_identity_key": "doi:10.17863/cam.48429",
+          "state": "loading",
+          "total": null,
+          "version": 1
+        },
+        "created_at": "2026-10-28T13:47:01.609731+00:00",
+        "updated_at": "2026-10-28T13:47:01.609731+00:00"
+      },
+      "job": {
+        "job_id": "962bb5b0fa174ac5802d6c5109f3bf40",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "preview_page",
+        "status": "queued",
+        "step": "preview_page",
+        "cursor": {
+          "cursor_history": [],
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "preview_revision": 1,
+          "target_cursor": 0
+        },
+        "counts": {
+          "candidate_count": 0,
+          "provider_request_count": 0
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T13:47:01.609731+00:00",
+        "updated_at": "2026-10-28T13:47:01.609731+00:00"
+      }
+    }
+  }
+}

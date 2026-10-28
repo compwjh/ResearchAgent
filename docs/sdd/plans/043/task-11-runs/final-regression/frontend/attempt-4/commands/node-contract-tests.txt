@@ -1,0 +1,3 @@
+node --test frontend/contract-tests/*.test.mjs
+Exit 0; 33 passed, 0 failed, 0 skipped
+Raw output: /private/tmp/spec043-task11-final-frontend-20261029/attempt-4/node-contract-tests.log

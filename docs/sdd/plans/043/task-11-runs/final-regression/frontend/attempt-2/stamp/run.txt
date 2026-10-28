@@ -1,0 +1,9 @@
+Attempt: 2
+Candidate commit: d2bd4ba7b02aaa803ea36e2aebd279480aa88ed7
+Chromium pytest start: 2026-10-28T14:41:33Z
+Chromium pytest finish: 2026-10-28T14:43:28Z
+Chromium pytest duration: 114.59s
+Chromium pytest permission: require_escalated
+Chromium pytest result: exit 0; 385 passed, 0 failed, 0 skipped
+stderr: empty
+Node contract and syntax checks: reused from Attempt 1, same production frontend SHA256; not rerun

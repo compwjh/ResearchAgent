@@ -1,0 +1,15 @@
+{
+  "time_utc": "20261028T134137Z",
+  "source": "/Users/wjh/ResearchAgent/data/literature_maps/literature_maps.sqlite3",
+  "backup": "/Users/wjh/ResearchAgent/data/literature_maps/backups/task11-before-v8-20261028T134137Z.sqlite3",
+  "schema_before": 7,
+  "counts_before": {
+    "literature_maps": 8,
+    "literature_map_nodes": 102,
+    "literature_map_edges": 69,
+    "literature_map_previews": 9,
+    "literature_map_jobs": 129
+  },
+  "backup_integrity": "ok",
+  "candidate": "9721cbcb"
+}

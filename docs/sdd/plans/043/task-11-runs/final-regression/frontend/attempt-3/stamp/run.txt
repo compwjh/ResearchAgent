@@ -1,0 +1,13 @@
+Attempt: 3
+New candidate: true
+Candidate commit: 074845b21de20230e87738d6778119d59f411bb8
+Frontend versions: literature-maps.js v37; literature-maps.css v24; app.js v66
+Full pytest start: 2026-10-29T02:30:10+08:00 (approx; runner was dispatched after static checks)
+Full pytest finish: 2026-10-29T02:34:04+0800
+Full pytest result: exit 1; 386 passed, 1 failed, 0 skipped; 147.36s
+Chromium permission: require_escalated; actual Playwright Chromium browser test executed
+stderr: empty
+Isolated retry: exit 1; 1 failed, 31.97s; same Chromium touch test failed again
+Node syntax: app.js and literature-maps.js exit 0
+Node contract suite: exit 0; 33 passed, 0 failed, 0 skipped
+Before/after source hashes: identical

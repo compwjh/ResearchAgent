@@ -1,0 +1,70 @@
+{
+  "started_at": "2026-10-28T14:43:11.460928+00:00",
+  "finished_at": "2026-10-28T14:43:11.488764+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/db39f31b8a4545acadec45968ea773fb"
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"job\":{\"job_id\":\"db39f31b8a4545acadec45968ea773fb\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"expand_batch\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"items\":{\"33c9baddfd284c2ea8088f430ad63a95\":{\"analysis_id\":\"e44bacad6cd04a449fee882f9a010e2e\",\"attempts\":0,\"metadata_status\":\"complete\",\"node_id\":\"33c9baddfd284c2ea8088f430ad63a95\",\"retryable\":false,\"source_version\":\"2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53\",\"status\":\"completed\"},\"558415d254e043f09d711b770aaf5076\":{\"analysis_id\":\"8826e71b23004b2f99367117f32b9908\",\"attempts\":0,\"metadata_status\":\"complete\",\"node_id\":\"558415d254e043f09d711b770aaf5076\",\"retryable\":false,\"source_version\":\"30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120\",\"status\":\"completed\"}},\"new_node_ids\":[\"33c9baddfd284c2ea8088f430ad63a95\",\"558415d254e043f09d711b770aaf5076\"],\"preview_ids\":[\"d05119cd58f94d679c7f32598e2ab2e5\",\"a2647f7c530b43349e6214c9a8588477\"],\"seed_node_id\":\"21041260a5394f42891b020128fa60fa\",\"version\":1},\"counts\":{\"added_count\":2,\"analysis_queued\":0,\"completed\":2,\"existing_count\":0,\"failed\":0,\"identity_unresolved\":0,\"metadata_failed\":0,\"metadata_pending\":0,\"skipped_no_abstract\":0,\"skipped_removed\":0,\"total\":2},\"failed_units\":[],\"created_at\":\"2026-10-28T14:31:29.368191+00:00\",\"updated_at\":\"2026-10-28T14:32:32.831017+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "job": {
+        "job_id": "db39f31b8a4545acadec45968ea773fb",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "expand_batch",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "items": {
+            "33c9baddfd284c2ea8088f430ad63a95": {
+              "analysis_id": "e44bacad6cd04a449fee882f9a010e2e",
+              "attempts": 0,
+              "metadata_status": "complete",
+              "node_id": "33c9baddfd284c2ea8088f430ad63a95",
+              "retryable": false,
+              "source_version": "2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53",
+              "status": "completed"
+            },
+            "558415d254e043f09d711b770aaf5076": {
+              "analysis_id": "8826e71b23004b2f99367117f32b9908",
+              "attempts": 0,
+              "metadata_status": "complete",
+              "node_id": "558415d254e043f09d711b770aaf5076",
+              "retryable": false,
+              "source_version": "30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120",
+              "status": "completed"
+            }
+          },
+          "new_node_ids": [
+            "33c9baddfd284c2ea8088f430ad63a95",
+            "558415d254e043f09d711b770aaf5076"
+          ],
+          "preview_ids": [
+            "d05119cd58f94d679c7f32598e2ab2e5",
+            "a2647f7c530b43349e6214c9a8588477"
+          ],
+          "seed_node_id": "21041260a5394f42891b020128fa60fa",
+          "version": 1
+        },
+        "counts": {
+          "added_count": 2,
+          "analysis_queued": 0,
+          "completed": 2,
+          "existing_count": 0,
+          "failed": 0,
+          "identity_unresolved": 0,
+          "metadata_failed": 0,
+          "metadata_pending": 0,
+          "skipped_no_abstract": 0,
+          "skipped_removed": 0,
+          "total": 2
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T14:31:29.368191+00:00",
+        "updated_at": "2026-10-28T14:32:32.831017+00:00"
+      }
+    }
+  }
+}

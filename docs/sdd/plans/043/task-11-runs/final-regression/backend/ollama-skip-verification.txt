@@ -1,0 +1,15 @@
+Spec043 Task11 skip 归因补充验证（单项，不修改全量结果）
+
+Node ID:
+tests/research/test_ollama_direct.py::RealStreamCallTests::test_real_stream_yields_tokens_and_returns_result
+
+运行方式：使用本轮同一 `env -i`、offline_isolation socketguard、dead loopback 模型端点，只选择上述 node，增加 `-rs`；未重跑全套，也没有启动真实模型或服务。
+
+退出码：0
+原始日志：/private/tmp/spec043-task11-final-backend-20261028/exit0/logs/ollama-skip.log
+
+真实 pytest 输出：
+SKIPPED [1] tests/research/test_ollama_direct.py:401: Ollama 不可达或无可用模型，跳过真实调用
+1 skipped in 0.18s
+
+该补充验证仅确定全量结果中的第三项 skip 原因；原始全量日志、`.coverage` 和 coverage XML 保持不变。

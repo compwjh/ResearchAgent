@@ -1,0 +1,38 @@
+{
+  "all_exact_match": true,
+  "items": [
+    {
+      "candidate_id": "candidate-a1a0262a54cd0bbc3e7baed2",
+      "identity_key": "arxiv:1706.03762",
+      "node_id": "1bdf6773eadc401cb106b2fcc9a4cbc1",
+      "title": "Attention is All you Need",
+      "candidate_abstract_chars": 1136,
+      "node_abstract_chars": 1136,
+      "exact_match": true,
+      "source_candidate": "006-preview-1d7e1756209b48cb802e96e782cd14e4.json",
+      "final_graph": "038-graph-after-browser-layout.json"
+    },
+    {
+      "candidate_id": "candidate-5c62d8572e14ebeb554ca2eb",
+      "identity_key": "doi:10.1109/tsg.2026.3693251",
+      "node_id": "3c18411a87c34a96a4f0cda1d023d2d2",
+      "title": "Universal Graph Convolutional Network: Zero-Shot Transfer Across Power Grid Topology Reconfigurations",
+      "candidate_abstract_chars": 1955,
+      "node_abstract_chars": 1955,
+      "exact_match": true,
+      "source_candidate": "017-preview-541ca1cec64a4064aa7b272fe4f9e73d.json",
+      "final_graph": "038-graph-after-browser-layout.json"
+    },
+    {
+      "candidate_id": "candidate-39238cebf9b85ca3578221b4",
+      "identity_key": "arxiv:2610.36650",
+      "node_id": "b261e3e50d16421a8d2d9eb18d1995af",
+      "title": "TACO-Graph: Automated Construction of Text-Atributed Graphs",
+      "candidate_abstract_chars": 1596,
+      "node_abstract_chars": 1596,
+      "exact_match": true,
+      "source_candidate": "017-preview-541ca1cec64a4064aa7b272fe4f9e73d.json",
+      "final_graph": "038-graph-after-browser-layout.json"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "expected_revision": 188,
+  "idempotency_key": "task11-e2e-20261028-batch-1",
+  "selections": [
+    {
+      "preview_id": "1d7e1756209b48cb802e96e782cd14e4",
+      "expected_preview_revision": 2,
+      "selected_candidate_ids": ["candidate-a1a0262a54cd0bbc3e7baed2"]
+    },
+    {
+      "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+      "expected_preview_revision": 6,
+      "selected_candidate_ids": ["candidate-5c62d8572e14ebeb554ca2eb"]
+    }
+  ]
+}

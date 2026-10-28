@@ -1,0 +1,1 @@
+e5394e2318991e32f5cea0f554902df9b02a9ca7caaef0d1cc8df301829bf4ac  tests/frontend/test_frontend_literature_map_contract.py

@@ -1,0 +1,1 @@
+node --test frontend/contract-tests/*.test.mjs

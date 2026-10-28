@@ -1,0 +1,57 @@
+{
+  "started_at": "2026-10-28T13:51:11.256768+00:00",
+  "finished_at": "2026-10-28T13:51:11.326508+00:00",
+  "request": {
+    "method": "POST",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/batch-apply",
+    "body": {
+      "expected_revision": 188,
+      "idempotency_key": "task11-e2e-20261028-batch-1",
+      "selections": [
+        {
+          "preview_id": "1d7e1756209b48cb802e96e782cd14e4",
+          "expected_preview_revision": 2,
+          "selected_candidate_ids": [
+            "candidate-a1a0262a54cd0bbc3e7baed2"
+          ]
+        },
+        {
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "expected_preview_revision": 6,
+          "selected_candidate_ids": [
+            "candidate-5c62d8572e14ebeb554ca2eb"
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 202,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"revision\":189,\"added_count\":2,\"existing_count\":0,\"node_ids\":[\"1bdf6773eadc401cb106b2fcc9a4cbc1\",\"3c18411a87c34a96a4f0cda1d023d2d2\"],\"batch_job_id\":\"b0878dbbac1e4becaa33af02d664367b\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\",\"previews\":[{\"preview_id\":\"1d7e1756209b48cb802e96e782cd14e4\",\"preview_revision\":3,\"base_revision\":189},{\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"preview_revision\":7,\"base_revision\":189}]}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "revision": 189,
+      "added_count": 2,
+      "existing_count": 0,
+      "node_ids": [
+        "1bdf6773eadc401cb106b2fcc9a4cbc1",
+        "3c18411a87c34a96a4f0cda1d023d2d2"
+      ],
+      "batch_job_id": "b0878dbbac1e4becaa33af02d664367b",
+      "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+      "previews": [
+        {
+          "preview_id": "1d7e1756209b48cb802e96e782cd14e4",
+          "preview_revision": 3,
+          "base_revision": 189
+        },
+        {
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "preview_revision": 7,
+          "base_revision": 189
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "started_at": "2026-10-28T14:43:11.524705+00:00",
+  "finished_at": "2026-10-28T14:43:11.531713+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/e44bacad6cd04a449fee882f9a010e2e"
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"analysis\":{\"analysis_id\":\"e44bacad6cd04a449fee882f9a010e2e\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"node_id\":\"33c9baddfd284c2ea8088f430ad63a95\",\"version\":1,\"status\":\"completed\",\"evidence_level\":\"abstract\",\"source_version\":\"2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53\",\"model_id\":\"qwen3.8:27b\",\"job_id\":\"9a378651e6a34741ad79e0dfc8805bcd\",\"created_at\":\"2026-10-28T14:31:29.368923+00:00\",\"updated_at\":\"2026-10-28T14:32:09.441619+00:00\",\"result\":{\"citations\":[],\"source_refs\":[{\"kind\":\"abstract\",\"node_id\":\"33c9baddfd284c2ea8088f430ad63a95\"}],\"summary\":\"**论文总结：Inductive Representation Learning on Large Graphs**\\n\\n*   **核心贡献**：提出 **GraphSAGE**，一种通用的**归纳式（inductive）**图节点表示学习框架。\\n*   **关键机制**：不依赖全图训练，而是学习一个函数，通过**采样并聚合**节点的局部邻域特征来生成嵌入，从而支持对**未见过的节点**（unseen nodes）进行预测。\\n*   **解决的问题**：克服了现有多数图嵌入方法为**转导式（transductive）**、难以泛化到新节点的局限性。\\n*   **实验验证**：在三个归纳式节点分类基准（引用网络、Reddit 帖子、蛋白质相互作用多图谱）上优于强基线，证明其能泛化到完全未见的图结构。\\n*   **可核验点**：摘要明确指出其“inductive framework”、“sampling and aggregating features”、“local neighborhood”及“unseen nodes/graphs”等具体技术特征与实验设置。\"}},\"job\":{\"job_id\":\"9a378651e6a34741ad79e0dfc8805bcd\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"analysis\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"analysis_id\":\"e44bacad6cd04a449fee882f9a010e2e\",\"evidence_level\":\"abstract\",\"node_id\":\"33c9baddfd284c2ea8088f430ad63a95\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\"},\"counts\":{\"analysis_version\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T14:31:29.368923+00:00\",\"updated_at\":\"2026-10-28T14:32:09.441619+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "analysis": {
+        "analysis_id": "e44bacad6cd04a449fee882f9a010e2e",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "33c9baddfd284c2ea8088f430ad63a95",
+        "version": 1,
+        "status": "completed",
+        "evidence_level": "abstract",
+        "source_version": "2b40cc974a82981265123d67017d360b6e7515fcfc3e41f7805b5aa66a159a53",
+        "model_id": "qwen3.8:27b",
+        "job_id": "9a378651e6a34741ad79e0dfc8805bcd",
+        "created_at": "2026-10-28T14:31:29.368923+00:00",
+        "updated_at": "2026-10-28T14:32:09.441619+00:00",
+        "result": {
+          "citations": [],
+          "source_refs": [
+            {
+              "kind": "abstract",
+              "node_id": "33c9baddfd284c2ea8088f430ad63a95"
+            }
+          ],
+          "summary": "**论文总结：Inductive Representation Learning on Large Graphs**\n\n*   **核心贡献**：提出 **GraphSAGE**，一种通用的**归纳式（inductive）**图节点表示学习框架。\n*   **关键机制**：不依赖全图训练，而是学习一个函数，通过**采样并聚合**节点的局部邻域特征来生成嵌入，从而支持对**未见过的节点**（unseen nodes）进行预测。\n*   **解决的问题**：克服了现有多数图嵌入方法为**转导式（transductive）**、难以泛化到新节点的局限性。\n*   **实验验证**：在三个归纳式节点分类基准（引用网络、Reddit 帖子、蛋白质相互作用多图谱）上优于强基线，证明其能泛化到完全未见的图结构。\n*   **可核验点**：摘要明确指出其“inductive framework”、“sampling and aggregating features”、“local neighborhood”及“unseen nodes/graphs”等具体技术特征与实验设置。"
+        }
+      },
+      "job": {
+        "job_id": "9a378651e6a34741ad79e0dfc8805bcd",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "analysis_id": "e44bacad6cd04a449fee882f9a010e2e",
+          "evidence_level": "abstract",
+          "node_id": "33c9baddfd284c2ea8088f430ad63a95",
+          "queue_job_id": "92f382a294da4beba25f16aaab7976ad"
+        },
+        "counts": {
+          "analysis_version": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T14:31:29.368923+00:00",
+        "updated_at": "2026-10-28T14:32:09.441619+00:00"
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "started_at": "2026-10-28T13:53:05.585669+00:00",
+  "finished_at": "2026-10-28T13:53:05.627026+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/2232374411774c868701debd6a797192",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"analysis\":{\"analysis_id\":\"2232374411774c868701debd6a797192\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"node_id\":\"3c18411a87c34a96a4f0cda1d023d2d2\",\"version\":1,\"status\":\"completed\",\"evidence_level\":\"abstract\",\"source_version\":\"87a701133fa5c5591b90dee728901efcc90753876387fe63a5915effe036d5a3\",\"model_id\":\"qwen3.8:27b\",\"job_id\":\"3303e8d9db0c42af88de72086bf78ddc\",\"created_at\":\"2026-10-28T13:51:11.298884+00:00\",\"updated_at\":\"2026-10-28T13:51:59.731117+00:00\",\"result\":{\"citations\":[],\"source_refs\":[{\"kind\":\"abstract\",\"node_id\":\"3c18411a87c34a96a4f0cda1d023d2d2\"}],\"summary\":\"**论文总结**\\n\\n*   **研究背景**：针对电力系统深度学习模型难以跨拓扑、跨维度迁移（Zero-Shot Transfer）的问题，解决因电力物理特性导致的特征分布偏移和输入/输出维度/语义变化。\\n*   **核心方法**：提出通用图卷积网络（UGCN），通过训练多样化重构拓扑，使模型学习通用电力流物理规律而非记忆固定网络。包含三个协同机制：\\n    1.  标量权重图卷积与物理感知算子（处理可变输入维度及分布偏移）；\\n    2.  自适应池化（将拓扑特定特征映射至统一潜在表示）；\\n    3.  并行Transformer与位置编码（生成配置特定的输出）。\\n*   **主要贡献**：实现了无需预先知晓新电网拓扑或重新训练即可进行跨系统零样本迁移。\\n*   **实验验证**：在状态预测和虚假数据注入检测任务中，UGCN在输电网和配电网的跨系统零样本迁移性能上显著优于现有最先进方法。\"}},\"job\":{\"job_id\":\"3303e8d9db0c42af88de72086bf78ddc\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"analysis\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"analysis_id\":\"2232374411774c868701debd6a797192\",\"evidence_level\":\"abstract\",\"node_id\":\"3c18411a87c34a96a4f0cda1d023d2d2\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\"},\"counts\":{\"analysis_version\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T13:51:11.298884+00:00\",\"updated_at\":\"2026-10-28T13:51:59.731117+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "analysis": {
+        "analysis_id": "2232374411774c868701debd6a797192",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "3c18411a87c34a96a4f0cda1d023d2d2",
+        "version": 1,
+        "status": "completed",
+        "evidence_level": "abstract",
+        "source_version": "87a701133fa5c5591b90dee728901efcc90753876387fe63a5915effe036d5a3",
+        "model_id": "qwen3.8:27b",
+        "job_id": "3303e8d9db0c42af88de72086bf78ddc",
+        "created_at": "2026-10-28T13:51:11.298884+00:00",
+        "updated_at": "2026-10-28T13:51:59.731117+00:00",
+        "result": {
+          "citations": [],
+          "source_refs": [
+            {
+              "kind": "abstract",
+              "node_id": "3c18411a87c34a96a4f0cda1d023d2d2"
+            }
+          ],
+          "summary": "**论文总结**\n\n*   **研究背景**：针对电力系统深度学习模型难以跨拓扑、跨维度迁移（Zero-Shot Transfer）的问题，解决因电力物理特性导致的特征分布偏移和输入/输出维度/语义变化。\n*   **核心方法**：提出通用图卷积网络（UGCN），通过训练多样化重构拓扑，使模型学习通用电力流物理规律而非记忆固定网络。包含三个协同机制：\n    1.  标量权重图卷积与物理感知算子（处理可变输入维度及分布偏移）；\n    2.  自适应池化（将拓扑特定特征映射至统一潜在表示）；\n    3.  并行Transformer与位置编码（生成配置特定的输出）。\n*   **主要贡献**：实现了无需预先知晓新电网拓扑或重新训练即可进行跨系统零样本迁移。\n*   **实验验证**：在状态预测和虚假数据注入检测任务中，UGCN在输电网和配电网的跨系统零样本迁移性能上显著优于现有最先进方法。"
+        }
+      },
+      "job": {
+        "job_id": "3303e8d9db0c42af88de72086bf78ddc",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "analysis_id": "2232374411774c868701debd6a797192",
+          "evidence_level": "abstract",
+          "node_id": "3c18411a87c34a96a4f0cda1d023d2d2",
+          "queue_job_id": "92f382a294da4beba25f16aaab7976ad"
+        },
+        "counts": {
+          "analysis_version": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T13:51:11.298884+00:00",
+        "updated_at": "2026-10-28T13:51:59.731117+00:00"
+      }
+    }
+  }
+}

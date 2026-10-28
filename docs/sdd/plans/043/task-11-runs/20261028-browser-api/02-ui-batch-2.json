@@ -1,0 +1,59 @@
+{
+  "started_at": "2026-10-28T14:43:11.489261+00:00",
+  "finished_at": "2026-10-28T14:43:11.492942+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/5a9d46dc70304ff8ba55edf5261b1424"
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"job\":{\"job_id\":\"5a9d46dc70304ff8ba55edf5261b1424\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"expand_batch\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"items\":{\"0997c1774f2348c1bc9c07e5c526ae3c\":{\"analysis_id\":\"19269bc67d1249dba79b178a54a33955\",\"attempts\":0,\"metadata_status\":\"complete\",\"node_id\":\"0997c1774f2348c1bc9c07e5c526ae3c\",\"retryable\":false,\"source_version\":\"ef9f3f27ddea4d9d75a27a532e8d2269ace2a97ecb20c3659dbc6e7783384c94\",\"status\":\"completed\"}},\"new_node_ids\":[\"0997c1774f2348c1bc9c07e5c526ae3c\"],\"preview_ids\":[\"d05119cd58f94d679c7f32598e2ab2e5\"],\"seed_node_id\":\"21041260a5394f42891b020128fa60fa\",\"version\":1},\"counts\":{\"added_count\":1,\"analysis_queued\":0,\"completed\":1,\"existing_count\":0,\"failed\":0,\"identity_unresolved\":0,\"metadata_failed\":0,\"metadata_pending\":0,\"skipped_no_abstract\":0,\"skipped_removed\":0,\"total\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T14:34:33.887121+00:00\",\"updated_at\":\"2026-10-28T14:34:52.423930+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "job": {
+        "job_id": "5a9d46dc70304ff8ba55edf5261b1424",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "expand_batch",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "items": {
+            "0997c1774f2348c1bc9c07e5c526ae3c": {
+              "analysis_id": "19269bc67d1249dba79b178a54a33955",
+              "attempts": 0,
+              "metadata_status": "complete",
+              "node_id": "0997c1774f2348c1bc9c07e5c526ae3c",
+              "retryable": false,
+              "source_version": "ef9f3f27ddea4d9d75a27a532e8d2269ace2a97ecb20c3659dbc6e7783384c94",
+              "status": "completed"
+            }
+          },
+          "new_node_ids": [
+            "0997c1774f2348c1bc9c07e5c526ae3c"
+          ],
+          "preview_ids": [
+            "d05119cd58f94d679c7f32598e2ab2e5"
+          ],
+          "seed_node_id": "21041260a5394f42891b020128fa60fa",
+          "version": 1
+        },
+        "counts": {
+          "added_count": 1,
+          "analysis_queued": 0,
+          "completed": 1,
+          "existing_count": 0,
+          "failed": 0,
+          "identity_unresolved": 0,
+          "metadata_failed": 0,
+          "metadata_pending": 0,
+          "skipped_no_abstract": 0,
+          "skipped_removed": 0,
+          "total": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T14:34:33.887121+00:00",
+        "updated_at": "2026-10-28T14:34:52.423930+00:00"
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+run_id=spec043-task11-final-backend-20261028
+completed_at=2026-10-28T22:17:02.422766+08:00
+pytest_elapsed_seconds=236.93
+pytest_exit_code=0
+e2e_preflight_exit_code=0
+candidate_head=9721cbcbbf556e25ebba8de76875540180c02830
+backend_tree=3990c80cf64d8f6c791164add245bd33707f1552

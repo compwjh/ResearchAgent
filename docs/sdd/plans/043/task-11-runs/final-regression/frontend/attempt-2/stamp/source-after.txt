@@ -1,0 +1,11 @@
+Candidate commit: d2bd4ba7b02aaa803ea36e2aebd279480aa88ed7
+literature-maps.js version: 37
+literature-maps.css version: 23
+app.js version: 66
+SHA256:
+df12d89aa0b5b59319214a6fa4752f4d86aacddf80faf11ddbff6e759280e29b  frontend/app.js
+a69fb6fa68dd8831cdb34bfb34119563b9823984bcb3169ddbc5a58f9507042d  frontend/literature-maps.js
+376f0ab30922ead3d42bd1de843a89453d66aa356bb9e0313452c8904e842561  frontend/literature-maps.css
+e63a033ebf6dbaa6609ebddeecf1d3e6d6fd0bdf2e8ba733c343ddcdac9ab7ef  frontend/index.html
+92247e378e9150da5b4626674fd414370b837eb0e89706cbf87540528327be2a  tests/frontend/fixtures/literature_map_component.html
+7152474aa5f60e3985a54e879e30dd4c7d82ceda0820109a08b6058fdf9d0fad  tests/frontend/test_frontend_literature_map_contract.py

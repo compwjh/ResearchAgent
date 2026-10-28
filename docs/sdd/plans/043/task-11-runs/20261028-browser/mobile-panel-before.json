@@ -1,0 +1,38 @@
+{
+  "parent": {
+    "overflow": "hidden",
+    "rect": {
+      "bottom": 796,
+      "height": 654,
+      "left": 10,
+      "right": 380,
+      "top": 142,
+      "width": 370,
+      "x": 10,
+      "y": 142
+    }
+  },
+  "preview": {
+    "clientHeight": 18,
+    "rect": {
+      "bottom": 787.140625,
+      "height": 20,
+      "left": 19,
+      "right": 371,
+      "top": 767.140625,
+      "width": 352,
+      "x": 19,
+      "y": 767.140625
+    },
+    "scrollHeight": 872,
+    "style": {
+      "flex": "0 1 auto",
+      "overflow": "auto"
+    }
+  },
+  "scrollWidth": 390,
+  "viewport": {
+    "h": 844,
+    "w": 390
+  }
+}

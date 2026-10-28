@@ -1,0 +1,13 @@
+Attempt: 4
+New candidate: true
+Candidate commit: 7364a26b9ea97b902c91d12a5251236a0771a70a
+Frontend versions: literature-maps.js v37; literature-maps.css v25; app.js v66
+Full pytest start: 2026-10-29T02:42:30+08:00 (approx)
+Full pytest finish: 2026-10-29T02:44:44+0800
+Full pytest result: exit 0; 387 passed, 0 failed, 0 skipped; 117.99s
+Chromium permission: require_escalated; Playwright Chromium executed, no browser skips
+stderr: empty
+Node syntax: app.js and literature-maps.js exit 0
+Node contract suite: exit 0; 33 passed, 0 failed, 0 skipped
+Before/after source hashes: identical
+XSS scan: 0 matches for innerHTML / insertAdjacentHTML / outerHTML

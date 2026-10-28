@@ -1,0 +1,1 @@
+TMPDIR=/private/tmp/spec043-task11-final-frontend-20261029/attempt-3 PYTHONDONTWRITEBYTECODE=1 PYTHON_DOTENV_DISABLED=1 LANGFUSE_ENABLED=false /Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -rs -p no:cacheprovider tests/frontend

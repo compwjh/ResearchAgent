@@ -1,0 +1,184 @@
+{
+  "spec": "043-literature-map-topic-exploration",
+  "task": "11-paper-expansion",
+  "run_id": "20261028T134614Z",
+  "started_at": "2026-10-28T13:46:14Z",
+  "finished_at": "2026-10-28T14:00:19Z",
+  "timezone": "Asia/Shanghai",
+  "runtime": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "deployment_candidate": "9721cbcb",
+    "literature_map_schema": 8,
+    "memory_schema": 8
+  },
+  "map": {
+    "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+    "name": "API E2E graph attention networks r2",
+    "seed_node_id": "21041260a5394f42891b020128fa60fa",
+    "starting_revision": 188,
+    "starting_nodes": 21,
+    "starting_edges": 18,
+    "final_revision": 190,
+    "post_browser_layout_revision": 191,
+    "final_nodes": 24,
+    "final_edges": 21
+  },
+  "previews": {
+    "references": {
+      "preview_id": "1d7e1756209b48cb802e96e782cd14e4",
+      "initial_job_id": "7fbb48c62a93431babdfce783d514475",
+      "pages": [45],
+      "unique_candidates": 45,
+      "loaded_count": 45,
+      "has_more": false,
+      "state": "exhausted",
+      "total": null
+    },
+    "citations": {
+      "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+      "job_ids": [
+        "962bb5b0fa174ac5802d6c5109f3bf40",
+        "03c3ab75da4344b9b6fcfc07b69233f7",
+        "9d1e748e422942b6b441d8fb24245824"
+      ],
+      "pages": [50, 50, 50],
+      "unique_candidate_ids": 150,
+      "unique_identity_keys": 150,
+      "loaded_count": 150,
+      "has_more": true,
+      "total": null
+    }
+  },
+  "batch_1": {
+    "http_status": 202,
+    "expected_revision": 188,
+    "revision": 189,
+    "added_count": 2,
+    "existing_count": 0,
+    "node_ids": [
+      "1bdf6773eadc401cb106b2fcc9a4cbc1",
+      "3c18411a87c34a96a4f0cda1d023d2d2"
+    ],
+    "batch_job_id": "b0878dbbac1e4becaa33af02d664367b",
+    "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+    "idempotency_replay": {
+      "http_status": 202,
+      "same_batch_job_id": true,
+      "same_queue_job_id": true,
+      "same_node_ids": true,
+      "revision_unchanged": 189,
+      "post_replay_nodes": 23,
+      "post_replay_edges": 20,
+      "post_replay_analysis_queue_total": 23
+    }
+  },
+  "conflict_recovery": {
+    "stale_request_http_status": 409,
+    "stale_request_code": "MAP_PREVIEW_VERSION_CONFLICT",
+    "map_revision_after_conflict": 189,
+    "preview_revision_after_conflict": 7,
+    "revalidate_http_status": 200,
+    "revalidate_revision": 189,
+    "revalidate_preview_revision": 8,
+    "valid_candidate_ids": ["candidate-39238cebf9b85ca3578221b4"],
+    "invalid_selections": []
+  },
+  "batch_3": {
+    "http_status": 202,
+    "expected_revision": 189,
+    "revision": 190,
+    "added_count": 1,
+    "existing_count": 0,
+    "node_ids": ["b261e3e50d16421a8d2d9eb18d1995af"],
+    "batch_job_id": "79105650dd434cfaa30f24bae77c6833"
+  },
+  "analysis": [
+    {
+      "paper": "Attention is All you Need",
+      "node_id": "1bdf6773eadc401cb106b2fcc9a4cbc1",
+      "analysis_id": "3f6137cf451a463bb4e015cb17109c66",
+      "analysis_job_id": "de62c89b78f04fc2b44bc95703ff0f92",
+      "status": "completed",
+      "evidence_level": "abstract",
+      "source_version": "386f492df3b979e6d10ae147c638bd7f959e4724079b1079b946386d3d8f0b72",
+      "model_id": "qwen3.8:27b",
+      "summary_chars": 205
+    },
+    {
+      "paper": "Universal Graph Convolutional Network: Zero-Shot Transfer Across Power Grid Topology Reconfigurations",
+      "node_id": "3c18411a87c34a96a4f0cda1d023d2d2",
+      "analysis_id": "2232374411774c868701debd6a797192",
+      "analysis_job_id": "3303e8d9db0c42af88de72086bf78ddc",
+      "status": "completed",
+      "evidence_level": "abstract",
+      "source_version": "87a701133fa5c5591b90dee728901efcc90753876387fe63a5915effe036d5a3",
+      "model_id": "qwen3.8:27b",
+      "summary_chars": 401
+    },
+    {
+      "paper": "TACO-Graph: Automated Construction of Text-Atributed Graphs",
+      "node_id": "b261e3e50d16421a8d2d9eb18d1995af",
+      "analysis_id": "9c0108dafbe7446d9d8a536008de27a3",
+      "analysis_job_id": "57f770dcc0cb4d14a292d01a99d4a8a0",
+      "status": "completed",
+      "evidence_level": "abstract",
+      "source_version": "21542e2328b77f17016b583cd0afb6aeb0da83dc24ac6087453bdf3d6e787ba1",
+      "model_id": "qwen3.8:27b",
+      "summary_chars": 358
+    }
+  ],
+  "final_analysis_queue": {
+    "state": "completed",
+    "total": 24,
+    "completed": 22,
+    "queued": 0,
+    "running": 0,
+    "failed": 0,
+    "skipped": 2,
+    "failed_items": []
+  },
+  "final_graph_checks": {
+    "http_status": 200,
+    "old_nodes_full_json_unchanged": true,
+    "old_edges_full_json_unchanged": true,
+    "view_settings_unchanged": true,
+    "new_edges": [
+      {"source_id": "21041260a5394f42891b020128fa60fa", "target_id": "1bdf6773eadc401cb106b2fcc9a4cbc1", "relation_preview_id": "1d7e1756209b48cb802e96e782cd14e4"},
+      {"source_id": "3c18411a87c34a96a4f0cda1d023d2d2", "target_id": "21041260a5394f42891b020128fa60fa", "relation_preview_id": "541ca1cec64a4064aa7b272fe4f9e73d"},
+      {"source_id": "b261e3e50d16421a8d2d9eb18d1995af", "target_id": "21041260a5394f42891b020128fa60fa", "relation_preview_id": "541ca1cec64a4064aa7b272fe4f9e73d"}
+    ],
+    "new_node_position_from_api": null,
+    "browser_layout_save_verified": true,
+    "post_browser_layout_get": {
+      "artifact": "038-graph-after-browser-layout.json",
+      "http_status": 200,
+      "revision": 191,
+      "old_nodes_full_json_unchanged": true,
+      "old_edges_full_json_unchanged": true,
+      "view_settings_unchanged": true,
+      "positions": {
+        "1bdf6773eadc401cb106b2fcc9a4cbc1": {"x": 161.38430851575225, "y": -23.82794476450681},
+        "3c18411a87c34a96a4f0cda1d023d2d2": {"x": 376.38430851575225, "y": -3.1879447645068097},
+        "b261e3e50d16421a8d2d9eb18d1995af": {"x": 505.38430851575225, "y": -3.1879447645068097}
+      }
+    }
+  },
+  "http_409_count": 2,
+  "api_request_count": 38,
+  "source_errors": [],
+  "source_429_count": 0,
+  "api_e2e_result": "PASS_FOR_AUTHORIZED_API_SCOPE",
+  "task_11_final_acceptance": "NOT_EVALUATED",
+  "unverified": ["manual UI steps and readiness matrix", "full regression suite"],
+  "artifacts": {
+    "raw_requests_responses": "requests.jsonl",
+    "per_request_files": "001-*.json through 038-*.json",
+    "abstract_preservation_comparison": "abstract-preservation-comparison.json",
+    "baseline_map_snapshot": "baseline-map.json",
+    "summary": "run-summary.json",
+    "runner": "api_runner.py",
+    "report": "../../2026-10-28-expansion-real-api.md"
+  },
+  "progress_log": ".codebuddy/agent-logs/spec-043/task-11/tester/20261028-1345.md"
+}

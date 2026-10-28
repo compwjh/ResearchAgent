@@ -1,0 +1,3 @@
+node --check frontend/app.js
+node --check frontend/literature-maps.js
+Both commands: exit 0

@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-28T20:49:55.712699+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/28ff58c5244c46ddb8b31491e7702606"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "schema_version": "literature-map-v1",
+      "job": {
+        "job_id": "28ff58c5244c46ddb8b31491e7702606",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "expand_batch",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "items": {
+            "a9dfddd15066489e96d57f576e5526de": {
+              "analysis_id": "31bca85908bb4863b6b7d2558888f75b",
+              "attempts": 0,
+              "metadata_status": "complete",
+              "node_id": "a9dfddd15066489e96d57f576e5526de",
+              "retryable": false,
+              "source_version": "224caa6f71dcc47744fa4e93488a4cb94f961394df9d88d0139019275d89e5b3",
+              "status": "completed"
+            }
+          },
+          "new_node_ids": [
+            "a9dfddd15066489e96d57f576e5526de"
+          ],
+          "preview_ids": [
+            "38d99c9e6f0d4526bd55e52bbcbe0b33"
+          ],
+          "seed_node_id": "21041260a5394f42891b020128fa60fa",
+          "version": 1
+        },
+        "counts": {
+          "added_count": 1,
+          "analysis_queued": 0,
+          "completed": 1,
+          "existing_count": 0,
+          "failed": 0,
+          "identity_unresolved": 0,
+          "metadata_failed": 0,
+          "metadata_pending": 0,
+          "skipped_no_abstract": 0,
+          "skipped_removed": 0,
+          "total": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T19:44:27.498429+00:00",
+        "updated_at": "2026-10-28T19:45:08.988268+00:00"
+      }
+    }
+  }
+}

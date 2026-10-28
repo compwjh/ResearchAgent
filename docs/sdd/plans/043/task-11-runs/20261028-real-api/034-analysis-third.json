@@ -1,0 +1,58 @@
+{
+  "started_at": "2026-10-28T13:56:42.415504+00:00",
+  "finished_at": "2026-10-28T13:56:42.435301+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/9c0108dafbe7446d9d8a536008de27a3",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"analysis\":{\"analysis_id\":\"9c0108dafbe7446d9d8a536008de27a3\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"node_id\":\"b261e3e50d16421a8d2d9eb18d1995af\",\"version\":1,\"status\":\"completed\",\"evidence_level\":\"abstract\",\"source_version\":\"21542e2328b77f17016b583cd0afb6aeb0da83dc24ac6087453bdf3d6e787ba1\",\"model_id\":\"qwen3.8:27b\",\"job_id\":\"57f770dcc0cb4d14a292d01a99d4a8a0\",\"created_at\":\"2026-10-28T13:56:04.958105+00:00\",\"updated_at\":\"2026-10-28T13:56:23.359955+00:00\",\"result\":{\"citations\":[],\"source_refs\":[{\"kind\":\"abstract\",\"node_id\":\"b261e3e50d16421a8d2d9eb18d1995af\"}],\"summary\":\"**论文总结：TACO-Graph**\\n\\n*   **核心问题**：从多属性表格数据构建文本归属图（TAGs）时，节点、边及节点文本的选择缺乏系统性标准，依赖专家经验或试错，且对下游任务（如GNN节点分类、GraphRAG检索）性能影响显著。\\n*   **方法**：提出TACO-Graph框架，通过枚举有效TAG表示，利用小样本快速代理评估进行打分，并训练可解释的决策树来学习最优图构建策略。\\n*   **主要结果**：在引用网络、产品评论等5个数据集上，决策树对独立评估样本的构建质量预测Spearman $\\\\rho$ 在节点分类任务上 >0.9，在GraphRAG检索任务上 >0.8；系统识别出不同任务下的优劣构建方案。\\n*   **贡献**：提供了系统且可解释的表格数据转TAG指南，并开源了完整流水线库。\"}},\"job\":{\"job_id\":\"57f770dcc0cb4d14a292d01a99d4a8a0\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"analysis\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"analysis_id\":\"9c0108dafbe7446d9d8a536008de27a3\",\"evidence_level\":\"abstract\",\"node_id\":\"b261e3e50d16421a8d2d9eb18d1995af\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\"},\"counts\":{\"analysis_version\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T13:56:04.958105+00:00\",\"updated_at\":\"2026-10-28T13:56:23.359955+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "analysis": {
+        "analysis_id": "9c0108dafbe7446d9d8a536008de27a3",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "b261e3e50d16421a8d2d9eb18d1995af",
+        "version": 1,
+        "status": "completed",
+        "evidence_level": "abstract",
+        "source_version": "21542e2328b77f17016b583cd0afb6aeb0da83dc24ac6087453bdf3d6e787ba1",
+        "model_id": "qwen3.8:27b",
+        "job_id": "57f770dcc0cb4d14a292d01a99d4a8a0",
+        "created_at": "2026-10-28T13:56:04.958105+00:00",
+        "updated_at": "2026-10-28T13:56:23.359955+00:00",
+        "result": {
+          "citations": [],
+          "source_refs": [
+            {
+              "kind": "abstract",
+              "node_id": "b261e3e50d16421a8d2d9eb18d1995af"
+            }
+          ],
+          "summary": "**论文总结：TACO-Graph**\n\n*   **核心问题**：从多属性表格数据构建文本归属图（TAGs）时，节点、边及节点文本的选择缺乏系统性标准，依赖专家经验或试错，且对下游任务（如GNN节点分类、GraphRAG检索）性能影响显著。\n*   **方法**：提出TACO-Graph框架，通过枚举有效TAG表示，利用小样本快速代理评估进行打分，并训练可解释的决策树来学习最优图构建策略。\n*   **主要结果**：在引用网络、产品评论等5个数据集上，决策树对独立评估样本的构建质量预测Spearman $\\rho$ 在节点分类任务上 >0.9，在GraphRAG检索任务上 >0.8；系统识别出不同任务下的优劣构建方案。\n*   **贡献**：提供了系统且可解释的表格数据转TAG指南，并开源了完整流水线库。"
+        }
+      },
+      "job": {
+        "job_id": "57f770dcc0cb4d14a292d01a99d4a8a0",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "analysis_id": "9c0108dafbe7446d9d8a536008de27a3",
+          "evidence_level": "abstract",
+          "node_id": "b261e3e50d16421a8d2d9eb18d1995af",
+          "queue_job_id": "92f382a294da4beba25f16aaab7976ad"
+        },
+        "counts": {
+          "analysis_version": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T13:56:04.958105+00:00",
+        "updated_at": "2026-10-28T13:56:23.359955+00:00"
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "started_at": "2026-10-28T14:43:11.532103+00:00",
+  "finished_at": "2026-10-28T14:43:11.538010+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/8826e71b23004b2f99367117f32b9908"
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"analysis\":{\"analysis_id\":\"8826e71b23004b2f99367117f32b9908\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"node_id\":\"558415d254e043f09d711b770aaf5076\",\"version\":1,\"status\":\"completed\",\"evidence_level\":\"abstract\",\"source_version\":\"30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120\",\"model_id\":\"qwen3.8:27b\",\"job_id\":\"2b981087e42348cda797ff9215e5241e\",\"created_at\":\"2026-10-28T14:31:29.369994+00:00\",\"updated_at\":\"2026-10-28T14:32:32.823799+00:00\",\"result\":{\"citations\":[],\"source_refs\":[{\"kind\":\"abstract\",\"node_id\":\"558415d254e043f09d711b770aaf5076\"}],\"summary\":\"该论文提出了一种结合大语言模型（LLM）与多智能体强化学习（MARL）的边缘-云通信协议框架（EC-LLM-MARL），旨在解决多跳无人机（UAV）网络中的能耗、带宽、动态拓扑及链路不稳定问题。\\n\\n**核心方法：**\\n1.  **云端推理与蒸馏**：利用链式思维（CoT）引导LLM推理，并通过知识蒸馏和微调将专家策略迁移至UAV端，以提升训练效率并降低通信开销。\\n2.  **端侧特征提取与控制**：采用图注意力网络（GAT）提取观察目标的深层特征；结合自注意力机制改进多智能体深度确定性策略梯度（MADDPG），以增强动态环境下的信用分配和收敛效率。\\n3.  **负载均衡机制**：设计差异化奖励机制，优化多UAV间的任务负载平衡，提升大规模场景下的算法可扩展性。\\n\\n**主要结果：**\\n仿真表明，该框架显著加速了训练收敛，并在吞吐量、覆盖率和剩余能量方面优于现有方法，具体表现为吞吐量提升77%，覆盖率提升13%，且剩余能量水平最高。\"}},\"job\":{\"job_id\":\"2b981087e42348cda797ff9215e5241e\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"analysis\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"analysis_id\":\"8826e71b23004b2f99367117f32b9908\",\"evidence_level\":\"abstract\",\"node_id\":\"558415d254e043f09d711b770aaf5076\",\"queue_job_id\":\"92f382a294da4beba25f16aaab7976ad\"},\"counts\":{\"analysis_version\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T14:31:29.369994+00:00\",\"updated_at\":\"2026-10-28T14:32:32.823799+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "analysis": {
+        "analysis_id": "8826e71b23004b2f99367117f32b9908",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "558415d254e043f09d711b770aaf5076",
+        "version": 1,
+        "status": "completed",
+        "evidence_level": "abstract",
+        "source_version": "30b96447bde41972a6788883c760c9ea3e16996eb9c68b66f6f35421f99be120",
+        "model_id": "qwen3.8:27b",
+        "job_id": "2b981087e42348cda797ff9215e5241e",
+        "created_at": "2026-10-28T14:31:29.369994+00:00",
+        "updated_at": "2026-10-28T14:32:32.823799+00:00",
+        "result": {
+          "citations": [],
+          "source_refs": [
+            {
+              "kind": "abstract",
+              "node_id": "558415d254e043f09d711b770aaf5076"
+            }
+          ],
+          "summary": "该论文提出了一种结合大语言模型（LLM）与多智能体强化学习（MARL）的边缘-云通信协议框架（EC-LLM-MARL），旨在解决多跳无人机（UAV）网络中的能耗、带宽、动态拓扑及链路不稳定问题。\n\n**核心方法：**\n1.  **云端推理与蒸馏**：利用链式思维（CoT）引导LLM推理，并通过知识蒸馏和微调将专家策略迁移至UAV端，以提升训练效率并降低通信开销。\n2.  **端侧特征提取与控制**：采用图注意力网络（GAT）提取观察目标的深层特征；结合自注意力机制改进多智能体深度确定性策略梯度（MADDPG），以增强动态环境下的信用分配和收敛效率。\n3.  **负载均衡机制**：设计差异化奖励机制，优化多UAV间的任务负载平衡，提升大规模场景下的算法可扩展性。\n\n**主要结果：**\n仿真表明，该框架显著加速了训练收敛，并在吞吐量、覆盖率和剩余能量方面优于现有方法，具体表现为吞吐量提升77%，覆盖率提升13%，且剩余能量水平最高。"
+        }
+      },
+      "job": {
+        "job_id": "2b981087e42348cda797ff9215e5241e",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "analysis_id": "8826e71b23004b2f99367117f32b9908",
+          "evidence_level": "abstract",
+          "node_id": "558415d254e043f09d711b770aaf5076",
+          "queue_job_id": "92f382a294da4beba25f16aaab7976ad"
+        },
+        "counts": {
+          "analysis_version": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T14:31:29.369994+00:00",
+        "updated_at": "2026-10-28T14:32:32.823799+00:00"
+      }
+    }
+  }
+}

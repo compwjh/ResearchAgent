@@ -1,0 +1,40 @@
+{
+  "started_at": "2026-10-28T13:48:53.626534+00:00",
+  "finished_at": "2026-10-28T13:48:54.581523+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/jobs/03c3ab75da4344b9b6fcfc07b69233f7",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"job\":{\"job_id\":\"03c3ab75da4344b9b6fcfc07b69233f7\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"preview_page\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"cursor_history\":[0,50],\"last_completed_cursor\":50,\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"preview_revision\":3,\"target_cursor\":50},\"counts\":{\"candidate_count\":100,\"provider_request_count\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T13:48:40.852643+00:00\",\"updated_at\":\"2026-10-28T13:48:43.582239+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "job": {
+        "job_id": "03c3ab75da4344b9b6fcfc07b69233f7",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "preview_page",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "cursor_history": [
+            0,
+            50
+          ],
+          "last_completed_cursor": 50,
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "preview_revision": 3,
+          "target_cursor": 50
+        },
+        "counts": {
+          "candidate_count": 100,
+          "provider_request_count": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T13:48:40.852643+00:00",
+        "updated_at": "2026-10-28T13:48:43.582239+00:00"
+      }
+    }
+  }
+}

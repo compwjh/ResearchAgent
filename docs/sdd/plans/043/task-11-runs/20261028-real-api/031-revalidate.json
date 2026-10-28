@@ -1,0 +1,52 @@
+{
+  "started_at": "2026-10-28T13:55:42.675353+00:00",
+  "finished_at": "2026-10-28T13:55:42.720764+00:00",
+  "request": {
+    "method": "POST",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/revalidate",
+    "body": {
+      "expected_revision": 189,
+      "idempotency_key": "task11-e2e-20261028-revalidate-3",
+      "selections": [
+        {
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "expected_preview_revision": 7,
+          "selected_candidate_ids": [
+            "candidate-39238cebf9b85ca3578221b4"
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"revision\":189,\"previews\":[{\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"preview_revision\":8,\"base_revision\":189}],\"valid_selections\":[{\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"candidate_ids\":[\"candidate-39238cebf9b85ca3578221b4\"]}],\"invalid_selections\":[],\"changes\":{\"541ca1cec64a4064aa7b272fe4f9e73d\":{\"already_present\":0,\"removed\":0}}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "revision": 189,
+      "previews": [
+        {
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "preview_revision": 8,
+          "base_revision": 189
+        }
+      ],
+      "valid_selections": [
+        {
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "candidate_ids": [
+            "candidate-39238cebf9b85ca3578221b4"
+          ]
+        }
+      ],
+      "invalid_selections": [],
+      "changes": {
+        "541ca1cec64a4064aa7b272fe4f9e73d": {
+          "already_present": 0,
+          "removed": 0
+        }
+      }
+    }
+  }
+}

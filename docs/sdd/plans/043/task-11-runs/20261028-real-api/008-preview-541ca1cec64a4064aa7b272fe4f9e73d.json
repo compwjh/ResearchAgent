@@ -1,0 +1,1636 @@
+{
+  "started_at": "2026-10-28T13:47:42.341259+00:00",
+  "finished_at": "2026-10-28T13:47:42.369387+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/541ca1cec64a4064aa7b272fe4f9e73d",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"preview\":{\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"kind\":\"citations\",\"status\":\"completed\",\"base_revision\":188,\"candidates\":[{\"abstract\":null,\"already_present\":false,\"authors\":[\"Huai-Wei Lo\",\"Sheng-Wei Lin\",\"Muhammet Deveci\"],\"candidate_id\":\"candidate-afbd5a44035320618a2f3871\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.asoc.2026.116546\",\"semantic_scholar\":\"d3e56fda9b56ee297968b8f2f89958b7cede5cbe\"},\"identity_key\":\"doi:10.1016/j.asoc.2026.116546\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/d3e56fda9b56ee297968b8f2f89958b7cede5cbe\",\"title\":\"Spatial-temporal fusion transformer for cultural participation prediction: Unveiling inter-city spillovers and network effects\",\"venue\":\"Applied Soft Computing\",\"year\":2027},{\"abstract\":null,\"already_present\":false,\"authors\":[\"V. Sreelekshmi\",\"S. Renjith\"],\"candidate_id\":\"candidate-a46d76ea1979e92b05d70df8\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.asej.2026.104494\",\"semantic_scholar\":\"15ed59474a0c343efbc79fc56633467ded14765a\"},\"identity_key\":\"doi:10.1016/j.asej.2026.104494\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/15ed59474a0c343efbc79fc56633467ded14765a\",\"title\":\"HM-GraphSwin: Hierarchical multi-magnification graph-augmented swin transformer with stain-contrastive pretraining for breast cancer grade classification\",\"venue\":\"Ain Shams Engineering Journal\",\"year\":2027},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Jih-Jeng Huang\"],\"candidate_id\":\"candidate-d763645728333c3a614f8ae8\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.neucom.2026.135436\",\"semantic_scholar\":\"4539f161bfaa2506324880fa67b9ede5aa59e52d\"},\"identity_key\":\"doi:10.1016/j.neucom.2026.135436\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/4539f161bfaa2506324880fa67b9ede5aa59e52d\",\"title\":\"Latent bounded-order interaction attention\",\"venue\":\"Neurocomputing\",\"year\":2027},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Zhe Zhang\",\"Hong-Yi Lin\",\"Jing-Chun Zhang\",\"Bang-Yang Wei\",\"Bo-Wen Li\",\"Yang Liu\",\"Qing Yu\"],\"candidate_id\":\"candidate-8953084ed2750e5ce60b8314\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.apenergy.2026.129094\",\"semantic_scholar\":\"af36b7b2dbfdd4313a969bc0287f9f7092d056bf\"},\"identity_key\":\"doi:10.1016/j.apenergy.2026.129094\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/af36b7b2dbfdd4313a969bc0287f9f7092d056bf\",\"title\":\"Spatio-temporal large language model for zero-shot EV charging demand prediction: Beneficial to station energy management under data scarcity\",\"venue\":\"Applied Energy\",\"year\":2027},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Yu-Chen Zhou\",\"Jian-Yi Zhang\",\"Yajie Qi\",\"Yanan Cao\",\"Rong Qian\"],\"candidate_id\":\"candidate-226cf686d68953165fdb4cb1\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.patcog.2026.114461\",\"semantic_scholar\":\"2f077af80e739fbb697367c1b4dc6a21c580181a\"},\"identity_key\":\"doi:10.1016/j.patcog.2026.114461\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/2f077af80e739fbb697367c1b4dc6a21c580181a\",\"title\":\"Interactive bi-space embedding based temporal graph learning framework\",\"venue\":\"Pattern Recognition\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Duo-Wen Chen\",\"Bo Wang\",\"Yan-Wei Wang\",\"Yan Shi\",\"H. Men\"],\"candidate_id\":\"candidate-f2fabca658a574fe4e9da04a\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.sna.2026.118432\",\"semantic_scholar\":\"65d1791559ebb6f13efa78e6466c9c0791bb9d7f\"},\"identity_key\":\"doi:10.1016/j.sna.2026.118432\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/65d1791559ebb6f13efa78e6466c9c0791bb9d7f\",\"title\":\"Graph attention-based odor source proximity estimation with angle–concentration fusion for a rotating sensor array\",\"venue\":\"Sensors and Actuators A-Physical\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Si-Qiang Zhao\",\"Feng-Xiang Zhang\"],\"candidate_id\":\"candidate-7b86e61caac63be5222f920d\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.egyai.2026.100901\",\"semantic_scholar\":\"a0a5fd11c831ad0bdd6011d4f9ed67706054e8c0\"},\"identity_key\":\"doi:10.1016/j.egyai.2026.100901\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/a0a5fd11c831ad0bdd6011d4f9ed67706054e8c0\",\"title\":\"Conformalized graph neural networks for distribution system state estimation with finite-sample-valid uncertainty quantification\",\"venue\":\"Energy and AI\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"R. Hou\",\"Yi-Wen Zhou\",\"Kai-Di Wu\",\"Carla Bittencourt\",\"M. Debliquy\",\"Han-Lin Liao\",\"Chao Zhang\"],\"candidate_id\":\"candidate-824ec027f0a67f63a3d94d66\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.sna.2026.118552\",\"semantic_scholar\":\"fdb50e082d10493e157b28a51df32e5dfcb49b3b\"},\"identity_key\":\"doi:10.1016/j.sna.2026.118552\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/fdb50e082d10493e157b28a51df32e5dfcb49b3b\",\"title\":\"Artificial intelligence for signal processing in semiconductor gas sensors: Advances, comparisons, and future perspectives\",\"venue\":\"Sensors and Actuators A-Physical\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Xiao-Juan Zhang\",\"Xin-Yue Mo\",\"Huan Li\"],\"candidate_id\":\"candidate-4ed956faaf031de06df67c8c\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.array.2026.101289\",\"semantic_scholar\":\"1c9534b59114ce8fbb3908554f2922078bb37fa7\"},\"identity_key\":\"doi:10.1016/j.array.2026.101289\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/1c9534b59114ce8fbb3908554f2922078bb37fa7\",\"title\":\"ST-RadGAN: A novel spatiotemporal generative adversarial network for high-resolution surface solar radiation downscaling\",\"venue\":\"Array\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Xi-Wei Mi\",\"Yun-Xiang Zhang\",\"Qing-Qi Xiang\",\"Chao Chen\",\"Mei Han\"],\"candidate_id\":\"candidate-85bcad29dffcc4958f8bfccb\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.engstruct.2026.123779\",\"semantic_scholar\":\"a745d1e4c3ec2e5e9f6ccb21bd0ec6dda8582a03\"},\"identity_key\":\"doi:10.1016/j.engstruct.2026.123779\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/a745d1e4c3ec2e5e9f6ccb21bd0ec6dda8582a03\",\"title\":\"Short-term wind speed prediction along railways based on an uncertainty-aware spatiotemporal graph attention model\",\"venue\":\"Engineering structures\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Mathijs Pellemans\"],\"candidate_id\":\"candidate-606ce0e816c535447b6ec4f7\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.martra.2026.100161\",\"semantic_scholar\":\"0e5faeec2d48cb1f8861851dd2edead7ff5ebbb9\"},\"identity_key\":\"doi:10.1016/j.martra.2026.100161\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/0e5faeec2d48cb1f8861851dd2edead7ff5ebbb9\",\"title\":\"Unsupervised graph representation learning from AIS maritime traffic\",\"venue\":\"Maritime Transport Research\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Shu-Xi Chen\",\"Hai-Lei Yuan\",\"Hai-Fei Zhang\",\"Yuan-Zhi Zhang\"],\"candidate_id\":\"candidate-c950f00e1c890e39a48fc28b\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.array.2026.101368\",\"semantic_scholar\":\"cd0e1ff875506dfe4f9c03615bf204b7c4492185\"},\"identity_key\":\"doi:10.1016/j.array.2026.101368\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/cd0e1ff875506dfe4f9c03615bf204b7c4492185\",\"title\":\"AST-GAT-BiLSTM: A structure-aware deep learning framework for smart contract vulnerability detection\",\"venue\":\"Array\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Yundong Sun\",\"Dongjie Zhu\",\"Yansong Wang\",\"Zhaoshuo Tian\",\"Ning Cao\",\"Gregory O'Hared\"],\"candidate_id\":\"candidate-4fd93dd11f544bf958f7292d\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.ins.2026.123828\",\"semantic_scholar\":\"dc717698171209dd4020bcef37fb8e1455c03b7a\"},\"identity_key\":\"doi:10.1016/j.ins.2026.123828\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/dc717698171209dd4020bcef37fb8e1455c03b7a\",\"title\":\"SpikeGraphormer: A high-performance graph transformer with spiking graph attention\",\"venue\":\"Information Sciences\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Aimin Yang\",\"Xuyan Zhang\",\"Liyan Zhang\",\"Xue-Bo Liu\",\"Yanbing Liang\"],\"candidate_id\":\"candidate-aef317e1bd6f00d52c420b77\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.neucom.2026.134594\",\"semantic_scholar\":\"2e8415346aa6675a2e04de3b87201e89fb856193\"},\"identity_key\":\"doi:10.1016/j.neucom.2026.134594\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/2e8415346aa6675a2e04de3b87201e89fb856193\",\"title\":\"Certifying sparse node-feature robustness of graph neural networks via double-sampling randomized smoothing\",\"venue\":\"Neurocomputing\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Haozhe Peng\",\"Aiping Qu\",\"Yatao Zeng\"],\"candidate_id\":\"candidate-ed4c72edd86025831d5b8ff3\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.bspc.2026.111159\",\"semantic_scholar\":\"7a60b1b0f64746f06d8fffd2c33029da10243385\"},\"identity_key\":\"doi:10.1016/j.bspc.2026.111159\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/7a60b1b0f64746f06d8fffd2c33029da10243385\",\"title\":\"SHHN: A Sequential Hierarchy Hybrid Network for multimodal cancer survival prediction\",\"venue\":\"Biomedical Signal Processing and Control\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"H. Leng\",\"Ying Zhou\",\"Yu-Qing Gao\"],\"candidate_id\":\"candidate-fef900fa5ad8deb9eff8ad32\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.autcon.2026.107189\",\"semantic_scholar\":\"a0e5754f8058886eecea1eb26fd6ee9314764606\"},\"identity_key\":\"doi:10.1016/j.autcon.2026.107189\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/a0e5754f8058886eecea1eb26fd6ee9314764606\",\"title\":\"Room-level conditional graph neural networks for shear wall layout generation in high-rise buildings\",\"venue\":\"Automation in Construction\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Da-Jiang Liu\",\"Tao Yu\",\"Hui-Ying Xu\"],\"candidate_id\":\"candidate-70c131a1b88d76188ee3c418\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.enbuild.2026.118034\",\"semantic_scholar\":\"c29f97f20fb8695b4fc31d3eb0694734816c162a\"},\"identity_key\":\"doi:10.1016/j.enbuild.2026.118034\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/c29f97f20fb8695b4fc31d3eb0694734816c162a\",\"title\":\"GAT-LSTM hybrid model for dynamic carbon footprint accounting in prefabricated steel structure buildings: a spatio-temporal integration perspective\",\"venue\":\"Energy and Buildings\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Ke-Qiang Dong\",\"Luo-Yu Zhang\"],\"candidate_id\":\"candidate-8560b12b20f5886dbc7e952b\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.cnsns.2026.110710\",\"semantic_scholar\":\"a5392e1f3d265bde1237704416ec227e8b7ca63d\"},\"identity_key\":\"doi:10.1016/j.cnsns.2026.110710\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/a5392e1f3d265bde1237704416ec227e8b7ca63d\",\"title\":\"Asynchronous 3D bias-aware graph convolutional network and its application\",\"venue\":\"Communications in nonlinear science & numerical simulation\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Md. Robaitul Islam Bhuiyan\",\"Nur Mohammad Fahad\",\"A. Siddique\",\"Md. Rafiqul Islam\",\"Yakub Sebastian\",\"Asif Karim\",\"Kheng Cher Yeo\",\"Sami Azam\"],\"candidate_id\":\"candidate-acfeb3c4c80f401be0951136\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.compeleceng.2026.111474\",\"semantic_scholar\":\"761c1aeb21a613f9d8f4638947af1096460fcf51\"},\"identity_key\":\"doi:10.1016/j.compeleceng.2026.111474\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/761c1aeb21a613f9d8f4638947af1096460fcf51\",\"title\":\"AM2-STGNN: An attention guided spatiotemporal GraphSAGE framework for photovoltaic power forecasting from cloud images\",\"venue\":\"Computers & electrical engineering\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Yin-Bin Gao\",\"Hai-Dong Shao\",\"Jun Ding\",\"Jia-Rui Liu\",\"Ming-Ze Xu\",\"Jia-Le Zhang\",\"Dao-Lin Xu\"],\"candidate_id\":\"candidate-e854edbc5bf5b305cf9d4c0c\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.engappai.2026.116273\",\"semantic_scholar\":\"9f02662c17981559a2dafdc72c484ab7abfdfaa4\"},\"identity_key\":\"doi:10.1016/j.engappai.2026.116273\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/9f02662c17981559a2dafdc72c484ab7abfdfaa4\",\"title\":\"Cross-component causal coupling modeling and multi-order spectral representation for interpretable mechanical fault diagnosis\",\"venue\":\"Engineering applications of artificial intelligence\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Hong-Yuan Dong\",\"Lang-Wen Zhang\",\"Jin-Wei Zhou\",\"Li-Li Tang\",\"Yan Chen\",\"Zhen-Jun Ge\",\"Yi-Qi Liu\"],\"candidate_id\":\"candidate-2f903452ed3f4ed1547bc81a\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.jwpe.2026.110944\",\"semantic_scholar\":\"18456ba394aa6d5478b1185c1962f439da2363ea\"},\"identity_key\":\"doi:10.1016/j.jwpe.2026.110944\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/18456ba394aa6d5478b1185c1962f439da2363ea\",\"title\":\"MSPGNN: A multi-scale patch-aware spatio-temporal synergistic soft sensor framework with applications for wastewater treatment\",\"venue\":\"Journal of Water Process Engineering\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Cui-Na Jiao\",\"Ying-Lian Gao\",\"Feng Li\",\"Xin Gao\",\"Chun-Hou Zheng\",\"Yan-Li Wang\",\"Jin-Xing Liu\"],\"candidate_id\":\"candidate-444d5c6843700cd0428eb0e2\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.engappai.2026.116150\",\"semantic_scholar\":\"975374749a8779bdc8b17c46093a36589a14f16b\"},\"identity_key\":\"doi:10.1016/j.engappai.2026.116150\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/975374749a8779bdc8b17c46093a36589a14f16b\",\"title\":\"Deep explainable multimodal graph pooling network with knowledge learning for Alzheimer's disease diagnosis\",\"venue\":\"Engineering applications of artificial intelligence\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Kang-Zheng Huang\",\"Yen-Hsiang Chang\",\"Wei-Bo Li\",\"Jing-Jing Ye\",\"Shuai Cao\",\"Ren-Tai Li\"],\"candidate_id\":\"candidate-1c6f5d64483e495e191e7f06\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.cnsns.2026.110812\",\"semantic_scholar\":\"35fd87d91e0ba4c2e76faccf470956e5bff26789\"},\"identity_key\":\"doi:10.1016/j.cnsns.2026.110812\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/35fd87d91e0ba4c2e76faccf470956e5bff26789\",\"title\":\"Node importance evaluation in complex networks based on graph neural networks: A systematic review\",\"venue\":\"Communications in nonlinear science & numerical simulation\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Ru Huang\",\"Ming-Jie Yang\",\"Zheng-Bing Zhou\",\"Zi-Jian Chen\",\"Yuan-Dong Zhuang\",\"Jian-Hua He\",\"Xiao-Li Chu\"],\"candidate_id\":\"candidate-3014ef682fc2c4b49d3d7cc4\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.physa.2026.132081\",\"semantic_scholar\":\"17268b53282c6f54d85f17d71af6e09a522b0519\"},\"identity_key\":\"doi:10.1016/j.physa.2026.132081\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/17268b53282c6f54d85f17d71af6e09a522b0519\",\"title\":\"HSAGNN: A hybrid structure and attribute graph neural network with attention fusion for link prediction\",\"venue\":\"Physica A: Statistical Mechanics and its Applications\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"V. Patel\",\"Vedic Yadav\",\"Saurav Roy\",\"Abhijeet Patel\",\"Y. Patel\",\"Ananya Pal\"],\"candidate_id\":\"candidate-4b06f3c5a521c7a49ee063a5\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.jocs.2026.103027\",\"semantic_scholar\":\"788e4cf799952b10ed7f8b299188c4c385a92277\"},\"identity_key\":\"doi:10.1016/j.jocs.2026.103027\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/788e4cf799952b10ed7f8b299188c4c385a92277\",\"title\":\"Graph Neural Networks in cancer genomics: Mapping mathematical operations to biological insights\",\"venue\":\"Journal of Computer Science\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Ye-Wei Zhang\",\"Jin-Feng Ye\",\"Hui-Zhen Qiu\",\"Mu-Yan Jin\",\"Ya-Qi Sun\",\"Peng-Peng Ren\",\"Zhi-Gang Ji\"],\"candidate_id\":\"candidate-b1b3eba9dc3ab53ce06254ab\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.microrel.2026.116319\",\"semantic_scholar\":\"f6f56e09726b066902b84ef17c2cbbe540683a77\"},\"identity_key\":\"doi:10.1016/j.microrel.2026.116319\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/f6f56e09726b066902b84ef17c2cbbe540683a77\",\"title\":\"ATAN: A hybrid graph neural network framework for accelerating aging-aware timing analysis\",\"venue\":\"Microelectronics and reliability\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Chao Zhang\",\"Yu Zhou\",\"Jia-Xu Li\",\"Sheng-Nan Chu\",\"Qing Qin\",\"Luo-Feng Huang\"],\"candidate_id\":\"candidate-307d8734f7a044b6fd8824e4\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.oceaneng.2026.128578\",\"semantic_scholar\":\"a84e1e9ad851186cfb3133f99e25c69665b3bb96\"},\"identity_key\":\"doi:10.1016/j.oceaneng.2026.128578\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/a84e1e9ad851186cfb3133f99e25c69665b3bb96\",\"title\":\"Physics-guided graph attention surrogate modeling for wave-structure interactions of large-scale floating photovoltaic arrays\",\"venue\":\"Ocean Engineering\",\"year\":2026},{\"abstract\":\"With the development of the integration of aerial, terrestrial, and satellite networks, Uncrewed Aerial Vehicles (UAVs) serve as a new type of aerial communication platform, playing a key role in Internet of Things (IoT) scenarios. However, multi-hop UAV networks still suffer from energy limits, bandwidth scarcity, dynamic topology, and unstable links. To address these challenges, this paper proposes an edge-cloud communication protocol framework (EC-LLM-MARL) based on Large Language Models (LLMs) and MARL. In this framework, the cloud side constructs a chain-of-thought to guide LLM reasoning, and distilled expert strategies are transferred to UAVs through knowledge distillation and fine-tuning, improving training efficiency and reducing communication overhead. Additionally, a Graph Attention Network (GAT) is employed to extract deep features of observation targets, while Multi-Agent Deep Deterministic Policy Gradient (MADDPG) is combined with a self-attention mechanism at the UAV end to enhance credit assignment and convergence efficiency in dynamic environments. Furthermore, the framework designs a differentiated reward mechanism for task load balancing among multiple UAVs, improving the scalability of the algorithm in large-scale network scenarios. Extensive simulations show that EC-LLM-MARL significantly accelerates training convergence and substantially outperforms existing methods, achieving a 77% increase in throughput, a 13% rise in coverage, and the highest remaining energy levels.\",\"already_present\":false,\"authors\":[\"Yu-Hao Wu\",\"Xiu-Lin Qiu\",\"Ping Wang\",\"Hui Ye\",\"Dong-Hui Zhang\",\"Jian Cui\"],\"candidate_id\":\"candidate-b5d25a2de27a083880329cdd\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1109/tmc.2026.3713358\",\"semantic_scholar\":\"841483b3f6de18cc711d3f4187313f5673bfb401\"},\"identity_key\":\"doi:10.1109/tmc.2026.3713358\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/841483b3f6de18cc711d3f4187313f5673bfb401\",\"title\":\"LLM-Enhanced MARL for Multi-Hop UAV Networking: An Edge-Cloud Protocol Aware Framework\",\"venue\":\"IEEE Transactions on Mobile Computing\",\"year\":2026},{\"abstract\":\"Person Re-IDentification (ReID) is vital for public-safety applications, yet camera-based ReID suffers in low-light environments and poses serious visual privacy risks. In contrast, millimeter-wave (mmWave) radar sensing has gained significant attention in ReID due to its ability to perceive human movement patterns by emitting electromagnetic waves, making ReID unaffected by lighting conditions and capable of privacy preserving. However, current radar-based ReID methods are primarily supervised, and radar data is challenging for human eyes to interpret, making annotation extremely difficult and costly. To this end, we propose an unsupervised radar ReID method based on multi-level cross-view mutual signal contrastive learning. First, to drive unsupervised contrastive learning that depends on data augmentations, we utilize signal processing techniques to transform raw radar signals into frequency spectrum and point clouds, and these forms constitute different and complementary augmented versions of the same sample. Second, we construct a multi-level contrastive model between frequency spectrum signals and point clouds through global contrast, cross-view prediction contrast, clustering contrast, and cross-view cluster center contrast, effectively aligning different views and enhancing unsupervised robustness. Additionally, we employ a well-designed local and global graph attention network to learn more discriminative radar point cloud features. Extensive experimental results illustrate that our approach significantly outperforms existing radar-based unsupervised methods.\",\"already_present\":false,\"authors\":[\"Qi-Hua Feng\",\"Chun-Hui Duan\",\"Li-Tian Zhang\",\"Zhi-Quan Liu\",\"Fei-Ran Huang\",\"Jian Weng\",\"Philip S. Yu\"],\"candidate_id\":\"candidate-33841855e806bb3b4d08aa79\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1109/tmc.2026.3713047\",\"semantic_scholar\":\"5e75b4ff6088ef9a6b7dd634fd11102bbaa42f8a\"},\"identity_key\":\"doi:10.1109/tmc.2026.3713047\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/5e75b4ff6088ef9a6b7dd634fd11102bbaa42f8a\",\"title\":\"mmWave Radar-Based Unsupervised Person ReID via Multi-Level Mutual Signal Contrastive Learning\",\"venue\":\"IEEE Transactions on Mobile Computing\",\"year\":2026},{\"abstract\":\"With the rapid advancement of mobile technology and ubiquitous computing, spatial crowdsourcing has emerged as a promising computing paradigm. The growing complexity of spatial tasks has increasingly driven the demand for coordination among interdependent tasks and the cooperative participation of mobile workers, which remains relatively unexplored among existing studies. To fill this gap, this paper introduces Dependency-Cooperative Spatial Crowdsourcing (DCSC), a novel problem that explicitly models task dependencies and enables systematic worker cooperation to address complex spatial scenarios. To solve DCSC, we propose a two-stage solution: Dependency-aware Recommendation and Cooperation-aware Matching. In the first stage, we develop a multi-agent reinforcement learning approach enhanced with meta-gradient techniques to recommend suitable subtasks while considering dependency constraints. In the second stage, we propose a genetic algorithm-enhanced game approach to achieve optimal cooperative assignment, guided by a multi-dimensional matching utility function. To ensure consistency and optimization across both stages, we employ meta-gradients from the policy network to guide the optimization of the utility function. Additionally, we utilize graph neural network-based policy clustering to address task heterogeneity, enabling each cluster to learn specialized parameters and enhance reinforcement learning performance. Extensive experiments validate the effectiveness of our approach.\",\"already_present\":false,\"authors\":[\"Lin-Shen Luan\",\"Wei Chen\",\"Ran Feng\",\"Qingshun Wu\",\"Ya-Fei Li\",\"Ming-Liang Xu\"],\"candidate_id\":\"candidate-a53cc8d2c2b39e541f639441\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1109/tmc.2026.3717142\",\"semantic_scholar\":\"9949f6d47aea16a8438fecfc5e80c7556ec77502\"},\"identity_key\":\"doi:10.1109/tmc.2026.3717142\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/9949f6d47aea16a8438fecfc5e80c7556ec77502\",\"title\":\"Efficient Task Assignment in Dependency-Cooperative Spatial Crowdsourcing\",\"venue\":\"IEEE Transactions on Mobile Computing\",\"year\":2026},{\"abstract\":\"Addressing distribution shifts between training and testing sets is paramount for Graph Neural Networks (GNNs). Graph rationale learning has emerged as an effective paradigm to tackle this challenge by extracting invariant subgraphs as rationales for prediction. However, existing methods typically rely on the subgraphs produced by a rationale extractor without explicitly assessing their reliability, particularly during early training stages when the extractor is prone to generating inaccurate or biased rationales. Learning with such unreliable rationales can mislead the classifier and further deteriorate rationale quality, ultimately undermining generalization performance. In this paper, we rethink the objective of graph rationale learning and propose Cooperative Rationale Selection (CoRas), a novel architecture designed to enhance the reliability and robustness of rationale representations. Specifically, CoRas employs a dual-classifier framework to cooperatively select reliable rationales. Motivated by the small-loss criterion, CoRas prioritizes rationales with low prediction loss, while simultaneously selecting rationales with high prediction divergence to mitigate selection bias caused by relying solely on self-predictions during training. This allows CoRas to effectively select reliable rationales for downstream tasks, subsequently enhancing graph rationale learning. Experimental results on both real-world benchmarks and synthetic datasets demonstrate the effectiveness of CoRas in extracting reliable rationale subgraphs for combating out-of-distribution graph settings in graph classification.\",\"already_present\":false,\"authors\":[\"Fang-Zhou Yao\",\"Li-Nan Yue\",\"Weibo Gao\",\"Qi Liu\",\"En-Hong Chen\"],\"candidate_id\":\"candidate-ee48ebb4b7940bba08e6d23b\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1109/tkde.2026.3722666\",\"semantic_scholar\":\"0283e7083295566278b700a767a70ce6bce0c142\"},\"identity_key\":\"doi:10.1109/tkde.2026.3722666\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/0283e7083295566278b700a767a70ce6bce0c142\",\"title\":\"CoRas: Cooperative Rationale Selection for Graph Rationale Learning in Out-of-Distribution Graphs\",\"venue\":\"IEEE Transactions on Knowledge and Data Engineering\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Kun Han\",\"Xin Chen\"],\"candidate_id\":\"candidate-60b46e65ace8cd21e7f4cf23\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.oceaneng.2026.128826\",\"semantic_scholar\":\"04a2a9fbd3da6ab7d37b117d3eea57ad6efa3244\"},\"identity_key\":\"doi:10.1016/j.oceaneng.2026.128826\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/04a2a9fbd3da6ab7d37b117d3eea57ad6efa3244\",\"title\":\"M2DSTN: Multi-location multi-modal dual-branch spatiotemporal network for short-term power prediction of offshore wind farm clusters\",\"venue\":\"Ocean Engineering\",\"year\":2026},{\"abstract\":\"Modern power grids are increasingly exposed to diverse cyber-physical attacks that originate in the cyber layer and disrupt physical operation. A critical defense challenge is to rapidly determine whether an attack has occurred and identify its type. To address this challenge, this paper aims to develop a generalized detection scheme capable of identifying multiple types of attacks, particularly unknown ones. It is first observed that, under normal operation, cyber-layer data and physical-layer states are consistent across layers and evolve smoothly over time, while attacks disrupt these consistencies. Building on this insight, a self-supervised Cross-Layer Cross-Temporal Contrastive Learning (CL-CTCL) framework is proposed, which employs a Graph Attention Network-Gated Recurrent Unit (GAT-GRU) encoder to capture spatial dependencies and temporal dynamics. Two complementary contrastive objectives are introduced: Variance-Invariance-Covariance Regularization (VICReg) for cross-layer alignment and Information Noise-Contrastive Estimation with Momentum Contrast (InfoNCE-MoCo) for temporal consistency. Residual deviations from these consistencies provide reliable attack fingerprints, enabling detection and classification of both known and unknown attacks. Experiments on an IEEE 118-bus cyber-physical testbed show that the proposed CL-CTCL achieves high accuracy on known attacks and generalizes well to unknown ones, outperforming baseline methods across standard metrics.\",\"already_present\":false,\"authors\":[\"Lu-Yu Wang\",\"Kai-Feng Zhang\",\"Biplab Sikdar\",\"Ying Wang\",\"Wen-Jun Bi\",\"Jia Ning\"],\"candidate_id\":\"candidate-47ceff0bfa0fa667f58471e8\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1109/tsg.2026.3698557\",\"semantic_scholar\":\"f8615ca4d3b9e0e394001ca308f4ab02937ae459\"},\"identity_key\":\"doi:10.1109/tsg.2026.3698557\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/f8615ca4d3b9e0e394001ca308f4ab02937ae459\",\"title\":\"Detection of Unknown Attack in Cyber–Physical Power Systems via Self-Supervised Cross-Layer and Cross-Temporal Consistency\",\"venue\":\"IEEE Transactions on Smart Grid\",\"year\":2026},{\"abstract\":\"Deep learning (DL)-based methods have illustrated excellent performance in distribution network fault diagnosis. However, the “opaque” nature of DL models hinders grid operators from understanding the decision-making processes of these models, affecting model trustworthiness and robustness in diversified diagnosis applications. This paper proposes a hybrid attention-augmented self-interpretable channel-grouped graph convolutional network (HASIG) for diverse short-circuit fault diagnosis of distribution networks, including binary fault detection, faulted line identification, and fault type classification. A channel-grouped graph convolutional network is proposed to learn features from three-phase voltage and current measurements. We present a hybrid attention that combines global edge attention and channel-grouped attention, which can augment the critical features with faithful and robust interpretations during model training, enabling users to gain insights into the predictive behavior inside the model. These three short-circuit fault diagnosis tasks are collaboratively trained under a multi-task learning architecture with interpretable loss constraints. Experiments were conducted on the IEEE 33-bus, IEEE 33-bus with distributed energy resources, and IEEE 123-bus systems with randomized fault parameters. The results show that HASIG achieves competitive diagnostic performance and good interpretability, and demonstrates strong robustness under noisy and missing-data conditions.\",\"already_present\":false,\"authors\":[\"Ying-Long Ma\",\"Wen-Zheng Ma\",\"Yan-Dan Wang\",\"Ting-Dong Wang\",\"Wen-Guang Ma\"],\"candidate_id\":\"candidate-cf96957f2537e9ce68766b2c\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1109/tsg.2026.3718879\",\"semantic_scholar\":\"b9597a47fc7fc3e4f7b80a265c7e5df0f8a5f25b\"},\"identity_key\":\"doi:10.1109/tsg.2026.3718879\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/b9597a47fc7fc3e4f7b80a265c7e5df0f8a5f25b\",\"title\":\"Hybrid Attention-Augmented Self-Interpretable Channel-Grouped Graph Convolutional Network for Robust Distribution Network Fault Diagnosis\",\"venue\":\"IEEE Transactions on Smart Grid\",\"year\":2026},{\"abstract\":\"This work addresses a fundamental challenge in applying deep learning to network topology-dependent power system applications: developing neural network models that transfer across significant system changes, including networks with entirely different topologies and dimensionalities, without requiring training data from unseen reconfigurations. We focus on situational awareness tasks where predictions inherently depend on network-wide spatial relationships through electrical connectivity. Despite extensive research, most ML-based approaches remain system-specific, limiting real-world deployment. This limitation stems from a dual barrier. First, topology changes shift feature distributions and alter input dimensions due to power flow physics. Second, reconfigurations redefine output semantics and dimensionality, requiring models to handle configuration-specific outputs while maintaining transferable feature extraction. Our core insight is treating topology as a learnable dimension through training on diverse reconfigurations, enabling the model to learn universal power flow physics rather than memorizing fixed networks. We achieve this through three synergistic mechanisms: scalar-weight graph convolutions with physics-aware operators handle variable input dimensions and distribution shifts, adaptive pooling maps topology-specific features to unified latent representations, and parallel transformer generates configuration-specific outputs using positional encoding. Our Universal Graph Convolutional Network (UGCN) achieves transferability to any reconfiguration or variation of existing power systems without any prior knowledge of new grid topologies or retraining during implementation. Experimental results on state forecasting and false data injection detection demonstrate that UGCN significantly outperforms state-of-the-art methods in cross-system zero-shot transferability across both transmission and distribution networks.\",\"already_present\":false,\"authors\":[\"Tong Wu\",\"Anna Scaglione\",\"Sandy Miguel\",\"Daniel B. Arnold\"],\"candidate_id\":\"candidate-5c62d8572e14ebeb554ca2eb\",\"catalog_paper_id\":null,\"citation_count\":1,\"external_ids\":{\"doi\":\"10.1109/tsg.2026.3693251\",\"semantic_scholar\":\"afdb962a310b314b19686e2dd0fd27af179a954c\"},\"identity_key\":\"doi:10.1109/tsg.2026.3693251\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/afdb962a310b314b19686e2dd0fd27af179a954c\",\"title\":\"Universal Graph Convolutional Network: Zero-Shot Transfer Across Power Grid Topology Reconfigurations\",\"venue\":\"IEEE Transactions on Smart Grid\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Amine Chraibi\"],\"candidate_id\":\"candidate-2d6debf97f9267d5c42b229c\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1016/j.swevo.2026.102565\",\"semantic_scholar\":\"51363adcf21e9e2f880dc5dceea546065a9260c3\"},\"identity_key\":\"doi:10.1016/j.swevo.2026.102565\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/51363adcf21e9e2f880dc5dceea546065a9260c3\",\"title\":\"GANCS: GAT-enhanced PPO warm-starting of NSGA-III for energy- and SLA-aware cloud workflow scheduling\",\"venue\":\"Swarm and Evolutionary Computation\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Outhman Abbassi\",\"Hamid el Amri\",\"N. Kharmoum\",\"S. Ziti\"],\"candidate_id\":\"candidate-822360386581a1664c8e757a\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1007/s13721-026-00896-z\",\"semantic_scholar\":\"a024eabc0711b493e429087e195b5a354e7f55ab\"},\"identity_key\":\"doi:10.1007/s13721-026-00896-z\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/a024eabc0711b493e429087e195b5a354e7f55ab\",\"title\":\"Integration of discriminative and generative approaches in the computational chemistry and drug discovery process\",\"venue\":\"Network Modeling Analysis in Health Informatics and Bioinformatics\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"T. Rao\",\"P. Pandey\",\"A. Saxena\"],\"candidate_id\":\"candidate-dfba814999671ce8b0c0beda\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1007/s41060-026-01299-z\",\"semantic_scholar\":\"1d3a89a98ff41c1d6e1147e44dda25746c8a432d\"},\"identity_key\":\"doi:10.1007/s41060-026-01299-z\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/1d3a89a98ff41c1d6e1147e44dda25746c8a432d\",\"title\":\"Fraud rings detection in weighted transaction networks with multiple attributes using Spark GraphFrames\",\"venue\":\"International Journal of Data Science and Analysis\",\"year\":2026},{\"abstract\":\"Graph-structured representations of text data have become foundational across machine learning, yet it remains unclear how to systematically construct a graph from a given dataset for a target task. Choices about which entities become nodes, which relationships become edges, and what text each node contains can substantially affect downstream performance. In practice, finding optimal constructions often requires expert knowledge or manual trial and error. We introduce TACO-Graph, a decision tree framework for learning which graph construction choices are most effective for a given dataset and task. Specifically, we focus on text-attributed graphs (TAGs) constructed from multi-attribute tabular data. TACO-Graph enumerates valid TAG representations, scores each using fast proxy evaluation on small representative subsets, and trains an interpretable decision tree on those scores. Across five datasets spanning citation networks, product reviews, and bibliographic relationships, our decision trees predict construction quality on separately drawn evaluation samples with mean Spearman $\\\\rho$ above $0.9$ for node classification and above $0.8$ for GraphRAG retrieval. Our trees systematically identify which constructions perform better across both GNN and GraphRAG tasks, and the full pipeline is released as an open-source library to support evaluation on new tasks and datasets at https://github.com/AmiriHayes/text_attributed_graphs. TACO-Graph provides a systematic and interpretable guide for determining how to convert tabular data to text-attributed graphs for downstream tasks.\",\"already_present\":false,\"authors\":[\"Amiri Hayes\",\"Kristina Wicke\"],\"candidate_id\":\"candidate-39238cebf9b85ca3578221b4\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.36650\",\"semantic_scholar\":\"46726e9afd535a15c38f366ede43d87a2a898ee9\"},\"identity_key\":\"arxiv:2610.36650\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/46726e9afd535a15c38f366ede43d87a2a898ee9\",\"title\":\"TACO-Graph: Automated Construction of Text-Atributed Graphs\",\"venue\":null,\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Nischal Subedi\",\"Danush Wijekularathna\"],\"candidate_id\":\"candidate-89de6e1ce2529fe3489741a9\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1017/dap.2026.10105\",\"semantic_scholar\":\"8217681f95511e3b476b2b9cf10649c0799eec88\"},\"identity_key\":\"doi:10.1017/dap.2026.10105\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/8217681f95511e3b476b2b9cf10649c0799eec88\",\"title\":\"A graph neural network approach to physical distress screening in subsidized housing\",\"venue\":\"Data & Policy\",\"year\":2026},{\"abstract\":null,\"already_present\":false,\"authors\":[\"Jia-Chen Ma\",\"Long-Jiang Guo\",\"Li-Chen Zhang\"],\"candidate_id\":\"candidate-6eb8a91108f39eb928e33b1c\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1007/s11227-026-08941-4\",\"semantic_scholar\":\"f0e36d43157a477fb9be1874d69ceedab7033207\"},\"identity_key\":\"doi:10.1007/s11227-026-08941-4\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/f0e36d43157a477fb9be1874d69ceedab7033207\",\"title\":\"Pcdg: propagation characteristics-aware graph neural network with contrastive difficulty guidance for rumor detection\",\"venue\":\"Journal of Supercomputing\",\"year\":2026},{\"abstract\":\"The realm of high-performance computing has expanded to include machine learning tasks of many forms. Graph Neural Networks (GNNs) are becoming increasingly popular, with their applications expanding across diverse domains. As the scale of graph data continues to grow, including larger numbers of nodes, edges, and higher embedding dimensions, standardized libraries such as DGL and PyG have been developed to facilitate GNN computation. These libraries allow the computation to be described a a high level of abstraction, providing high productivity on the part of the developer. However, with the rapid increase in the number of processor cores and the evolution of multicore architectures, these libraries often show poor scalability and fail to execute GNN inference efficiently on the latest multicore systems, particularly those with upwards of a hundred cores. To address this limitation, we introduce FrontGI, a fast and scalable set of techniques that advances the frontier of GNN inference on large-scale graphs (over 100,000 vertices) by leveraging graph-property- and architecture-aware design. FrontGI employs different parallelization strategies optimized for diverse graph structures, maximizing the utilization of multi-level cache hierarchies in multicore systems. We evaluate a number of GNN models with FrontGI on a 128-core AMD EPYC system. Compared to state-of-the-art libraries, FrontGI achieves up to 3.35$\\\\times$, 3.20$\\\\times$, 2.89$\\\\times$ and 3.10$\\\\times$ speedups over DGL for GCN, GraphSAGE, GIN, and SGC models, respectively, and even greater improvements over PyG, across a range of large-scale, high-dimensional graph datasets with diverse structural properties.\",\"already_present\":false,\"authors\":[\"Bing-Lin Ji\",\"Chen-Feng Zhao\",\"R. Chamberlain\"],\"candidate_id\":\"candidate-fbe1d3c2c1879fb9844008b9\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.34911\",\"semantic_scholar\":\"bfba290707eb7ff1d6656ac1103750cd7b65f425\"},\"identity_key\":\"arxiv:2610.34911\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/bfba290707eb7ff1d6656ac1103750cd7b65f425\",\"title\":\"FrontGI: Architecture-Aware Parallel GNN Inference on Chiplet-Based Multicore Systems\",\"venue\":null,\"year\":2026},{\"abstract\":\"A graph neural network (GNN) forecasting a collection of load series combines two mechanisms, sharing parameters across series and reading neighboring series, and a gain over a non-graph model may come from either; telling them apart decides whether a graph is worth maintaining. We propose a model diagnostic protocol that compares the GNN with three reference models: a per-node network, a network shared across nodes without neighbors, and the same GNN without edges. Degree-preserving rewiring tests whether neighbor identity matters. After a tuned benchmark on regional load in France and on low-voltage feeders in the UK, we apply the protocol to deliberately short node histories, as when non-stationary demand leaves only recent observations relevant: the feeders, within one week, and a public dataset of client consumption series. On the feeders, sharing parameters recovers most of the error gap between node-specific models and GNNs, about two thirds against a regularized one. Adding the edges to an otherwise identical backbone brings a smaller gain, half or more of which disappears under rewiring. On the client series, the neighbor mean degrades the per-node model on the shorter window and the edges'gain is not consistently distinguishable from zero; on the regions of France, where each node's own history is already informative, the ranking between per-node models and GNNs changes with tuning. A synthetic study points to noisy local measurements as one regime where neighbors help. In an exploratory online aggregation, graph and non-graph forecasters appear complementary, and the weight assigned to GNNs is not proportional to their contribution. In none of the three datasets do the edges account for most of a GNN's advantage over node-specific models, so a forecasting gain should be credited to the graph only after comparison with per-node and shared references.\",\"already_present\":false,\"authors\":[\"Eloi Campagne\",\"Yvenn Amara-Ouali\",\"Yannig Goude\",\"Itai Zehavi\",\"Argyris Kalogeratos\"],\"candidate_id\":\"candidate-3e622cab37a6667e98d0a3da\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.35074\",\"semantic_scholar\":\"e8d4375869e5ae5417451ccf44d961217c10f442\"},\"identity_key\":\"arxiv:2610.35074\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/e8d4375869e5ae5417451ccf44d961217c10f442\",\"title\":\"A Diagnostic Protocol for GNNs in Electricity Load Forecasting: Separating Parameter Sharing from Neighborhood Access\",\"venue\":null,\"year\":2026},{\"abstract\":\"Illicit account detection is a critical task for financial risk control systems, aiming to pinpoint malicious actors within transaction networks. Existing efforts typically recast transaction networks into directed multigraphs and leverage graph neural networks (GNNs) to detect anomalies via topological structures under the homophily assumption. However, directly grafting GNNs onto transaction graphs is faced with at least two pivotal challenges, i.e., structural inconsistency and label scarcity. The former arises from deceptive connections forged by malicious actors, while the latter stems from the lack of annotated data. In light of these, we introduce MINT, a novel graph neural framework that mitigates structural inconsistency via an attentive message-passing scheme on transaction graphs. Specifically, MINT introduces a discrepancy-aware feature propagation, which tracks malicious actors by quantifying deviations between nodes across bi-directional transaction flows. A transaction salience module is proposed to mitigate structural inconsistency by adaptively regularizing the interaction strength between nodes. Furthermore, to alleviate label scarcity, MINT is optimized via Positive-Unlabeled (PU) learning, which exploits only a minority of illicit nodes coupled with a majority of unlabeled ones. Extensive experiments conducted on three financial transaction benchmarks, including two large-scale public and one in-house real-world datasets, validate the superior effectiveness of MINT over several cutting-edge baselines.\",\"already_present\":false,\"authors\":[\"Yin-Ju Wu\",\"Bi-Cheng Yan\",\"Berlin Chen\"],\"candidate_id\":\"candidate-a12d46e1a4eb6850ed836fa4\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.34950\",\"semantic_scholar\":\"771003c68ca915b2860da75cd98f046537045a45\"},\"identity_key\":\"arxiv:2610.34950\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/771003c68ca915b2860da75cd98f046537045a45\",\"title\":\"MINT: Mitigating Structural Inconsistency via Attentive Message Passing for Financial Anomaly Detection\",\"venue\":null,\"year\":2026},{\"abstract\":\"Graph Neural Networks (GNNs) are widely used in modern machine learning, yet most existing frameworks remain fundamentally static, limiting their applicability in Dynamic Data Driven Application Systems (DDDAS) where observations arrive sequentially under uncertainty. We introduce B-EAGLe (Bayesian Evidence Accumulation for Graph-Based Learning), a probabilistic framework inspired by CBGT-Net (cortico-basal ganglia-thalamic network) that reformulates graph classification as a sequential evidence accumulation process. B-EAGLe combines a GNN encoder with a Bayesian accumulator that incrementally updates posterior beliefs over class labels as new observations arrive, committing to a decision only when sufficient confidence is achieved. Experiments on CIFAR10 demonstrate competitive performance together with principled confidence estimation under sequential observations.\",\"already_present\":false,\"authors\":[\"Moises Ponce\",\"Sarah Harkins Dayton\",\"Ioannis Schizas\",\"Vasileios Maroulas\"],\"candidate_id\":\"candidate-590a036334b4dc8a1be4392b\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.36190\",\"semantic_scholar\":\"9b641612e63a6b61d527439f80a56ee5c55bbf5b\"},\"identity_key\":\"arxiv:2610.36190\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/9b641612e63a6b61d527439f80a56ee5c55bbf5b\",\"title\":\"Bayesian Evidence Accumulation for Graph-Based Learning in Dynamic Data-Driven Applications Systems\",\"venue\":null,\"year\":2026},{\"abstract\":\"Link prediction remains difficult in sparse graphs, where diffusion heuristics lack connectivity and geometric methods suffer spectral instability when coupling learned representations with diffusion operators. We introduce Concorde, an energy-based framework that resolves this by decomposing link likelihood into three structurally decoupled branches: (i) a parameter-free spectral anchor that establishes permutation-invariant topological stability; (ii) a mixed-curvature residual on a learnable $\\\\mathbb{H}^{d_h}_{c_h} \\\\times \\\\mathbb{S}^{d_s}_{c_s}$ product manifold, regularized by a feature-aware Ollivier-Ricci curvature proxy; and (iii) a continuous vector field on the tangent bundle of hyperbolic space for non-local structural alignment across topological gaps. The branches are fused via learned gating and trained with an N-pair ranking loss aligned with retrieval-style evaluation. Across five benchmarks spanning sparse, dense, featureless, and attributed regimes, Concorde establishes state-of-the-art early retrieval precision, nearly doubling P@10% over leading baselines in sparse settings.\",\"already_present\":false,\"authors\":[\"Ege Demirci\",\"Ambuj Singh\"],\"candidate_id\":\"candidate-0d54e499a80d8ea0ded2d111\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.36204\",\"semantic_scholar\":\"f626d8abf5adc28deb47f4e49e5aba339a6284a1\"},\"identity_key\":\"arxiv:2610.36204\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/f626d8abf5adc28deb47f4e49e5aba339a6284a1\",\"title\":\"Concorde: Geometry-Aware Link Prediction via Decoupled Energy Minimization\",\"venue\":null,\"year\":2026},{\"abstract\":\"Spatio-temporal graph neural networks combine a node's history with information from graph neighbors. The central question is whether graph neighbors provide predictive information beyond each node's own history. Forecast accuracy depends on both the choice of neighbors and the way graph messages enter the temporal model. We study these choices as graph construction and graph exposure on U.S. state unemployment, traffic speed, and electricity demand. Our diagnostic design uses two comparisons: varying exposure while holding the domain graph fixed, and varying construction while holding late gated integration fixed. A GRU using only each node's own history and randomized graph controls help assess what the graph contributes. Under a common change forecasting protocol, the same domain graph can improve or worsen error relative to the GRU across integration designs. Late integration alone is insufficient, while adding a fusion gate yields lower mean error in all three tasks. With late gated integration fixed, a graph based on residual correlations has the lowest mean error among the tested graphs, although randomized graphs perform similarly on unemployment. The findings support evaluating graph construction and integration together, with conclusions tied to the comparisons actually performed.\",\"already_present\":false,\"authors\":[\"Saj Maru\",\"Qi-Yu Han\",\"Krishna Mamidala\"],\"candidate_id\":\"candidate-c8189f8a1d3a16d3a66e2a93\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.34611\",\"semantic_scholar\":\"4bfc503a518f0e803aff8aef87f137ca1b27a79e\"},\"identity_key\":\"arxiv:2610.34611\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/4bfc503a518f0e803aff8aef87f137ca1b27a79e\",\"title\":\"How Much Graph Is Too Much? Graph Construction and Exposure in Spatio-Temporal Forecasting\",\"venue\":null,\"year\":2026},{\"abstract\":\"Structured scientific spectra encode rich physical information while obeying hard constraints, such as conservation laws and characteristic spectral geometry. Accurate prediction of these spectra is central to materials discovery, yet existing methods often treat them as unconstrained sequences and therefore fail to enforce the underlying physical structure. Taking electronic density of states (eDOS) as the prototypical example, we introduce DeepSciReasoner, a general paradigm for predicting scientific spectra under physical constraints. The framework combines structure-aware spectrum decoding with constraint-preserving physical reasoning, allowing predictions to capture rich spectral structure while respecting the underlying physics. We evaluate DeepSciReasoner on eDOS, phonon density of states (phDOS), X-ray absorption near-edge structure (XANES), and Raman spectra, where it substantially improves prediction accuracy while maintaining physical consistency. These results establish DeepSciReasoner as a reusable blueprint for structured scientific spectrum prediction under hard physical constraints.\",\"already_present\":false,\"authors\":[\"Ying-Heng Wang\",\"Tao Yu\",\"Shu-Feng Kong\",\"Francesco Ricci\",\"John M. Gregoire\",\"Carla P. Gomes\"],\"candidate_id\":\"candidate-e3d76fa093f187d56032951e\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.34021\",\"semantic_scholar\":\"3e4253d557e2f07c8cf4381eafeda472c0c11b73\"},\"identity_key\":\"arxiv:2610.34021\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/3e4253d557e2f07c8cf4381eafeda472c0c11b73\",\"title\":\"Deep Scientific Reasoning under Physical Constraints: Structure-Aware Spectrum Prediction\",\"venue\":null,\"year\":2026},{\"abstract\":\"On million-node graphs, the memory wall arrives before the compute wall: a GNN that never fits in VRAM cannot deliver the all-node inference its accuracy promises. The standard remedy, pruning, has always been an accuracy tax - paid once and never refunded. DPR refuses this framing. Its central insight is that the mask that shrinks training can also scaffold recovery: one compact node set bounds both computations of graph learning, serving as the encoder's training graph and, at inference, as the anchor from which a sparse structure-aware decoder rebuilds every pruned node (double-layer sparsification). The order is inverted - prune for efficiency, then reconstruct for accuracy - and the tax is repaid: the deployed 30%-budget model trains in 1,450 MiB of peak memory on one 6 GB GPU and recovers 96.9% of its dense-reconstruction reference, beating a same-GPU rerun of the edge-sparsification baseline DSpar by +1.36 pp at 50.1% lower peak training memory; against the same-protocol full-batch no-prune encoder the deployed point pays a measured 2.64 pp accuracy tax for a 2.8x smaller training footprint. Pruning without reconstruction leaves the encoder at 0.378 within the same 40-epoch window (Fig. 4), and all-node serving runs 46x faster than sampling-based GraphSAGE, giving up approx. 5.4 pp of test accuracy. The framework scales to a 2.45M-node production graph at 6,285 MiB of peak training memory; extended variants (long-range context, external text features, a CAN-bus application) are reported as extensions and do not compete with the deployed method, and the 41.8%-budget M4 point, scored on a coarsened super-node graph with its own split, is reported separately rather than compared with the original-node baselines. DPR thus turns aggressive node pruning from an accuracy tax into a safe training accelerator for VRAM-limited all-node inference.\",\"already_present\":false,\"authors\":[\"Si-Qi Gu\",\"Gao-Zhen Ma\",\"Li-Heng Huang\",\"Wei He\",\"Jia-Wen Luo\",\"Jia-Ming Wu\",\"Li-Xin Zheng\"],\"candidate_id\":\"candidate-8c58e95cd9b73e3090fb2012\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"arxiv\":\"2610.34140\",\"semantic_scholar\":\"ba09c70d9b163fe44aca7bda3c11e945b7c3a9ce\"},\"identity_key\":\"arxiv:2610.34140\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/ba09c70d9b163fe44aca7bda3c11e945b7c3a9ce\",\"title\":\"Decoupled Prune-and-Reconstruct: Training on a Compact Core with Double-Layer Sparsification\",\"venue\":null,\"year\":2026},{\"abstract\":\"Correlated corroboration can make knowledge-based systems overconfident when dependent reports are treated as independent evidence. This paper presents an influence-aware evidence aggregation architecture that makes source dependence explicit and constrains confidence growth under partial dependence knowledge. The architecture combines an influence-indexed evidence graph (EIIG), a generalised estimate of effective independent evidence (EIE) with graded dependence weights, and a bounded confidence-propagation rule (CONFPROP). We evaluate the architecture against three baselines—naive independence aggregation, a Bayesian independence update, and a source-discounted comparator—across four controlled synthetic scenarios and a semi-realistic external case study using 500 claims from the FEVER fact-verification corpus. Under the strongest synthetic dependence regimes, CONFPROP consistently reduces confidence inflation relative to naive aggregation: inflation ratios are 4.00 in a common-parent echo-chamber scenario and 10.00 in a fully duplicated cascade, while no suppression occurs when evidence is genuinely independent. A factorial sensitivity analysis across 648 parameter combinations per stress-test scenario confirms that the discount factor γ decreases with the diversification threshold K and increases with the unknown-status weight α. The architecture provides deterministic, auditable confidence updates with structured monitoring signals, and is designed for modular integration into existing knowledge-based systems operating under uncertain source dependence.\",\"already_present\":false,\"authors\":[\"I. Konstantinidis\"],\"candidate_id\":\"candidate-8191f77351776ef141211e23\",\"catalog_paper_id\":null,\"citation_count\":0,\"external_ids\":{\"doi\":\"10.1007/s44163-026-02245-5\",\"semantic_scholar\":\"25f8d420d9e232ab3bf4ca5e554594adfaa8f243\"},\"identity_key\":\"doi:10.1007/s44163-026-02245-5\",\"keywords\":[],\"node_id\":null,\"provenance\":{\"operation\":\"search\",\"provider\":\"semantic_scholar\"},\"relation\":\"citation\",\"relation_source_node_id\":\"21041260a5394f42891b020128fa60fa\",\"removed\":false,\"source_url\":\"https://www.semanticscholar.org/paper/25f8d420d9e232ab3bf4ca5e554594adfaa8f243\",\"title\":\"Echo chamber dynamics and influence aware evidence aggregation for epistemic integrity in knowledge based systems\",\"venue\":\"Discover Artificial Intelligence\",\"year\":2026}],\"diff\":[],\"warnings\":[],\"preview_revision\":2,\"pagination\":{\"failed_cursor\":null,\"has_more\":true,\"last_error\":null,\"limit_reached\":false,\"loaded_count\":50,\"max_candidates\":500,\"next_cursor\":50,\"page_job_id\":\"962bb5b0fa174ac5802d6c5109f3bf40\",\"page_size\":50,\"seed_identity_key\":\"doi:10.17863/cam.48429\",\"state\":\"ready\",\"total\":null,\"version\":1},\"created_at\":\"2026-10-28T13:47:01.609731+00:00\",\"updated_at\":\"2026-10-28T13:47:04.794527+00:00\"},\"job\":{\"job_id\":\"962bb5b0fa174ac5802d6c5109f3bf40\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"operation\":\"preview_page\",\"status\":\"completed\",\"step\":\"finished\",\"cursor\":{\"cursor_history\":[0],\"last_completed_cursor\":0,\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"preview_revision\":1,\"target_cursor\":0},\"counts\":{\"candidate_count\":50,\"provider_request_count\":1},\"failed_units\":[],\"created_at\":\"2026-10-28T13:47:01.609731+00:00\",\"updated_at\":\"2026-10-28T13:47:04.796948+00:00\"}}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "preview": {
+        "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "kind": "citations",
+        "status": "completed",
+        "base_revision": 188,
+        "candidates": [
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Huai-Wei Lo",
+              "Sheng-Wei Lin",
+              "Muhammet Deveci"
+            ],
+            "candidate_id": "candidate-afbd5a44035320618a2f3871",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.asoc.2026.116546",
+              "semantic_scholar": "d3e56fda9b56ee297968b8f2f89958b7cede5cbe"
+            },
+            "identity_key": "doi:10.1016/j.asoc.2026.116546",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/d3e56fda9b56ee297968b8f2f89958b7cede5cbe",
+            "title": "Spatial-temporal fusion transformer for cultural participation prediction: Unveiling inter-city spillovers and network effects",
+            "venue": "Applied Soft Computing",
+            "year": 2027
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "V. Sreelekshmi",
+              "S. Renjith"
+            ],
+            "candidate_id": "candidate-a46d76ea1979e92b05d70df8",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.asej.2026.104494",
+              "semantic_scholar": "15ed59474a0c343efbc79fc56633467ded14765a"
+            },
+            "identity_key": "doi:10.1016/j.asej.2026.104494",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/15ed59474a0c343efbc79fc56633467ded14765a",
+            "title": "HM-GraphSwin: Hierarchical multi-magnification graph-augmented swin transformer with stain-contrastive pretraining for breast cancer grade classification",
+            "venue": "Ain Shams Engineering Journal",
+            "year": 2027
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Jih-Jeng Huang"
+            ],
+            "candidate_id": "candidate-d763645728333c3a614f8ae8",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.neucom.2026.135436",
+              "semantic_scholar": "4539f161bfaa2506324880fa67b9ede5aa59e52d"
+            },
+            "identity_key": "doi:10.1016/j.neucom.2026.135436",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/4539f161bfaa2506324880fa67b9ede5aa59e52d",
+            "title": "Latent bounded-order interaction attention",
+            "venue": "Neurocomputing",
+            "year": 2027
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Zhe Zhang",
+              "Hong-Yi Lin",
+              "Jing-Chun Zhang",
+              "Bang-Yang Wei",
+              "Bo-Wen Li",
+              "Yang Liu",
+              "Qing Yu"
+            ],
+            "candidate_id": "candidate-8953084ed2750e5ce60b8314",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.apenergy.2026.129094",
+              "semantic_scholar": "af36b7b2dbfdd4313a969bc0287f9f7092d056bf"
+            },
+            "identity_key": "doi:10.1016/j.apenergy.2026.129094",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/af36b7b2dbfdd4313a969bc0287f9f7092d056bf",
+            "title": "Spatio-temporal large language model for zero-shot EV charging demand prediction: Beneficial to station energy management under data scarcity",
+            "venue": "Applied Energy",
+            "year": 2027
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Yu-Chen Zhou",
+              "Jian-Yi Zhang",
+              "Yajie Qi",
+              "Yanan Cao",
+              "Rong Qian"
+            ],
+            "candidate_id": "candidate-226cf686d68953165fdb4cb1",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.patcog.2026.114461",
+              "semantic_scholar": "2f077af80e739fbb697367c1b4dc6a21c580181a"
+            },
+            "identity_key": "doi:10.1016/j.patcog.2026.114461",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/2f077af80e739fbb697367c1b4dc6a21c580181a",
+            "title": "Interactive bi-space embedding based temporal graph learning framework",
+            "venue": "Pattern Recognition",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Duo-Wen Chen",
+              "Bo Wang",
+              "Yan-Wei Wang",
+              "Yan Shi",
+              "H. Men"
+            ],
+            "candidate_id": "candidate-f2fabca658a574fe4e9da04a",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.sna.2026.118432",
+              "semantic_scholar": "65d1791559ebb6f13efa78e6466c9c0791bb9d7f"
+            },
+            "identity_key": "doi:10.1016/j.sna.2026.118432",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/65d1791559ebb6f13efa78e6466c9c0791bb9d7f",
+            "title": "Graph attention-based odor source proximity estimation with angle–concentration fusion for a rotating sensor array",
+            "venue": "Sensors and Actuators A-Physical",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Si-Qiang Zhao",
+              "Feng-Xiang Zhang"
+            ],
+            "candidate_id": "candidate-7b86e61caac63be5222f920d",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.egyai.2026.100901",
+              "semantic_scholar": "a0a5fd11c831ad0bdd6011d4f9ed67706054e8c0"
+            },
+            "identity_key": "doi:10.1016/j.egyai.2026.100901",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/a0a5fd11c831ad0bdd6011d4f9ed67706054e8c0",
+            "title": "Conformalized graph neural networks for distribution system state estimation with finite-sample-valid uncertainty quantification",
+            "venue": "Energy and AI",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "R. Hou",
+              "Yi-Wen Zhou",
+              "Kai-Di Wu",
+              "Carla Bittencourt",
+              "M. Debliquy",
+              "Han-Lin Liao",
+              "Chao Zhang"
+            ],
+            "candidate_id": "candidate-824ec027f0a67f63a3d94d66",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.sna.2026.118552",
+              "semantic_scholar": "fdb50e082d10493e157b28a51df32e5dfcb49b3b"
+            },
+            "identity_key": "doi:10.1016/j.sna.2026.118552",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/fdb50e082d10493e157b28a51df32e5dfcb49b3b",
+            "title": "Artificial intelligence for signal processing in semiconductor gas sensors: Advances, comparisons, and future perspectives",
+            "venue": "Sensors and Actuators A-Physical",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Xiao-Juan Zhang",
+              "Xin-Yue Mo",
+              "Huan Li"
+            ],
+            "candidate_id": "candidate-4ed956faaf031de06df67c8c",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.array.2026.101289",
+              "semantic_scholar": "1c9534b59114ce8fbb3908554f2922078bb37fa7"
+            },
+            "identity_key": "doi:10.1016/j.array.2026.101289",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/1c9534b59114ce8fbb3908554f2922078bb37fa7",
+            "title": "ST-RadGAN: A novel spatiotemporal generative adversarial network for high-resolution surface solar radiation downscaling",
+            "venue": "Array",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Xi-Wei Mi",
+              "Yun-Xiang Zhang",
+              "Qing-Qi Xiang",
+              "Chao Chen",
+              "Mei Han"
+            ],
+            "candidate_id": "candidate-85bcad29dffcc4958f8bfccb",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.engstruct.2026.123779",
+              "semantic_scholar": "a745d1e4c3ec2e5e9f6ccb21bd0ec6dda8582a03"
+            },
+            "identity_key": "doi:10.1016/j.engstruct.2026.123779",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/a745d1e4c3ec2e5e9f6ccb21bd0ec6dda8582a03",
+            "title": "Short-term wind speed prediction along railways based on an uncertainty-aware spatiotemporal graph attention model",
+            "venue": "Engineering structures",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Mathijs Pellemans"
+            ],
+            "candidate_id": "candidate-606ce0e816c535447b6ec4f7",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.martra.2026.100161",
+              "semantic_scholar": "0e5faeec2d48cb1f8861851dd2edead7ff5ebbb9"
+            },
+            "identity_key": "doi:10.1016/j.martra.2026.100161",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/0e5faeec2d48cb1f8861851dd2edead7ff5ebbb9",
+            "title": "Unsupervised graph representation learning from AIS maritime traffic",
+            "venue": "Maritime Transport Research",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Shu-Xi Chen",
+              "Hai-Lei Yuan",
+              "Hai-Fei Zhang",
+              "Yuan-Zhi Zhang"
+            ],
+            "candidate_id": "candidate-c950f00e1c890e39a48fc28b",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.array.2026.101368",
+              "semantic_scholar": "cd0e1ff875506dfe4f9c03615bf204b7c4492185"
+            },
+            "identity_key": "doi:10.1016/j.array.2026.101368",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/cd0e1ff875506dfe4f9c03615bf204b7c4492185",
+            "title": "AST-GAT-BiLSTM: A structure-aware deep learning framework for smart contract vulnerability detection",
+            "venue": "Array",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Yundong Sun",
+              "Dongjie Zhu",
+              "Yansong Wang",
+              "Zhaoshuo Tian",
+              "Ning Cao",
+              "Gregory O'Hared"
+            ],
+            "candidate_id": "candidate-4fd93dd11f544bf958f7292d",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.ins.2026.123828",
+              "semantic_scholar": "dc717698171209dd4020bcef37fb8e1455c03b7a"
+            },
+            "identity_key": "doi:10.1016/j.ins.2026.123828",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/dc717698171209dd4020bcef37fb8e1455c03b7a",
+            "title": "SpikeGraphormer: A high-performance graph transformer with spiking graph attention",
+            "venue": "Information Sciences",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Aimin Yang",
+              "Xuyan Zhang",
+              "Liyan Zhang",
+              "Xue-Bo Liu",
+              "Yanbing Liang"
+            ],
+            "candidate_id": "candidate-aef317e1bd6f00d52c420b77",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.neucom.2026.134594",
+              "semantic_scholar": "2e8415346aa6675a2e04de3b87201e89fb856193"
+            },
+            "identity_key": "doi:10.1016/j.neucom.2026.134594",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/2e8415346aa6675a2e04de3b87201e89fb856193",
+            "title": "Certifying sparse node-feature robustness of graph neural networks via double-sampling randomized smoothing",
+            "venue": "Neurocomputing",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Haozhe Peng",
+              "Aiping Qu",
+              "Yatao Zeng"
+            ],
+            "candidate_id": "candidate-ed4c72edd86025831d5b8ff3",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.bspc.2026.111159",
+              "semantic_scholar": "7a60b1b0f64746f06d8fffd2c33029da10243385"
+            },
+            "identity_key": "doi:10.1016/j.bspc.2026.111159",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/7a60b1b0f64746f06d8fffd2c33029da10243385",
+            "title": "SHHN: A Sequential Hierarchy Hybrid Network for multimodal cancer survival prediction",
+            "venue": "Biomedical Signal Processing and Control",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "H. Leng",
+              "Ying Zhou",
+              "Yu-Qing Gao"
+            ],
+            "candidate_id": "candidate-fef900fa5ad8deb9eff8ad32",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.autcon.2026.107189",
+              "semantic_scholar": "a0e5754f8058886eecea1eb26fd6ee9314764606"
+            },
+            "identity_key": "doi:10.1016/j.autcon.2026.107189",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/a0e5754f8058886eecea1eb26fd6ee9314764606",
+            "title": "Room-level conditional graph neural networks for shear wall layout generation in high-rise buildings",
+            "venue": "Automation in Construction",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Da-Jiang Liu",
+              "Tao Yu",
+              "Hui-Ying Xu"
+            ],
+            "candidate_id": "candidate-70c131a1b88d76188ee3c418",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.enbuild.2026.118034",
+              "semantic_scholar": "c29f97f20fb8695b4fc31d3eb0694734816c162a"
+            },
+            "identity_key": "doi:10.1016/j.enbuild.2026.118034",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/c29f97f20fb8695b4fc31d3eb0694734816c162a",
+            "title": "GAT-LSTM hybrid model for dynamic carbon footprint accounting in prefabricated steel structure buildings: a spatio-temporal integration perspective",
+            "venue": "Energy and Buildings",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Ke-Qiang Dong",
+              "Luo-Yu Zhang"
+            ],
+            "candidate_id": "candidate-8560b12b20f5886dbc7e952b",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.cnsns.2026.110710",
+              "semantic_scholar": "a5392e1f3d265bde1237704416ec227e8b7ca63d"
+            },
+            "identity_key": "doi:10.1016/j.cnsns.2026.110710",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/a5392e1f3d265bde1237704416ec227e8b7ca63d",
+            "title": "Asynchronous 3D bias-aware graph convolutional network and its application",
+            "venue": "Communications in nonlinear science & numerical simulation",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Md. Robaitul Islam Bhuiyan",
+              "Nur Mohammad Fahad",
+              "A. Siddique",
+              "Md. Rafiqul Islam",
+              "Yakub Sebastian",
+              "Asif Karim",
+              "Kheng Cher Yeo",
+              "Sami Azam"
+            ],
+            "candidate_id": "candidate-acfeb3c4c80f401be0951136",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.compeleceng.2026.111474",
+              "semantic_scholar": "761c1aeb21a613f9d8f4638947af1096460fcf51"
+            },
+            "identity_key": "doi:10.1016/j.compeleceng.2026.111474",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/761c1aeb21a613f9d8f4638947af1096460fcf51",
+            "title": "AM2-STGNN: An attention guided spatiotemporal GraphSAGE framework for photovoltaic power forecasting from cloud images",
+            "venue": "Computers & electrical engineering",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Yin-Bin Gao",
+              "Hai-Dong Shao",
+              "Jun Ding",
+              "Jia-Rui Liu",
+              "Ming-Ze Xu",
+              "Jia-Le Zhang",
+              "Dao-Lin Xu"
+            ],
+            "candidate_id": "candidate-e854edbc5bf5b305cf9d4c0c",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.engappai.2026.116273",
+              "semantic_scholar": "9f02662c17981559a2dafdc72c484ab7abfdfaa4"
+            },
+            "identity_key": "doi:10.1016/j.engappai.2026.116273",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/9f02662c17981559a2dafdc72c484ab7abfdfaa4",
+            "title": "Cross-component causal coupling modeling and multi-order spectral representation for interpretable mechanical fault diagnosis",
+            "venue": "Engineering applications of artificial intelligence",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Hong-Yuan Dong",
+              "Lang-Wen Zhang",
+              "Jin-Wei Zhou",
+              "Li-Li Tang",
+              "Yan Chen",
+              "Zhen-Jun Ge",
+              "Yi-Qi Liu"
+            ],
+            "candidate_id": "candidate-2f903452ed3f4ed1547bc81a",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.jwpe.2026.110944",
+              "semantic_scholar": "18456ba394aa6d5478b1185c1962f439da2363ea"
+            },
+            "identity_key": "doi:10.1016/j.jwpe.2026.110944",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/18456ba394aa6d5478b1185c1962f439da2363ea",
+            "title": "MSPGNN: A multi-scale patch-aware spatio-temporal synergistic soft sensor framework with applications for wastewater treatment",
+            "venue": "Journal of Water Process Engineering",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Cui-Na Jiao",
+              "Ying-Lian Gao",
+              "Feng Li",
+              "Xin Gao",
+              "Chun-Hou Zheng",
+              "Yan-Li Wang",
+              "Jin-Xing Liu"
+            ],
+            "candidate_id": "candidate-444d5c6843700cd0428eb0e2",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.engappai.2026.116150",
+              "semantic_scholar": "975374749a8779bdc8b17c46093a36589a14f16b"
+            },
+            "identity_key": "doi:10.1016/j.engappai.2026.116150",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/975374749a8779bdc8b17c46093a36589a14f16b",
+            "title": "Deep explainable multimodal graph pooling network with knowledge learning for Alzheimer's disease diagnosis",
+            "venue": "Engineering applications of artificial intelligence",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Kang-Zheng Huang",
+              "Yen-Hsiang Chang",
+              "Wei-Bo Li",
+              "Jing-Jing Ye",
+              "Shuai Cao",
+              "Ren-Tai Li"
+            ],
+            "candidate_id": "candidate-1c6f5d64483e495e191e7f06",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.cnsns.2026.110812",
+              "semantic_scholar": "35fd87d91e0ba4c2e76faccf470956e5bff26789"
+            },
+            "identity_key": "doi:10.1016/j.cnsns.2026.110812",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/35fd87d91e0ba4c2e76faccf470956e5bff26789",
+            "title": "Node importance evaluation in complex networks based on graph neural networks: A systematic review",
+            "venue": "Communications in nonlinear science & numerical simulation",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Ru Huang",
+              "Ming-Jie Yang",
+              "Zheng-Bing Zhou",
+              "Zi-Jian Chen",
+              "Yuan-Dong Zhuang",
+              "Jian-Hua He",
+              "Xiao-Li Chu"
+            ],
+            "candidate_id": "candidate-3014ef682fc2c4b49d3d7cc4",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.physa.2026.132081",
+              "semantic_scholar": "17268b53282c6f54d85f17d71af6e09a522b0519"
+            },
+            "identity_key": "doi:10.1016/j.physa.2026.132081",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/17268b53282c6f54d85f17d71af6e09a522b0519",
+            "title": "HSAGNN: A hybrid structure and attribute graph neural network with attention fusion for link prediction",
+            "venue": "Physica A: Statistical Mechanics and its Applications",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "V. Patel",
+              "Vedic Yadav",
+              "Saurav Roy",
+              "Abhijeet Patel",
+              "Y. Patel",
+              "Ananya Pal"
+            ],
+            "candidate_id": "candidate-4b06f3c5a521c7a49ee063a5",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.jocs.2026.103027",
+              "semantic_scholar": "788e4cf799952b10ed7f8b299188c4c385a92277"
+            },
+            "identity_key": "doi:10.1016/j.jocs.2026.103027",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/788e4cf799952b10ed7f8b299188c4c385a92277",
+            "title": "Graph Neural Networks in cancer genomics: Mapping mathematical operations to biological insights",
+            "venue": "Journal of Computer Science",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Ye-Wei Zhang",
+              "Jin-Feng Ye",
+              "Hui-Zhen Qiu",
+              "Mu-Yan Jin",
+              "Ya-Qi Sun",
+              "Peng-Peng Ren",
+              "Zhi-Gang Ji"
+            ],
+            "candidate_id": "candidate-b1b3eba9dc3ab53ce06254ab",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.microrel.2026.116319",
+              "semantic_scholar": "f6f56e09726b066902b84ef17c2cbbe540683a77"
+            },
+            "identity_key": "doi:10.1016/j.microrel.2026.116319",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/f6f56e09726b066902b84ef17c2cbbe540683a77",
+            "title": "ATAN: A hybrid graph neural network framework for accelerating aging-aware timing analysis",
+            "venue": "Microelectronics and reliability",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Chao Zhang",
+              "Yu Zhou",
+              "Jia-Xu Li",
+              "Sheng-Nan Chu",
+              "Qing Qin",
+              "Luo-Feng Huang"
+            ],
+            "candidate_id": "candidate-307d8734f7a044b6fd8824e4",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.oceaneng.2026.128578",
+              "semantic_scholar": "a84e1e9ad851186cfb3133f99e25c69665b3bb96"
+            },
+            "identity_key": "doi:10.1016/j.oceaneng.2026.128578",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/a84e1e9ad851186cfb3133f99e25c69665b3bb96",
+            "title": "Physics-guided graph attention surrogate modeling for wave-structure interactions of large-scale floating photovoltaic arrays",
+            "venue": "Ocean Engineering",
+            "year": 2026
+          },
+          {
+            "abstract": "With the development of the integration of aerial, terrestrial, and satellite networks, Uncrewed Aerial Vehicles (UAVs) serve as a new type of aerial communication platform, playing a key role in Internet of Things (IoT) scenarios. However, multi-hop UAV networks still suffer from energy limits, bandwidth scarcity, dynamic topology, and unstable links. To address these challenges, this paper proposes an edge-cloud communication protocol framework (EC-LLM-MARL) based on Large Language Models (LLMs) and MARL. In this framework, the cloud side constructs a chain-of-thought to guide LLM reasoning, and distilled expert strategies are transferred to UAVs through knowledge distillation and fine-tuning, improving training efficiency and reducing communication overhead. Additionally, a Graph Attention Network (GAT) is employed to extract deep features of observation targets, while Multi-Agent Deep Deterministic Policy Gradient (MADDPG) is combined with a self-attention mechanism at the UAV end to enhance credit assignment and convergence efficiency in dynamic environments. Furthermore, the framework designs a differentiated reward mechanism for task load balancing among multiple UAVs, improving the scalability of the algorithm in large-scale network scenarios. Extensive simulations show that EC-LLM-MARL significantly accelerates training convergence and substantially outperforms existing methods, achieving a 77% increase in throughput, a 13% rise in coverage, and the highest remaining energy levels.",
+            "already_present": false,
+            "authors": [
+              "Yu-Hao Wu",
+              "Xiu-Lin Qiu",
+              "Ping Wang",
+              "Hui Ye",
+              "Dong-Hui Zhang",
+              "Jian Cui"
+            ],
+            "candidate_id": "candidate-b5d25a2de27a083880329cdd",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1109/tmc.2026.3713358",
+              "semantic_scholar": "841483b3f6de18cc711d3f4187313f5673bfb401"
+            },
+            "identity_key": "doi:10.1109/tmc.2026.3713358",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/841483b3f6de18cc711d3f4187313f5673bfb401",
+            "title": "LLM-Enhanced MARL for Multi-Hop UAV Networking: An Edge-Cloud Protocol Aware Framework",
+            "venue": "IEEE Transactions on Mobile Computing",
+            "year": 2026
+          },
+          {
+            "abstract": "Person Re-IDentification (ReID) is vital for public-safety applications, yet camera-based ReID suffers in low-light environments and poses serious visual privacy risks. In contrast, millimeter-wave (mmWave) radar sensing has gained significant attention in ReID due to its ability to perceive human movement patterns by emitting electromagnetic waves, making ReID unaffected by lighting conditions and capable of privacy preserving. However, current radar-based ReID methods are primarily supervised, and radar data is challenging for human eyes to interpret, making annotation extremely difficult and costly. To this end, we propose an unsupervised radar ReID method based on multi-level cross-view mutual signal contrastive learning. First, to drive unsupervised contrastive learning that depends on data augmentations, we utilize signal processing techniques to transform raw radar signals into frequency spectrum and point clouds, and these forms constitute different and complementary augmented versions of the same sample. Second, we construct a multi-level contrastive model between frequency spectrum signals and point clouds through global contrast, cross-view prediction contrast, clustering contrast, and cross-view cluster center contrast, effectively aligning different views and enhancing unsupervised robustness. Additionally, we employ a well-designed local and global graph attention network to learn more discriminative radar point cloud features. Extensive experimental results illustrate that our approach significantly outperforms existing radar-based unsupervised methods.",
+            "already_present": false,
+            "authors": [
+              "Qi-Hua Feng",
+              "Chun-Hui Duan",
+              "Li-Tian Zhang",
+              "Zhi-Quan Liu",
+              "Fei-Ran Huang",
+              "Jian Weng",
+              "Philip S. Yu"
+            ],
+            "candidate_id": "candidate-33841855e806bb3b4d08aa79",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1109/tmc.2026.3713047",
+              "semantic_scholar": "5e75b4ff6088ef9a6b7dd634fd11102bbaa42f8a"
+            },
+            "identity_key": "doi:10.1109/tmc.2026.3713047",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/5e75b4ff6088ef9a6b7dd634fd11102bbaa42f8a",
+            "title": "mmWave Radar-Based Unsupervised Person ReID via Multi-Level Mutual Signal Contrastive Learning",
+            "venue": "IEEE Transactions on Mobile Computing",
+            "year": 2026
+          },
+          {
+            "abstract": "With the rapid advancement of mobile technology and ubiquitous computing, spatial crowdsourcing has emerged as a promising computing paradigm. The growing complexity of spatial tasks has increasingly driven the demand for coordination among interdependent tasks and the cooperative participation of mobile workers, which remains relatively unexplored among existing studies. To fill this gap, this paper introduces Dependency-Cooperative Spatial Crowdsourcing (DCSC), a novel problem that explicitly models task dependencies and enables systematic worker cooperation to address complex spatial scenarios. To solve DCSC, we propose a two-stage solution: Dependency-aware Recommendation and Cooperation-aware Matching. In the first stage, we develop a multi-agent reinforcement learning approach enhanced with meta-gradient techniques to recommend suitable subtasks while considering dependency constraints. In the second stage, we propose a genetic algorithm-enhanced game approach to achieve optimal cooperative assignment, guided by a multi-dimensional matching utility function. To ensure consistency and optimization across both stages, we employ meta-gradients from the policy network to guide the optimization of the utility function. Additionally, we utilize graph neural network-based policy clustering to address task heterogeneity, enabling each cluster to learn specialized parameters and enhance reinforcement learning performance. Extensive experiments validate the effectiveness of our approach.",
+            "already_present": false,
+            "authors": [
+              "Lin-Shen Luan",
+              "Wei Chen",
+              "Ran Feng",
+              "Qingshun Wu",
+              "Ya-Fei Li",
+              "Ming-Liang Xu"
+            ],
+            "candidate_id": "candidate-a53cc8d2c2b39e541f639441",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1109/tmc.2026.3717142",
+              "semantic_scholar": "9949f6d47aea16a8438fecfc5e80c7556ec77502"
+            },
+            "identity_key": "doi:10.1109/tmc.2026.3717142",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/9949f6d47aea16a8438fecfc5e80c7556ec77502",
+            "title": "Efficient Task Assignment in Dependency-Cooperative Spatial Crowdsourcing",
+            "venue": "IEEE Transactions on Mobile Computing",
+            "year": 2026
+          },
+          {
+            "abstract": "Addressing distribution shifts between training and testing sets is paramount for Graph Neural Networks (GNNs). Graph rationale learning has emerged as an effective paradigm to tackle this challenge by extracting invariant subgraphs as rationales for prediction. However, existing methods typically rely on the subgraphs produced by a rationale extractor without explicitly assessing their reliability, particularly during early training stages when the extractor is prone to generating inaccurate or biased rationales. Learning with such unreliable rationales can mislead the classifier and further deteriorate rationale quality, ultimately undermining generalization performance. In this paper, we rethink the objective of graph rationale learning and propose Cooperative Rationale Selection (CoRas), a novel architecture designed to enhance the reliability and robustness of rationale representations. Specifically, CoRas employs a dual-classifier framework to cooperatively select reliable rationales. Motivated by the small-loss criterion, CoRas prioritizes rationales with low prediction loss, while simultaneously selecting rationales with high prediction divergence to mitigate selection bias caused by relying solely on self-predictions during training. This allows CoRas to effectively select reliable rationales for downstream tasks, subsequently enhancing graph rationale learning. Experimental results on both real-world benchmarks and synthetic datasets demonstrate the effectiveness of CoRas in extracting reliable rationale subgraphs for combating out-of-distribution graph settings in graph classification.",
+            "already_present": false,
+            "authors": [
+              "Fang-Zhou Yao",
+              "Li-Nan Yue",
+              "Weibo Gao",
+              "Qi Liu",
+              "En-Hong Chen"
+            ],
+            "candidate_id": "candidate-ee48ebb4b7940bba08e6d23b",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1109/tkde.2026.3722666",
+              "semantic_scholar": "0283e7083295566278b700a767a70ce6bce0c142"
+            },
+            "identity_key": "doi:10.1109/tkde.2026.3722666",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/0283e7083295566278b700a767a70ce6bce0c142",
+            "title": "CoRas: Cooperative Rationale Selection for Graph Rationale Learning in Out-of-Distribution Graphs",
+            "venue": "IEEE Transactions on Knowledge and Data Engineering",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Kun Han",
+              "Xin Chen"
+            ],
+            "candidate_id": "candidate-60b46e65ace8cd21e7f4cf23",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.oceaneng.2026.128826",
+              "semantic_scholar": "04a2a9fbd3da6ab7d37b117d3eea57ad6efa3244"
+            },
+            "identity_key": "doi:10.1016/j.oceaneng.2026.128826",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/04a2a9fbd3da6ab7d37b117d3eea57ad6efa3244",
+            "title": "M2DSTN: Multi-location multi-modal dual-branch spatiotemporal network for short-term power prediction of offshore wind farm clusters",
+            "venue": "Ocean Engineering",
+            "year": 2026
+          },
+          {
+            "abstract": "Modern power grids are increasingly exposed to diverse cyber-physical attacks that originate in the cyber layer and disrupt physical operation. A critical defense challenge is to rapidly determine whether an attack has occurred and identify its type. To address this challenge, this paper aims to develop a generalized detection scheme capable of identifying multiple types of attacks, particularly unknown ones. It is first observed that, under normal operation, cyber-layer data and physical-layer states are consistent across layers and evolve smoothly over time, while attacks disrupt these consistencies. Building on this insight, a self-supervised Cross-Layer Cross-Temporal Contrastive Learning (CL-CTCL) framework is proposed, which employs a Graph Attention Network-Gated Recurrent Unit (GAT-GRU) encoder to capture spatial dependencies and temporal dynamics. Two complementary contrastive objectives are introduced: Variance-Invariance-Covariance Regularization (VICReg) for cross-layer alignment and Information Noise-Contrastive Estimation with Momentum Contrast (InfoNCE-MoCo) for temporal consistency. Residual deviations from these consistencies provide reliable attack fingerprints, enabling detection and classification of both known and unknown attacks. Experiments on an IEEE 118-bus cyber-physical testbed show that the proposed CL-CTCL achieves high accuracy on known attacks and generalizes well to unknown ones, outperforming baseline methods across standard metrics.",
+            "already_present": false,
+            "authors": [
+              "Lu-Yu Wang",
+              "Kai-Feng Zhang",
+              "Biplab Sikdar",
+              "Ying Wang",
+              "Wen-Jun Bi",
+              "Jia Ning"
+            ],
+            "candidate_id": "candidate-47ceff0bfa0fa667f58471e8",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1109/tsg.2026.3698557",
+              "semantic_scholar": "f8615ca4d3b9e0e394001ca308f4ab02937ae459"
+            },
+            "identity_key": "doi:10.1109/tsg.2026.3698557",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/f8615ca4d3b9e0e394001ca308f4ab02937ae459",
+            "title": "Detection of Unknown Attack in Cyber–Physical Power Systems via Self-Supervised Cross-Layer and Cross-Temporal Consistency",
+            "venue": "IEEE Transactions on Smart Grid",
+            "year": 2026
+          },
+          {
+            "abstract": "Deep learning (DL)-based methods have illustrated excellent performance in distribution network fault diagnosis. However, the “opaque” nature of DL models hinders grid operators from understanding the decision-making processes of these models, affecting model trustworthiness and robustness in diversified diagnosis applications. This paper proposes a hybrid attention-augmented self-interpretable channel-grouped graph convolutional network (HASIG) for diverse short-circuit fault diagnosis of distribution networks, including binary fault detection, faulted line identification, and fault type classification. A channel-grouped graph convolutional network is proposed to learn features from three-phase voltage and current measurements. We present a hybrid attention that combines global edge attention and channel-grouped attention, which can augment the critical features with faithful and robust interpretations during model training, enabling users to gain insights into the predictive behavior inside the model. These three short-circuit fault diagnosis tasks are collaboratively trained under a multi-task learning architecture with interpretable loss constraints. Experiments were conducted on the IEEE 33-bus, IEEE 33-bus with distributed energy resources, and IEEE 123-bus systems with randomized fault parameters. The results show that HASIG achieves competitive diagnostic performance and good interpretability, and demonstrates strong robustness under noisy and missing-data conditions.",
+            "already_present": false,
+            "authors": [
+              "Ying-Long Ma",
+              "Wen-Zheng Ma",
+              "Yan-Dan Wang",
+              "Ting-Dong Wang",
+              "Wen-Guang Ma"
+            ],
+            "candidate_id": "candidate-cf96957f2537e9ce68766b2c",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1109/tsg.2026.3718879",
+              "semantic_scholar": "b9597a47fc7fc3e4f7b80a265c7e5df0f8a5f25b"
+            },
+            "identity_key": "doi:10.1109/tsg.2026.3718879",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/b9597a47fc7fc3e4f7b80a265c7e5df0f8a5f25b",
+            "title": "Hybrid Attention-Augmented Self-Interpretable Channel-Grouped Graph Convolutional Network for Robust Distribution Network Fault Diagnosis",
+            "venue": "IEEE Transactions on Smart Grid",
+            "year": 2026
+          },
+          {
+            "abstract": "This work addresses a fundamental challenge in applying deep learning to network topology-dependent power system applications: developing neural network models that transfer across significant system changes, including networks with entirely different topologies and dimensionalities, without requiring training data from unseen reconfigurations. We focus on situational awareness tasks where predictions inherently depend on network-wide spatial relationships through electrical connectivity. Despite extensive research, most ML-based approaches remain system-specific, limiting real-world deployment. This limitation stems from a dual barrier. First, topology changes shift feature distributions and alter input dimensions due to power flow physics. Second, reconfigurations redefine output semantics and dimensionality, requiring models to handle configuration-specific outputs while maintaining transferable feature extraction. Our core insight is treating topology as a learnable dimension through training on diverse reconfigurations, enabling the model to learn universal power flow physics rather than memorizing fixed networks. We achieve this through three synergistic mechanisms: scalar-weight graph convolutions with physics-aware operators handle variable input dimensions and distribution shifts, adaptive pooling maps topology-specific features to unified latent representations, and parallel transformer generates configuration-specific outputs using positional encoding. Our Universal Graph Convolutional Network (UGCN) achieves transferability to any reconfiguration or variation of existing power systems without any prior knowledge of new grid topologies or retraining during implementation. Experimental results on state forecasting and false data injection detection demonstrate that UGCN significantly outperforms state-of-the-art methods in cross-system zero-shot transferability across both transmission and distribution networks.",
+            "already_present": false,
+            "authors": [
+              "Tong Wu",
+              "Anna Scaglione",
+              "Sandy Miguel",
+              "Daniel B. Arnold"
+            ],
+            "candidate_id": "candidate-5c62d8572e14ebeb554ca2eb",
+            "catalog_paper_id": null,
+            "citation_count": 1,
+            "external_ids": {
+              "doi": "10.1109/tsg.2026.3693251",
+              "semantic_scholar": "afdb962a310b314b19686e2dd0fd27af179a954c"
+            },
+            "identity_key": "doi:10.1109/tsg.2026.3693251",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/afdb962a310b314b19686e2dd0fd27af179a954c",
+            "title": "Universal Graph Convolutional Network: Zero-Shot Transfer Across Power Grid Topology Reconfigurations",
+            "venue": "IEEE Transactions on Smart Grid",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Amine Chraibi"
+            ],
+            "candidate_id": "candidate-2d6debf97f9267d5c42b229c",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1016/j.swevo.2026.102565",
+              "semantic_scholar": "51363adcf21e9e2f880dc5dceea546065a9260c3"
+            },
+            "identity_key": "doi:10.1016/j.swevo.2026.102565",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/51363adcf21e9e2f880dc5dceea546065a9260c3",
+            "title": "GANCS: GAT-enhanced PPO warm-starting of NSGA-III for energy- and SLA-aware cloud workflow scheduling",
+            "venue": "Swarm and Evolutionary Computation",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Outhman Abbassi",
+              "Hamid el Amri",
+              "N. Kharmoum",
+              "S. Ziti"
+            ],
+            "candidate_id": "candidate-822360386581a1664c8e757a",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1007/s13721-026-00896-z",
+              "semantic_scholar": "a024eabc0711b493e429087e195b5a354e7f55ab"
+            },
+            "identity_key": "doi:10.1007/s13721-026-00896-z",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/a024eabc0711b493e429087e195b5a354e7f55ab",
+            "title": "Integration of discriminative and generative approaches in the computational chemistry and drug discovery process",
+            "venue": "Network Modeling Analysis in Health Informatics and Bioinformatics",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "T. Rao",
+              "P. Pandey",
+              "A. Saxena"
+            ],
+            "candidate_id": "candidate-dfba814999671ce8b0c0beda",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1007/s41060-026-01299-z",
+              "semantic_scholar": "1d3a89a98ff41c1d6e1147e44dda25746c8a432d"
+            },
+            "identity_key": "doi:10.1007/s41060-026-01299-z",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/1d3a89a98ff41c1d6e1147e44dda25746c8a432d",
+            "title": "Fraud rings detection in weighted transaction networks with multiple attributes using Spark GraphFrames",
+            "venue": "International Journal of Data Science and Analysis",
+            "year": 2026
+          },
+          {
+            "abstract": "Graph-structured representations of text data have become foundational across machine learning, yet it remains unclear how to systematically construct a graph from a given dataset for a target task. Choices about which entities become nodes, which relationships become edges, and what text each node contains can substantially affect downstream performance. In practice, finding optimal constructions often requires expert knowledge or manual trial and error. We introduce TACO-Graph, a decision tree framework for learning which graph construction choices are most effective for a given dataset and task. Specifically, we focus on text-attributed graphs (TAGs) constructed from multi-attribute tabular data. TACO-Graph enumerates valid TAG representations, scores each using fast proxy evaluation on small representative subsets, and trains an interpretable decision tree on those scores. Across five datasets spanning citation networks, product reviews, and bibliographic relationships, our decision trees predict construction quality on separately drawn evaluation samples with mean Spearman $\\rho$ above $0.9$ for node classification and above $0.8$ for GraphRAG retrieval. Our trees systematically identify which constructions perform better across both GNN and GraphRAG tasks, and the full pipeline is released as an open-source library to support evaluation on new tasks and datasets at https://github.com/AmiriHayes/text_attributed_graphs. TACO-Graph provides a systematic and interpretable guide for determining how to convert tabular data to text-attributed graphs for downstream tasks.",
+            "already_present": false,
+            "authors": [
+              "Amiri Hayes",
+              "Kristina Wicke"
+            ],
+            "candidate_id": "candidate-39238cebf9b85ca3578221b4",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.36650",
+              "semantic_scholar": "46726e9afd535a15c38f366ede43d87a2a898ee9"
+            },
+            "identity_key": "arxiv:2610.36650",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/46726e9afd535a15c38f366ede43d87a2a898ee9",
+            "title": "TACO-Graph: Automated Construction of Text-Atributed Graphs",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Nischal Subedi",
+              "Danush Wijekularathna"
+            ],
+            "candidate_id": "candidate-89de6e1ce2529fe3489741a9",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1017/dap.2026.10105",
+              "semantic_scholar": "8217681f95511e3b476b2b9cf10649c0799eec88"
+            },
+            "identity_key": "doi:10.1017/dap.2026.10105",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/8217681f95511e3b476b2b9cf10649c0799eec88",
+            "title": "A graph neural network approach to physical distress screening in subsidized housing",
+            "venue": "Data & Policy",
+            "year": 2026
+          },
+          {
+            "abstract": null,
+            "already_present": false,
+            "authors": [
+              "Jia-Chen Ma",
+              "Long-Jiang Guo",
+              "Li-Chen Zhang"
+            ],
+            "candidate_id": "candidate-6eb8a91108f39eb928e33b1c",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1007/s11227-026-08941-4",
+              "semantic_scholar": "f0e36d43157a477fb9be1874d69ceedab7033207"
+            },
+            "identity_key": "doi:10.1007/s11227-026-08941-4",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/f0e36d43157a477fb9be1874d69ceedab7033207",
+            "title": "Pcdg: propagation characteristics-aware graph neural network with contrastive difficulty guidance for rumor detection",
+            "venue": "Journal of Supercomputing",
+            "year": 2026
+          },
+          {
+            "abstract": "The realm of high-performance computing has expanded to include machine learning tasks of many forms. Graph Neural Networks (GNNs) are becoming increasingly popular, with their applications expanding across diverse domains. As the scale of graph data continues to grow, including larger numbers of nodes, edges, and higher embedding dimensions, standardized libraries such as DGL and PyG have been developed to facilitate GNN computation. These libraries allow the computation to be described a a high level of abstraction, providing high productivity on the part of the developer. However, with the rapid increase in the number of processor cores and the evolution of multicore architectures, these libraries often show poor scalability and fail to execute GNN inference efficiently on the latest multicore systems, particularly those with upwards of a hundred cores. To address this limitation, we introduce FrontGI, a fast and scalable set of techniques that advances the frontier of GNN inference on large-scale graphs (over 100,000 vertices) by leveraging graph-property- and architecture-aware design. FrontGI employs different parallelization strategies optimized for diverse graph structures, maximizing the utilization of multi-level cache hierarchies in multicore systems. We evaluate a number of GNN models with FrontGI on a 128-core AMD EPYC system. Compared to state-of-the-art libraries, FrontGI achieves up to 3.35$\\times$, 3.20$\\times$, 2.89$\\times$ and 3.10$\\times$ speedups over DGL for GCN, GraphSAGE, GIN, and SGC models, respectively, and even greater improvements over PyG, across a range of large-scale, high-dimensional graph datasets with diverse structural properties.",
+            "already_present": false,
+            "authors": [
+              "Bing-Lin Ji",
+              "Chen-Feng Zhao",
+              "R. Chamberlain"
+            ],
+            "candidate_id": "candidate-fbe1d3c2c1879fb9844008b9",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.34911",
+              "semantic_scholar": "bfba290707eb7ff1d6656ac1103750cd7b65f425"
+            },
+            "identity_key": "arxiv:2610.34911",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/bfba290707eb7ff1d6656ac1103750cd7b65f425",
+            "title": "FrontGI: Architecture-Aware Parallel GNN Inference on Chiplet-Based Multicore Systems",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "A graph neural network (GNN) forecasting a collection of load series combines two mechanisms, sharing parameters across series and reading neighboring series, and a gain over a non-graph model may come from either; telling them apart decides whether a graph is worth maintaining. We propose a model diagnostic protocol that compares the GNN with three reference models: a per-node network, a network shared across nodes without neighbors, and the same GNN without edges. Degree-preserving rewiring tests whether neighbor identity matters. After a tuned benchmark on regional load in France and on low-voltage feeders in the UK, we apply the protocol to deliberately short node histories, as when non-stationary demand leaves only recent observations relevant: the feeders, within one week, and a public dataset of client consumption series. On the feeders, sharing parameters recovers most of the error gap between node-specific models and GNNs, about two thirds against a regularized one. Adding the edges to an otherwise identical backbone brings a smaller gain, half or more of which disappears under rewiring. On the client series, the neighbor mean degrades the per-node model on the shorter window and the edges'gain is not consistently distinguishable from zero; on the regions of France, where each node's own history is already informative, the ranking between per-node models and GNNs changes with tuning. A synthetic study points to noisy local measurements as one regime where neighbors help. In an exploratory online aggregation, graph and non-graph forecasters appear complementary, and the weight assigned to GNNs is not proportional to their contribution. In none of the three datasets do the edges account for most of a GNN's advantage over node-specific models, so a forecasting gain should be credited to the graph only after comparison with per-node and shared references.",
+            "already_present": false,
+            "authors": [
+              "Eloi Campagne",
+              "Yvenn Amara-Ouali",
+              "Yannig Goude",
+              "Itai Zehavi",
+              "Argyris Kalogeratos"
+            ],
+            "candidate_id": "candidate-3e622cab37a6667e98d0a3da",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.35074",
+              "semantic_scholar": "e8d4375869e5ae5417451ccf44d961217c10f442"
+            },
+            "identity_key": "arxiv:2610.35074",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/e8d4375869e5ae5417451ccf44d961217c10f442",
+            "title": "A Diagnostic Protocol for GNNs in Electricity Load Forecasting: Separating Parameter Sharing from Neighborhood Access",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "Illicit account detection is a critical task for financial risk control systems, aiming to pinpoint malicious actors within transaction networks. Existing efforts typically recast transaction networks into directed multigraphs and leverage graph neural networks (GNNs) to detect anomalies via topological structures under the homophily assumption. However, directly grafting GNNs onto transaction graphs is faced with at least two pivotal challenges, i.e., structural inconsistency and label scarcity. The former arises from deceptive connections forged by malicious actors, while the latter stems from the lack of annotated data. In light of these, we introduce MINT, a novel graph neural framework that mitigates structural inconsistency via an attentive message-passing scheme on transaction graphs. Specifically, MINT introduces a discrepancy-aware feature propagation, which tracks malicious actors by quantifying deviations between nodes across bi-directional transaction flows. A transaction salience module is proposed to mitigate structural inconsistency by adaptively regularizing the interaction strength between nodes. Furthermore, to alleviate label scarcity, MINT is optimized via Positive-Unlabeled (PU) learning, which exploits only a minority of illicit nodes coupled with a majority of unlabeled ones. Extensive experiments conducted on three financial transaction benchmarks, including two large-scale public and one in-house real-world datasets, validate the superior effectiveness of MINT over several cutting-edge baselines.",
+            "already_present": false,
+            "authors": [
+              "Yin-Ju Wu",
+              "Bi-Cheng Yan",
+              "Berlin Chen"
+            ],
+            "candidate_id": "candidate-a12d46e1a4eb6850ed836fa4",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.34950",
+              "semantic_scholar": "771003c68ca915b2860da75cd98f046537045a45"
+            },
+            "identity_key": "arxiv:2610.34950",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/771003c68ca915b2860da75cd98f046537045a45",
+            "title": "MINT: Mitigating Structural Inconsistency via Attentive Message Passing for Financial Anomaly Detection",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "Graph Neural Networks (GNNs) are widely used in modern machine learning, yet most existing frameworks remain fundamentally static, limiting their applicability in Dynamic Data Driven Application Systems (DDDAS) where observations arrive sequentially under uncertainty. We introduce B-EAGLe (Bayesian Evidence Accumulation for Graph-Based Learning), a probabilistic framework inspired by CBGT-Net (cortico-basal ganglia-thalamic network) that reformulates graph classification as a sequential evidence accumulation process. B-EAGLe combines a GNN encoder with a Bayesian accumulator that incrementally updates posterior beliefs over class labels as new observations arrive, committing to a decision only when sufficient confidence is achieved. Experiments on CIFAR10 demonstrate competitive performance together with principled confidence estimation under sequential observations.",
+            "already_present": false,
+            "authors": [
+              "Moises Ponce",
+              "Sarah Harkins Dayton",
+              "Ioannis Schizas",
+              "Vasileios Maroulas"
+            ],
+            "candidate_id": "candidate-590a036334b4dc8a1be4392b",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.36190",
+              "semantic_scholar": "9b641612e63a6b61d527439f80a56ee5c55bbf5b"
+            },
+            "identity_key": "arxiv:2610.36190",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/9b641612e63a6b61d527439f80a56ee5c55bbf5b",
+            "title": "Bayesian Evidence Accumulation for Graph-Based Learning in Dynamic Data-Driven Applications Systems",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "Link prediction remains difficult in sparse graphs, where diffusion heuristics lack connectivity and geometric methods suffer spectral instability when coupling learned representations with diffusion operators. We introduce Concorde, an energy-based framework that resolves this by decomposing link likelihood into three structurally decoupled branches: (i) a parameter-free spectral anchor that establishes permutation-invariant topological stability; (ii) a mixed-curvature residual on a learnable $\\mathbb{H}^{d_h}_{c_h} \\times \\mathbb{S}^{d_s}_{c_s}$ product manifold, regularized by a feature-aware Ollivier-Ricci curvature proxy; and (iii) a continuous vector field on the tangent bundle of hyperbolic space for non-local structural alignment across topological gaps. The branches are fused via learned gating and trained with an N-pair ranking loss aligned with retrieval-style evaluation. Across five benchmarks spanning sparse, dense, featureless, and attributed regimes, Concorde establishes state-of-the-art early retrieval precision, nearly doubling P@10% over leading baselines in sparse settings.",
+            "already_present": false,
+            "authors": [
+              "Ege Demirci",
+              "Ambuj Singh"
+            ],
+            "candidate_id": "candidate-0d54e499a80d8ea0ded2d111",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.36204",
+              "semantic_scholar": "f626d8abf5adc28deb47f4e49e5aba339a6284a1"
+            },
+            "identity_key": "arxiv:2610.36204",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/f626d8abf5adc28deb47f4e49e5aba339a6284a1",
+            "title": "Concorde: Geometry-Aware Link Prediction via Decoupled Energy Minimization",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "Spatio-temporal graph neural networks combine a node's history with information from graph neighbors. The central question is whether graph neighbors provide predictive information beyond each node's own history. Forecast accuracy depends on both the choice of neighbors and the way graph messages enter the temporal model. We study these choices as graph construction and graph exposure on U.S. state unemployment, traffic speed, and electricity demand. Our diagnostic design uses two comparisons: varying exposure while holding the domain graph fixed, and varying construction while holding late gated integration fixed. A GRU using only each node's own history and randomized graph controls help assess what the graph contributes. Under a common change forecasting protocol, the same domain graph can improve or worsen error relative to the GRU across integration designs. Late integration alone is insufficient, while adding a fusion gate yields lower mean error in all three tasks. With late gated integration fixed, a graph based on residual correlations has the lowest mean error among the tested graphs, although randomized graphs perform similarly on unemployment. The findings support evaluating graph construction and integration together, with conclusions tied to the comparisons actually performed.",
+            "already_present": false,
+            "authors": [
+              "Saj Maru",
+              "Qi-Yu Han",
+              "Krishna Mamidala"
+            ],
+            "candidate_id": "candidate-c8189f8a1d3a16d3a66e2a93",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.34611",
+              "semantic_scholar": "4bfc503a518f0e803aff8aef87f137ca1b27a79e"
+            },
+            "identity_key": "arxiv:2610.34611",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/4bfc503a518f0e803aff8aef87f137ca1b27a79e",
+            "title": "How Much Graph Is Too Much? Graph Construction and Exposure in Spatio-Temporal Forecasting",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "Structured scientific spectra encode rich physical information while obeying hard constraints, such as conservation laws and characteristic spectral geometry. Accurate prediction of these spectra is central to materials discovery, yet existing methods often treat them as unconstrained sequences and therefore fail to enforce the underlying physical structure. Taking electronic density of states (eDOS) as the prototypical example, we introduce DeepSciReasoner, a general paradigm for predicting scientific spectra under physical constraints. The framework combines structure-aware spectrum decoding with constraint-preserving physical reasoning, allowing predictions to capture rich spectral structure while respecting the underlying physics. We evaluate DeepSciReasoner on eDOS, phonon density of states (phDOS), X-ray absorption near-edge structure (XANES), and Raman spectra, where it substantially improves prediction accuracy while maintaining physical consistency. These results establish DeepSciReasoner as a reusable blueprint for structured scientific spectrum prediction under hard physical constraints.",
+            "already_present": false,
+            "authors": [
+              "Ying-Heng Wang",
+              "Tao Yu",
+              "Shu-Feng Kong",
+              "Francesco Ricci",
+              "John M. Gregoire",
+              "Carla P. Gomes"
+            ],
+            "candidate_id": "candidate-e3d76fa093f187d56032951e",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.34021",
+              "semantic_scholar": "3e4253d557e2f07c8cf4381eafeda472c0c11b73"
+            },
+            "identity_key": "arxiv:2610.34021",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/3e4253d557e2f07c8cf4381eafeda472c0c11b73",
+            "title": "Deep Scientific Reasoning under Physical Constraints: Structure-Aware Spectrum Prediction",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "On million-node graphs, the memory wall arrives before the compute wall: a GNN that never fits in VRAM cannot deliver the all-node inference its accuracy promises. The standard remedy, pruning, has always been an accuracy tax - paid once and never refunded. DPR refuses this framing. Its central insight is that the mask that shrinks training can also scaffold recovery: one compact node set bounds both computations of graph learning, serving as the encoder's training graph and, at inference, as the anchor from which a sparse structure-aware decoder rebuilds every pruned node (double-layer sparsification). The order is inverted - prune for efficiency, then reconstruct for accuracy - and the tax is repaid: the deployed 30%-budget model trains in 1,450 MiB of peak memory on one 6 GB GPU and recovers 96.9% of its dense-reconstruction reference, beating a same-GPU rerun of the edge-sparsification baseline DSpar by +1.36 pp at 50.1% lower peak training memory; against the same-protocol full-batch no-prune encoder the deployed point pays a measured 2.64 pp accuracy tax for a 2.8x smaller training footprint. Pruning without reconstruction leaves the encoder at 0.378 within the same 40-epoch window (Fig. 4), and all-node serving runs 46x faster than sampling-based GraphSAGE, giving up approx. 5.4 pp of test accuracy. The framework scales to a 2.45M-node production graph at 6,285 MiB of peak training memory; extended variants (long-range context, external text features, a CAN-bus application) are reported as extensions and do not compete with the deployed method, and the 41.8%-budget M4 point, scored on a coarsened super-node graph with its own split, is reported separately rather than compared with the original-node baselines. DPR thus turns aggressive node pruning from an accuracy tax into a safe training accelerator for VRAM-limited all-node inference.",
+            "already_present": false,
+            "authors": [
+              "Si-Qi Gu",
+              "Gao-Zhen Ma",
+              "Li-Heng Huang",
+              "Wei He",
+              "Jia-Wen Luo",
+              "Jia-Ming Wu",
+              "Li-Xin Zheng"
+            ],
+            "candidate_id": "candidate-8c58e95cd9b73e3090fb2012",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "arxiv": "2610.34140",
+              "semantic_scholar": "ba09c70d9b163fe44aca7bda3c11e945b7c3a9ce"
+            },
+            "identity_key": "arxiv:2610.34140",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/ba09c70d9b163fe44aca7bda3c11e945b7c3a9ce",
+            "title": "Decoupled Prune-and-Reconstruct: Training on a Compact Core with Double-Layer Sparsification",
+            "venue": null,
+            "year": 2026
+          },
+          {
+            "abstract": "Correlated corroboration can make knowledge-based systems overconfident when dependent reports are treated as independent evidence. This paper presents an influence-aware evidence aggregation architecture that makes source dependence explicit and constrains confidence growth under partial dependence knowledge. The architecture combines an influence-indexed evidence graph (EIIG), a generalised estimate of effective independent evidence (EIE) with graded dependence weights, and a bounded confidence-propagation rule (CONFPROP). We evaluate the architecture against three baselines—naive independence aggregation, a Bayesian independence update, and a source-discounted comparator—across four controlled synthetic scenarios and a semi-realistic external case study using 500 claims from the FEVER fact-verification corpus. Under the strongest synthetic dependence regimes, CONFPROP consistently reduces confidence inflation relative to naive aggregation: inflation ratios are 4.00 in a common-parent echo-chamber scenario and 10.00 in a fully duplicated cascade, while no suppression occurs when evidence is genuinely independent. A factorial sensitivity analysis across 648 parameter combinations per stress-test scenario confirms that the discount factor γ decreases with the diversification threshold K and increases with the unknown-status weight α. The architecture provides deterministic, auditable confidence updates with structured monitoring signals, and is designed for modular integration into existing knowledge-based systems operating under uncertain source dependence.",
+            "already_present": false,
+            "authors": [
+              "I. Konstantinidis"
+            ],
+            "candidate_id": "candidate-8191f77351776ef141211e23",
+            "catalog_paper_id": null,
+            "citation_count": 0,
+            "external_ids": {
+              "doi": "10.1007/s44163-026-02245-5",
+              "semantic_scholar": "25f8d420d9e232ab3bf4ca5e554594adfaa8f243"
+            },
+            "identity_key": "doi:10.1007/s44163-026-02245-5",
+            "keywords": [],
+            "node_id": null,
+            "provenance": {
+              "operation": "search",
+              "provider": "semantic_scholar"
+            },
+            "relation": "citation",
+            "relation_source_node_id": "21041260a5394f42891b020128fa60fa",
+            "removed": false,
+            "source_url": "https://www.semanticscholar.org/paper/25f8d420d9e232ab3bf4ca5e554594adfaa8f243",
+            "title": "Echo chamber dynamics and influence aware evidence aggregation for epistemic integrity in knowledge based systems",
+            "venue": "Discover Artificial Intelligence",
+            "year": 2026
+          }
+        ],
+        "diff": [],
+        "warnings": [],
+        "preview_revision": 2,
+        "pagination": {
+          "failed_cursor": null,
+          "has_more": true,
+          "last_error": null,
+          "limit_reached": false,
+          "loaded_count": 50,
+          "max_candidates": 500,
+          "next_cursor": 50,
+          "page_job_id": "962bb5b0fa174ac5802d6c5109f3bf40",
+          "page_size": 50,
+          "seed_identity_key": "doi:10.17863/cam.48429",
+          "state": "ready",
+          "total": null,
+          "version": 1
+        },
+        "created_at": "2026-10-28T13:47:01.609731+00:00",
+        "updated_at": "2026-10-28T13:47:04.794527+00:00"
+      },
+      "job": {
+        "job_id": "962bb5b0fa174ac5802d6c5109f3bf40",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "preview_page",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "cursor_history": [
+            0
+          ],
+          "last_completed_cursor": 0,
+          "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+          "preview_revision": 1,
+          "target_cursor": 0
+        },
+        "counts": {
+          "candidate_count": 50,
+          "provider_request_count": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T13:47:01.609731+00:00",
+        "updated_at": "2026-10-28T13:47:04.796948+00:00"
+      }
+    }
+  }
+}

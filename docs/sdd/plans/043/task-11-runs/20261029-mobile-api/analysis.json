@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-28T20:49:55.736959+00:00",
+  "request": {
+    "method": "GET",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analyses/31bca85908bb4863b6b7d2558888f75b"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "schema_version": "literature-map-v1",
+      "analysis": {
+        "analysis_id": "31bca85908bb4863b6b7d2558888f75b",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "node_id": "a9dfddd15066489e96d57f576e5526de",
+        "version": 1,
+        "status": "completed",
+        "evidence_level": "abstract",
+        "source_version": "224caa6f71dcc47744fa4e93488a4cb94f961394df9d88d0139019275d89e5b3",
+        "model_id": "qwen3.8:27b",
+        "job_id": "353fd6ac1e48412daa90c29e7b81faab",
+        "created_at": "2026-10-28T19:44:27.500805+00:00",
+        "updated_at": "2026-10-28T19:45:08.976120+00:00",
+        "result": {
+          "citations": [],
+          "source_refs": [
+            {
+              "kind": "abstract",
+              "node_id": "a9dfddd15066489e96d57f576e5526de"
+            }
+          ],
+          "summary": "**论文总结**\n\n*   **研究背景与动机**：针对摄像头 Person ReID 在低光环境下性能差及存在视觉隐私泄露风险的问题，毫米波雷达（mmWave）因不受光照影响且具备隐私保护优势而受到关注。然而，雷达数据难以直观解读，导致标注成本高，现有方法多依赖监督学习。\n*   **核心方法**：提出一种基于**多尺度跨视角互信号对比学习**的无监督雷达 ReID 方法。\n    1.  **数据增强策略**：利用信号处理技术将原始雷达信号转换为**频谱（frequency spectrum）**和**点云（point clouds）**两种形式，作为同一样本的互补增强视图。\n    2.  **对比学习框架**：构建多尺度对比模型，包含全局对比、跨视角预测对比、聚类对比及跨视角聚类中心对比，以对齐不同视图并提升无监督鲁棒性。\n    3.  **特征提取**：采用局部与全局图注意力网络（Graph Attention Network）学习更具判别力的雷达点云特征。\n*   **实验结论**：广泛实验表明，该方法显著优于现有的雷达无监督 ReID 方法。"
+        }
+      },
+      "job": {
+        "job_id": "353fd6ac1e48412daa90c29e7b81faab",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "operation": "analysis",
+        "status": "completed",
+        "step": "finished",
+        "cursor": {
+          "analysis_id": "31bca85908bb4863b6b7d2558888f75b",
+          "evidence_level": "abstract",
+          "node_id": "a9dfddd15066489e96d57f576e5526de",
+          "queue_job_id": "92f382a294da4beba25f16aaab7976ad"
+        },
+        "counts": {
+          "analysis_version": 1
+        },
+        "failed_units": [],
+        "created_at": "2026-10-28T19:44:27.500805+00:00",
+        "updated_at": "2026-10-28T19:45:08.976120+00:00"
+      }
+    }
+  }
+}

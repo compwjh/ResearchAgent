@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-10-28T13:48:40.838497+00:00",
+  "finished_at": "2026-10-28T13:48:40.860094+00:00",
+  "request": {
+    "method": "POST",
+    "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/previews/541ca1cec64a4064aa7b272fe4f9e73d/load-more",
+    "body": {
+      "expected_preview_revision": 2,
+      "retry_failed": false,
+      "idempotency_key": "task11-e2e-20261028-cite-page2-reread"
+    }
+  },
+  "response": {
+    "status": 202,
+    "body_text": "{\"schema_version\":\"literature-map-v1\",\"preview_id\":\"541ca1cec64a4064aa7b272fe4f9e73d\",\"map_id\":\"0baabeae7268429c9f7e4de8098ae1d0\",\"job_id\":\"03c3ab75da4344b9b6fcfc07b69233f7\",\"preview_revision\":3,\"status\":\"loading\"}",
+    "json": {
+      "schema_version": "literature-map-v1",
+      "preview_id": "541ca1cec64a4064aa7b272fe4f9e73d",
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+      "job_id": "03c3ab75da4344b9b6fcfc07b69233f7",
+      "preview_revision": 3,
+      "status": "loading"
+    }
+  }
+}
