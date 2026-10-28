@@ -156,3 +156,24 @@
 **本轮窄复审结论：PASS — 本次候选排序、真实元数据展示与地图范围提示符合已确认合同，未发现需阻塞的问题。** 此结论不重开此前批次历史结论，也不代表 Spec043 收口、真实 API E2E、部署或后端评审完成。
 
 进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-reviewer/20261028-212347.md`。
+
+## 独立窄复审：冻结 API 静态合同纠正（2026-10-28）
+
+本轮只复核 `test_map_module_uses_frozen_api_and_safe_dom_boundaries` 对 `semantic_scholar` provider 显示名的放行是否削弱前端网络边界。
+
+- `assert "semantic_scholar: 'Semantic Scholar'" in MODULE` 单独看是对显示映射实现的字面断言，本身不构成网络防护。测试仍另行约束 URL 字面量仅允许 SVG namespace，恰好三个 `fetch` 调用表达式，`API_ROOT` 必须为相对 `/api/literature-maps`，并把 `requestCatalog` 限定为原有 sources/conferences/projects 三条本地路径。因此新增或改道普通 `fetch`、改成外部绝对 URL、改变 API root 或扩展 catalog 路由都会失败；原 `semantic-scholar`、`javascript:`、`window.location.origin` 断言仍保留。
+- 当前 `semantic_scholar` 机器值只进入 provider 显示名 helper；当前模块的网络调用通过上述三个 `fetch` 表达式，无 `XMLHttpRequest`、`WebSocket`、`EventSource` 或 `sendBeacon` 使用。provider 显示映射没有把机器值接入 URL。
+- **边界说明：**这是一条对当前 `fetch`/URL 结构的静态合同，不是覆盖任意浏览器出站机制的通用 egress 证明；若未来范围要求连新增 XHR、动态 script、或别名化的其他网络原语也必须被禁止，应增加运行时网络拦截或相应静态限制。这个限制不表示当前模块存在直接连接，也不削弱本次修正保留的 fetch 边界。
+
+精确验证：`test_map_module_uses_frozen_api_and_safe_dom_boundaries` 退出码 0，**1 passed（0.29s）**。未运行全前端套件或部署验证。
+
+| Severity | Count | Status |
+|---|---:|---|
+| CRITICAL | 0 | pass |
+| HIGH | 0 | pass |
+| MEDIUM | 0 | pass |
+| LOW | 0 | note |
+
+**本轮窄复审结论：PASS — provider 显示名可合法包含 machine code；独立 fetch/API 路由白名单仍保护原冻结网络边界。** 上述静态合同不等同于通用浏览器网络出口审计。
+
+进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-reviewer/20261028-212347.md`。

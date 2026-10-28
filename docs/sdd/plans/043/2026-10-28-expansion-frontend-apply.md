@@ -150,3 +150,31 @@ git diff --check
 **证据边界：**本轮验证只覆盖前端 mock fixture、静态合同和语法；未运行全前端/后端回归，未访问真实服务、未重跑真实 API E2E、未部署。前述真实浏览器截图属于主会话对既有部署的缺口证据，不是本轮修复后的运行证据。等待独立前端窄复审；本交接不表示可部署或 Spec043 收口。
 
 进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-dev/20261028-221500.md`。
+
+## 2026-10-28 追加：最终静态合同纠正
+
+最终前端回归报告为 384 passed / 1 failed / 0 skipped；失败位于 `tests/frontend/test_frontend_literature_map_contract.py::test_map_module_uses_frozen_api_and_safe_dom_boundaries` 的第98行。单项复现命令退出码1，触发原断言 `"semantic_scholar" not in MODULE`。候选 provider 值现在只用于把机器码显示成“Semantic Scholar”，没有任何对该 provider 的前端来源请求；因此“源码不能出现 provider 标识”超出了原本的网络边界合同。
+
+- 仅调整上述前端静态合同测试，未改业务代码、资源版本、fixture或其它测试。保留 `semantic-scholar` 原断言、`window.location.origin` 与 `javascript:` 检查，以及此测试其余冻结路由、DOM 安全要求。
+- 将字符串缺席断言替换为可观察的请求边界：provider→显示名映射明确只用于元数据显示；URL 字面量只允许 SVG namespace；所有三个 `fetch` 首参分别严格匹配 `API_ROOT + path`、`requestCatalog(path)`、`API_ROOT + path`；`API_ROOT` 必须是 `/api/literature-maps`，目录请求只允许原有 `/api/papers/sources`、`/api/papers/conferences`、`/api/projects` 三条本地路径。该检查保留了禁外部直连/抓取的目的，同时允许可信响应里的 provider 字段作为显示值。
+
+### RED/GREEN 与验证
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/homebrew/opt/python@3.11/bin/python3.11 -m pytest -q tests/frontend/test_frontend_literature_map_contract.py::test_map_module_uses_frozen_api_and_safe_dom_boundaries
+```
+
+- 修复前精确复现：**退出码1，1 failed**，仅 `semantic_scholar` blanket assertion 失败。
+- 修复后单项：**退出码0，1 passed（0.33s）**。
+- 相关静态合同命令（退出码0，4 passed（0.27s））：
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/homebrew/opt/python@3.11/bin/python3.11 -m pytest -q \
+  tests/frontend/test_frontend_literature_map_contract.py::test_map_module_uses_frozen_api_and_safe_dom_boundaries \
+  tests/frontend/test_frontend_literature_map_contract.py::test_navigation_view_and_version_contract_are_wired \
+  tests/frontend/test_frontend_literature_map_contract.py::test_map_styles_are_scoped_and_fixture_is_not_product_data \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes
+```
+- 未重跑全量回归、未改资源版本/生产源码、未部署。此为测试合同纠正，仍需主会话独立 review。
+
+进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-dev/20261028-223500.md`。

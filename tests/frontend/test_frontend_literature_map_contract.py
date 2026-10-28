@@ -95,7 +95,21 @@ def test_map_module_uses_frozen_api_and_safe_dom_boundaries() -> None:
     assert "window.location.origin" in MODULE
     assert "javascript:" not in MODULE.lower()
     assert "semantic-scholar" not in MODULE
-    assert "semantic_scholar" not in MODULE
+    # `semantic_scholar` is a provider identifier rendered as metadata text;
+    # the network boundary is enforced on URL literals and every fetch target.
+    assert "semantic_scholar: 'Semantic Scholar'" in MODULE
+    url_literals = re.findall(r"""https?://[^\s'"`]+""", MODULE)
+    assert url_literals == ["http://www.w3.org/2000/svg"]
+    fetch_targets = re.findall(r"\bfetch\s*\(\s*([^,\n]+)", MODULE)
+    assert fetch_targets == ["`${API_ROOT}${path}`", "path", "`${API_ROOT}${path}`"]
+    assert "const API_ROOT = '/api/literature-maps';" in MODULE
+    for catalog_route in (
+        "requestCatalog('/api/papers/sources')",
+        "requestCatalog('/api/papers/conferences')",
+        "requestCatalog(`/api/projects?${params.toString()}`)",
+    ):
+        assert catalog_route in MODULE
+    assert MODULE.count("requestCatalog(") == 4
 
 
 def test_map_styles_are_scoped_and_fixture_is_not_product_data() -> None:
