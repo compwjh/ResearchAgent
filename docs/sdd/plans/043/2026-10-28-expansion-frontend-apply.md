@@ -245,3 +245,70 @@ node --check frontend/literature-maps.js
 - 默认受限执行时 Chromium 启动因 macOS MachPort 权限失败，3 个浏览器用例被 fixture 正确标为 skipped，不计通过。随后同一三个浏览器用例在提权执行中退出码 0、3 passed；另 8 个静态合同退出码 0、8 passed。无全量回归、生产服务或物理设备验证。
 
 独立评审报告：`docs/sdd/reviews/043-expansion-mobile-review.md`。
+
+## 2026-10-29 追加：收起预览时恢复手机画布触摸区域（CSS25）
+
+Attempt 3（CSS24）完整前端回归中，`tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_drawer_and_detail_scroll_use_real_touch_gestures` 在关闭地图列表抽屉后真实 touchscreen tap 节点未打开详情；完整套件 386 passed、1 failed、0 skipped，隔离复跑 **1 failed（31.97s）**。失败日志、命令与源码指纹保留于 `docs/sdd/plans/043/task-11-runs/final-regression/frontend/attempt-3/`，隔离输出在 `/private/tmp/spec043-task11-final-frontend-20261029/attempt-3/isolated-retry/`。
+
+按相同真实触摸流程检查 375×820 页面几何：列表抽屉关闭后确实是 hidden/translated、backdrop 也已隐藏；但 `.literature-map-canvas` 与 `#literature-map-svg` 高均为 **0px**。node-a 圆形 hitbox 落在地图图例上方，`elementFromPoint()` 返回图例中的分组标签，circle 未收到 pointer event。根因为 CSS24 把 flex-basis 和 min-height 设为0，无论预览是否打开都允许画布塌陷。
+
+最小修复只改移动 CSS：预览隐藏时给画布响应式最小高度 `min(360px, max(180px, calc(100dvh - 520px)))`；同一画布面板内预览显示时，通过 `:has(.literature-map-preview-panel:not([hidden]))` 将画布最小高度恢复为0，使预览继续取得空间。未改触摸 JS 或行为断言。入口、组件 fixture 与活跃 CSS 静态合同同步到 **JS37/CSS25**。
+
+### RED/GREEN 与定向回归
+
+Attempt 3 已提供有效真实 Chromium RED：完整 `tests/frontend` 为 **退出码1，386 passed、1 failed、0 skipped（147.36s）**；失败项隔离复跑 **退出码1，1 failed（31.97s）**。本轮保留上述测试原样，只复跑精确失败项作为 GREEN：
+
+```bash
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -rs -p no:cacheprovider \
+  tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_drawer_and_detail_scroll_use_real_touch_gestures
+```
+
+结果：退出码 **0**，**1 passed（2.35s）**。组内保留原真实触摸滚动与 tap 打开详情断言。
+
+之前的手机展开预览（375px、390px）及桌面（1440px）扩展回归：
+
+```bash
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -rs -p no:cacheprovider \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_mobile_expansion_preview_keeps_readable_height_in_constrained_canvas \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_component_fixture_shows_one_two_direction_expansion_panel_and_keeps_grouping
+```
+
+结果：退出码 **0**，**3 passed（3.63s）**，证明预览展开时至少 240px 且未越出 654px 父面板，候选内滚动、标签/排序/选择/确认仍可用；1440px 桌面扩展正常。
+
+受影响版本、作用域和 DOM 静态合同：
+
+```bash
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_map_contract_is_versioned_scoped_and_touch_safe \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes \
+  tests/frontend/test_frontend_map_groups_exports.py::test_export_asset_versions_are_synchronised \
+  tests/frontend/test_frontend_literature_map_contract.py::test_navigation_view_and_version_contract_are_wired \
+  tests/frontend/test_frontend_literature_map_contract.py::test_map_styles_are_scoped_and_fixture_is_not_product_data \
+  tests/frontend/test_frontend_map_analysis_contract.py::test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes
+```
+
+结果：退出码 **0**，**6 passed（0.25s）**。
+
+### CSS25 自查
+
+```bash
+node --check frontend/literature-maps.js
+/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py
+/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py
+/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest --collect-only -q \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py
+```
+
+所有上述命令退出码 **0**；布局与命名门禁通过，5个相关模块收集 **56 tests**，无 collection error。`rg -n 'literature-maps\.css\?v=24' frontend tests` 无匹配（退出码1，符合无残留 CSS24 活跃引用）。CSS 规则只作用于 `#literature-maps-view`；`:has()` 检查现有 `#literature-map-preview-panel` 隐藏状态；没有新增 DOM class，JS37 无需改版，触摸行为/XSS 边界未变。
+
+本次仅执行上述定向手机/桌面与静态检查，未重跑完整前端套件、后端、部署或 Git 操作。由主会话对 CSS25 安排独立复核及后续完整回归。进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-dev/20261029-022100.md`。
