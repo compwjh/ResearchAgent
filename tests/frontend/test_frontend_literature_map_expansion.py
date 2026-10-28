@@ -26,7 +26,7 @@ def _open_browser_or_skip(playwright):
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
     assert "/assets/literature-maps.js?v=37" in INDEX
-    assert "/assets/literature-maps.css?v=23" in INDEX
+    assert "/assets/literature-maps.css?v=24" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
@@ -413,6 +413,70 @@ def test_mobile_expansion_moves_from_detail_sheet_to_nested_map_panel() -> None:
         assert page.locator("#literature-map-preview-panel").evaluate("panel => Boolean(panel.closest('.literature-map-canvas-panel') && panel.closest('#literature-maps-view'))")
         assert page.locator("#literature-map-preview-panel [role=tabpanel]").get_attribute("aria-labelledby")
         assert page.locator("#literature-map-preview-panel [role=tab]").count() == 2
+        page.close()
+        browser.close()
+
+
+@pytest.mark.parametrize("width", [375, 390])
+def test_mobile_expansion_preview_keeps_readable_height_in_constrained_canvas(width: int) -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": width, "height": 844}, has_touch=True, is_mobile=True)
+        page.goto(f"{FIXTURE.as_uri()}?expansion", wait_until="load")
+        page.locator("#literature-map-mobile-list-open").click()
+        page.locator('[data-map-id="map-fixture"]').click()
+        node = page.locator('[data-node-id="node-a"] circle')
+        box = node.bounding_box()
+        assert box is not None
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_selector("#literature-map-preview-panel")
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+
+        geometry = page.locator("#literature-map-preview-panel").evaluate(
+            """panel => {
+              const parent = panel.closest('.literature-map-canvas-panel');
+              const parentRect = parent.getBoundingClientRect();
+              const panelRect = panel.getBoundingClientRect();
+              const candidates = panel.querySelector('.literature-map-expansion-candidates');
+              return {
+                parentHeight: parentRect.height,
+                panelHeight: panelRect.height,
+                panelBottom: panelRect.bottom,
+                parentBottom: parentRect.bottom,
+                candidateClientHeight: candidates?.clientHeight || 0,
+                candidateScrollHeight: candidates?.scrollHeight || 0,
+              };
+            }"""
+        )
+        assert geometry["parentHeight"] == pytest.approx(654, abs=1)
+        assert geometry["panelHeight"] >= 240, geometry
+        assert geometry["panelBottom"] <= geometry["parentBottom"] + 1, geometry
+        assert geometry["candidateClientHeight"] > 0, geometry
+        assert geometry["candidateScrollHeight"] > geometry["candidateClientHeight"], geometry
+
+        refs_tab = page.locator('[role="tab"][data-expansion-kind="references"]')
+        citations_tab = page.locator('[role="tab"][data-expansion-kind="citations"]')
+        refs_tab.click()
+        page.locator("#literature-map-expansion-sort-references").select_option("year")
+        ref_choice = page.locator('[data-candidate-id="references-candidate-1"] input')
+        ref_choice.check()
+        citations_tab.click()
+        citation_choice = page.locator('[data-candidate-id="citations-candidate-1"] input')
+        citation_choice.check()
+        refs_tab.click()
+        assert ref_choice.is_checked()
+        confirm = page.locator("#literature-map-expansion-apply")
+        assert confirm.is_visible()
+        confirm.scroll_into_view_if_needed()
+        confirm_box = confirm.bounding_box()
+        parent_box = page.locator(".literature-map-canvas-panel").bounding_box()
+        assert confirm_box is not None and parent_box is not None
+        assert confirm_box["y"] + confirm_box["height"] <= parent_box["y"] + parent_box["height"] + 1
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.close()
         browser.close()
 

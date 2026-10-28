@@ -250,8 +250,8 @@
   #literature-maps-view .literature-map-filter-grid { grid-template-columns: 1fr; }
   #literature-maps-view .literature-map-project-field { grid-column: auto; }
   #literature-maps-view .literature-map-canvas-panel { width: 100%; box-sizing: border-box; min-height: calc(100dvh - 190px); height: calc(100dvh - 190px); }
-  #literature-maps-view .literature-map-canvas { flex: 0 0 auto; min-height: 360px; height: max(360px, calc(100dvh - 300px)); }
-  #literature-maps-view .literature-map-preview-panel { max-height: 42dvh; margin: 8px; padding: 9px; overflow: auto; overscroll-behavior: contain; }
+  #literature-maps-view .literature-map-canvas { flex: 1 1 0; min-height: 0; height: auto; }
+  #literature-maps-view .literature-map-preview-panel { flex: 0 1 34dvh; min-height: min(240px, 30dvh); max-height: 42dvh; margin: 8px; padding: 9px; overflow: auto; overscroll-behavior: contain; }
   #literature-maps-view .literature-map-expansion-candidates { max-height: 24dvh; }
   #literature-maps-view .literature-map-expansion-candidate-select { max-width: 135px; }
   #literature-maps-view .literature-map-expansion-batch-items { max-height: 15dvh; }

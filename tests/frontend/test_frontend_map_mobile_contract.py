@@ -92,10 +92,10 @@ def _wait_for_scroll_settle(page: Page, selector: str) -> float:
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "/assets/styles.css?v=62" in INDEX
     assert "/assets/literature-maps.js?v=37" in INDEX
-    assert "/assets/literature-maps.css?v=23" in INDEX
+    assert "/assets/literature-maps.css?v=24" in INDEX
     assert "/styles.css?v=62" in FIXTURE.read_text(encoding="utf-8")
     assert "/literature-maps.js?v=37" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=23" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=24" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",

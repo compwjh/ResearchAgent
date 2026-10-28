@@ -178,3 +178,70 @@ PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/home
 - 未重跑全量回归、未改资源版本/生产源码、未部署。此为测试合同纠正，仍需主会话独立 review。
 
 进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-dev/20261028-223500.md`。
+
+## 2026-10-29 追加：手机展开预览受限高度收口
+
+主会话提供的真实手机浏览器记录为视口 390×844、地图父面板高 654px，而 `#literature-map-preview-panel` 仅高 20px（clientHeight 18px、scrollHeight 872px）。原因是手机端画布仍固定占据至少 544px，展开预览作为 flex 子项被压缩。本轮只调整地图视图的移动端布局：画布改为可伸缩以吸收剩余高度；预览保留 240px 的可读起步高度（矮视口按 30dvh 缩小），最高 42dvh 且可独立滚动；候选列表继续在自身容器滚动。未改 JS、地图 viewport、后端或其他页面。资源入口、组件 fixture 和静态合同从 JS37/CSS23 同步为 JS37/CSS24。
+
+- 在 `tests/frontend/test_frontend_literature_map_expansion.py::test_mobile_expansion_preview_keeps_readable_height_in_constrained_canvas` 增加 375px 与 390px 两个 Chromium 场景，视口高 844px，fixture 中断言父面板为 654px；另核对预览高度、父面板边界、候选区内部滚动，以及两侧标签、排序、选择和确认按钮的可触达性。
+- 默认环境首轮启动 Chromium 受 macOS `bootstrap_check_in` 权限限制，测试报告 2 skipped（不是通过证据）。在受控权限下运行同一精确测试，旧 CSS 下 **退出码 1，2 failed（2.48s）**：两宽度下预览均只有 20px，且位于父面板下边界之外，形成有效 RED。
+- 修复后首次运行暴露测试末尾确认按钮尚未从内部滚动面板滚入可视区，故先加入 `scroll_into_view_if_needed()` 检查其可达性，再复跑。该回归不是业务 CSS 失败；最终两种手机宽度均 **退出码 0，2 passed（2.83s）**。预览至少 240px、留在 654px 父面板内，候选滚动区高度受限且可滚动；两侧切换、年份排序、勾选和确认按钮均可操作。
+
+手机 RED/GREEN 使用的精确命令（默认权限运行会因上述 macOS 浏览器启动限制跳过；受控运行结果如下）：
+
+```bash
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q -rs \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_mobile_expansion_preview_keeps_readable_height_in_constrained_canvas
+```
+
+同命令旧 CSS：退出码 **1**，**2 failed**；修复后：退出码 **0**，**2 passed**。测试使用合成 API fixture，不是生产服务或真机证据。
+
+桌面与受影响资源/DOM 合同的精确窄回归（1440px 桌面扩展浏览器例 + 七个相关静态合同）：
+
+```bash
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_component_fixture_shows_one_two_direction_expansion_panel_and_keeps_grouping \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes \
+  tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_map_contract_is_versioned_scoped_and_touch_safe \
+  tests/frontend/test_frontend_map_groups_exports.py::test_export_asset_versions_are_synchronised \
+  tests/frontend/test_frontend_map_groups_exports.py::test_groups_and_export_contract_is_wired_without_html_injection \
+  tests/frontend/test_frontend_literature_map_contract.py::test_navigation_view_and_version_contract_are_wired \
+  tests/frontend/test_frontend_literature_map_contract.py::test_map_styles_are_scoped_and_fixture_is_not_product_data \
+  tests/frontend/test_frontend_map_analysis_contract.py::test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes
+```
+
+结果：退出码 **0**，**8 passed（1.63s）**。未运行全量 385 项回归。
+
+### 静态检查与自查
+
+```bash
+node --check frontend/literature-maps.js
+/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py
+/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py
+/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py
+/Users/wjh/ResearchAgent/.venv/bin/python -m pytest --collect-only -q \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py
+```
+
+以上命令均退出码 **0**；测试布局与命名检查通过，5个相关模块收集 **56 tests** 且无 collection error。资源版本搜索 `rg -n 'literature-maps\.css\?v=23' frontend tests` 无匹配（rg 退出码1，符合无旧版本引用）。自查确认 CSS 规则限定在 `#literature-maps-view`；使用 JS 已渲染的 `.literature-map-canvas` 与 `.literature-map-preview-panel`，没有新增 class 或 HTML 注入；入口、fixture、合同均为 JS37/CSS24。
+
+证据边界：本轮通过合成 fixture 的 Chromium 375/390px 与桌面定向回归、前端静态检查；未启动生产服务、未部署，未做真实 API 或物理手机验证，也未运行全量回归。真实手机验证和最终回归由主会话安排。进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-dev/20261029-022100.md`。
+
+### 独立前端窄复核（CSS24）
+
+复核基线为 HEAD `d2bd4ba7b02aaa803ea36e2aebd279480aa88ed7`。本次 CSS 差异仅位于 `@media (max-width: 760px)`：画布可收缩、预览面板有受限起始高度并独立滚动；桌面 CSS、SVG 结构及 JS/DOM 均未改。改动选择器和现有地图样式都限定在 `#literature-maps-view`，不会影响其它视图。
+
+- 提权 Chromium 定向复核：375px 与 390px 场景均在 844px 视口下通过；两者父面板均为 654px，预览至少 240px 且未越过父面板，候选区保持内部滚动，标签切换、排序、选择及确认按钮可用。1440px 桌面批量扩展场景也通过，原节点位置与地图 `view_settings.viewport` 保持不变。
+- 版本、DOM/XSS 与作用域静态合同通过：入口和 fixture 为 CSS24；无新增 DOM hook；生产模块无 `innerHTML`；样式仍限定在地图视图。
+- 默认受限执行时 Chromium 启动因 macOS MachPort 权限失败，3 个浏览器用例被 fixture 正确标为 skipped，不计通过。随后同一三个浏览器用例在提权执行中退出码 0、3 passed；另 8 个静态合同退出码 0、8 passed。无全量回归、生产服务或物理设备验证。
+
+独立评审报告：`docs/sdd/reviews/043-expansion-mobile-review.md`。
