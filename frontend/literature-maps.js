@@ -29,6 +29,10 @@
   const EXPANSION_PAGE_SIZE = 50;
   const EXPANSION_MAX_CANDIDATES = 500;
   const MAX_EXPANSION_POLL_ATTEMPTS = 80;
+  const MAX_EXPANSION_BATCH_POLL_ATTEMPTS = 80;
+  const EXPANSION_BATCH_POLL_DELAY = 1200;
+  const EXPANSION_BATCH_POLL_BACKOFF = 400;
+  const EXPANSION_BATCH_POLL_MAX_DELAY = 4000;
   const EXPANSION_KINDS = ['references', 'citations'];
   const MAX_ANALYSIS_POLL_ATTEMPTS = 120;
   const MAX_QUEUE_POLL_ATTEMPTS = 120;
@@ -107,6 +111,7 @@
     previewConflict: false,
     expansion: null,
     expansionGeneration: 0,
+    expansionHighlightNodeIds: new Set(),
     positions: Object.create(null),
     positionsDirty: false,
     spacingViolationCount: 0,
@@ -2240,6 +2245,7 @@
       state.selectedNodeId = null;
       state.selectedNode = null;
       state.positions = Object.create(null);
+      state.expansionHighlightNodeIds.clear();
       state.positionsDirty = false;
       state.viewDirty = false;
       state.layoutPendingIds.clear();
@@ -2270,6 +2276,7 @@
       state.multiSelectActive = false;
       state.multiSelectedNodeIds.clear();
       state.colorDraft = null;
+      state.expansionHighlightNodeIds.clear();
     }
     const requestId = ++state.mapRequest;
     state.selectedMapId = mapId;
@@ -2676,22 +2683,78 @@
       && mapOwnerId() === expansion.ownerId);
   }
 
+  function expansionBatchRecord(expansion, jobId = expansion?.batchJobId) {
+    return (expansion?.batchRecords || []).find((record) => record.batch_job_id === jobId) || null;
+  }
+
+  function saveSelectedExpansionBatchRecord(expansion) {
+    const record = expansionBatchRecord(expansion);
+    if (!record) return;
+    record.batch_result = expansion.batchResult && typeof expansion.batchResult === 'object'
+      ? { ...expansion.batchResult, node_ids: [...(expansion.batchResult.node_ids || [])], hidden_node_ids: [...(expansion.batchResult.hidden_node_ids || [])] }
+      : null;
+    record.poll_attempts = Math.max(0, Math.min(MAX_EXPANSION_BATCH_POLL_ATTEMPTS, Number(expansion.batchPollAttempts) || 0));
+    if (expansion.batchJob && typeof expansion.batchJob === 'object') {
+      record.last_status = String(expansion.batchJob.status || 'unknown');
+      record.last_counts = expansion.batchJob.counts && typeof expansion.batchJob.counts === 'object'
+        ? { ...expansion.batchJob.counts }
+        : null;
+    }
+  }
+
+  function activateExpansionBatchRecord(expansion, jobId, saveCurrent = true) {
+    if (saveCurrent) saveSelectedExpansionBatchRecord(expansion);
+    if (expansion.batchPollTimer) window.clearTimeout(expansion.batchPollTimer);
+    expansion.batchPollTimer = null;
+    expansion.batchSelectionGeneration += 1;
+    expansion.selectedBatchJobId = jobId;
+    const record = expansionBatchRecord(expansion, jobId);
+    expansion.batchJobId = record?.batch_job_id || null;
+    expansion.batchResult = record?.batch_result && typeof record.batch_result === 'object' ? { ...record.batch_result } : null;
+    expansion.batchJob = null;
+    expansion.batchPollAttempts = Math.max(0, Math.min(MAX_EXPANSION_BATCH_POLL_ATTEMPTS, Number(record?.poll_attempts) || 0));
+    expansion.batchLoading = false;
+    expansion.batchRetryLoading = false;
+    expansion.batchUnknown = false;
+    expansion.batchError = '';
+  }
+
   function stopExpansionPolling(expansion = state.expansion) {
     if (!expansion) return;
     Object.values(expansion.sides || {}).forEach((side) => {
       if (side.pollTimer) window.clearTimeout(side.pollTimer);
       side.pollTimer = null;
     });
+    if (expansion.batchPollTimer) window.clearTimeout(expansion.batchPollTimer);
+    expansion.batchPollTimer = null;
   }
 
   function persistExpansionDraft(expansion = state.expansion) {
     if (!expansion) return;
+    if (state.expansion && state.expansion !== expansion) return;
+    if (state.map && (String(state.map.map_id) !== expansion.mapId || mapOwnerId() !== expansion.ownerId)) return;
+    saveSelectedExpansionBatchRecord(expansion);
     const key = expansionStorageKey(expansion.ownerId, expansion.mapId, expansion.seedNodeId);
     const draft = {
       owner_id: expansion.ownerId,
       map_id: expansion.mapId,
       seed_node_id: expansion.seedNodeId,
       active_tab: expansion.activeTab,
+      batch_job_id: expansion.batchJobId || null,
+      batch_result: expansion.batchResult || null,
+      batch_poll_attempts: expansion.batchPollAttempts || 0,
+      batch_apply_notice: expansion.batchApplyNotice || null,
+      selected_batch_job_id: expansion.selectedBatchJobId || null,
+      batch_records: (expansion.batchRecords || []).map((record) => ({
+        batch_job_id: record.batch_job_id,
+        batch_result: record.batch_result || null,
+        poll_attempts: record.poll_attempts || 0,
+        last_status: record.last_status || null,
+        last_counts: record.last_counts || null,
+        last_read_at: record.last_read_at || null,
+      })),
+      needs_revalidate: Boolean(expansion.needsRevalidate),
+      revalidation_result: expansion.revalidationResult || null,
       sides: Object.fromEntries(EXPANSION_KINDS.map((kind) => [kind, {
         preview_id: expansion.sides[kind].previewId || null,
         selected_candidate_ids: Array.from(expansion.sides[kind].selectedCandidateIds),
@@ -2734,6 +2797,87 @@
 
   function expansionKindLabel(kind) {
     return kind === 'citations' ? '引用本文' : '参考文献';
+  }
+
+  function expansionBatchPollIsActive(job) {
+    return ['queued', 'running', 'active', 'analysis_wait'].includes(String(job?.status || '').toLowerCase());
+  }
+
+  function expansionBatchCanRetryMetadata(job) {
+    return ['completed', 'partial', 'failed'].includes(String(job?.status || '').toLowerCase());
+  }
+
+  function expansionBatchStateLabel(status) {
+    const labels = {
+      queued: '批次已排队', running: '批次处理中', active: '批次处理中',
+      analysis_wait: '等待摘要分析结果', paused: '地图摘要队列已暂停',
+      completed: '批次已完成', partial: '批次部分完成', failed: '批次失败', stopped: '批次已停止',
+    };
+    return labels[String(status || '').toLowerCase()] || '无法识别的批次状态';
+  }
+
+  function expansionBatchItemStatus(item) {
+    const status = String(item?.status || item?.metadata_status || item?.analysis_status || '').toLowerCase();
+    const labels = {
+      metadata_pending: '正在补充摘要',
+      metadata_failed: '摘要补充失败',
+      skipped_no_abstract: '无摘要，已跳过',
+      identity_unresolved: '身份无法确认，已跳过',
+      skipped_removed: '论文已移出，已跳过',
+      analysis_queued: '分析排队中',
+      analysis_running: '分析进行中',
+      analysis_failed: '分析失败',
+      completed: '分析完成',
+    };
+    return labels[status] || '后台返回了无法识别的步骤状态';
+  }
+
+  function expansionRevalidationInvalidKey(previewId, candidateId) {
+    return `${String(previewId || '')}:${String(candidateId || '')}`;
+  }
+
+  function expansionInvalidReasonLabel(reason) {
+    const labels = {
+      MAP_NODE_REMOVED: '该论文已移除，不能作为新节点加入',
+      MAP_NODE_LIMIT: '地图已达到200篇容量上限',
+      INVALID_PREVIEW_CANDIDATE: '候选身份或归属无法确认',
+      MAP_PREVIEW_BUSY: '此方向仍在读取，请稍后再核对',
+    };
+    return labels[String(reason || '').toUpperCase()] || '此候选已失效，请取消选择后再次确认';
+  }
+
+  function expansionSelections(expansion = state.expansion) {
+    const selections = [];
+    EXPANSION_KINDS.forEach((kind) => {
+      const side = expansion?.sides?.[kind];
+      const ids = Array.from(side?.selectedCandidateIds || []);
+      if (!side?.previewId || !ids.length) return;
+      selections.push({
+        preview_id: side.previewId,
+        expected_preview_revision: Number(side.preview?.preview_revision) || 1,
+        selected_candidate_ids: ids,
+      });
+    });
+    return selections;
+  }
+
+  function expansionSelectionIsCovered(expansion = state.expansion) {
+    const result = expansion?.revalidationResult;
+    if (!result) return false;
+    const valid = new Map((Array.isArray(result.valid_selections) ? result.valid_selections : [])
+      .map((selection) => [String(selection.preview_id || ''), new Set((selection.candidate_ids || []).map(String))]));
+    const invalid = new Set((Array.isArray(result.invalid_selections) ? result.invalid_selections : [])
+      .map((item) => expansionRevalidationInvalidKey(item.preview_id, item.candidate_id)));
+    return expansionSelections(expansion).every((selection) => selection.selected_candidate_ids.every((candidateId) =>
+      valid.get(selection.preview_id)?.has(candidateId) || invalid.has(expansionRevalidationInvalidKey(selection.preview_id, candidateId))));
+  }
+
+  function expansionSelectedInvalidKeys(expansion = state.expansion) {
+    const selected = new Set(expansionSelections(expansion).flatMap((selection) =>
+      selection.selected_candidate_ids.map((candidateId) => expansionRevalidationInvalidKey(selection.preview_id, candidateId))));
+    return new Set((Array.isArray(expansion?.revalidationResult?.invalid_selections) ? expansion.revalidationResult.invalid_selections : [])
+      .map((item) => expansionRevalidationInvalidKey(item.preview_id, item.candidate_id))
+      .filter((key) => selected.has(key)));
   }
 
   function expansionErrorMessage(error, kind) {
@@ -2888,6 +3032,497 @@
     void loadExpansionPreview(kind, expansion, state.expansionGeneration);
   }
 
+  function expansionNodePosition(node, index, total, positions = state.positions) {
+    const saved = positions?.[node?.node_id];
+    if (saved && Number.isFinite(Number(saved.x)) && Number.isFinite(Number(saved.y))) return { x: Number(saved.x), y: Number(saved.y) };
+    const raw = node?.position;
+    if (raw && Number.isFinite(Number(raw.x)) && Number.isFinite(Number(raw.y))) return { x: Number(raw.x), y: Number(raw.y) };
+    return initialPosition(index, total);
+  }
+
+  function layoutExpansionNodesNearSeed(pendingNodes, seedNodeId, graphNodes, positions) {
+    const ordered = pendingNodes.filter((node) => node && node.node_id);
+    const result = Object.create(null);
+    if (!ordered.length) return result;
+    const active = graphNodes.filter((node) => !node.removed && !node.tombstone);
+    const pendingIds = new Set(ordered.map((node) => node.node_id));
+    const occupied = active
+      .filter((node) => !pendingIds.has(node.node_id))
+      .map((node, index) => ({ node, point: expansionNodePosition(node, index, active.length, positions) }));
+    const seedIndex = active.findIndex((node) => node.node_id === seedNodeId);
+    const seed = active[seedIndex] || graphNodes.find((node) => node.node_id === seedNodeId);
+    const origin = seed
+      ? expansionNodePosition(seed, Math.max(0, seedIndex), Math.max(1, active.length), positions)
+      : { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+    const largestRadius = Math.max(MAX_NODE_RADIUS, ...ordered.map(nodeRadiusForLayout), ...occupied.map((entry) => nodeRadiusForLayout(entry.node)));
+    const step = 2 * largestRadius + LAYOUT_CLEARANCE_MULTIPLIER * largestRadius + LAYOUT_STROKE_CLEARANCE;
+    ordered.forEach((node, nodeIndex) => {
+      let point = null;
+      for (let attempt = 0; attempt < MAX_LAYOUT_PLACEMENT_ATTEMPTS; attempt += 1) {
+        const ring = Math.floor(Math.sqrt(attempt));
+        const offset = attempt - ring * ring;
+        const side = Math.max(1, ring * 2 + 1);
+        const sideIndex = offset % Math.max(1, side * 4);
+        let dx = 0;
+        let dy = 0;
+        if (ring > 0) {
+          if (sideIndex < side) { dx = sideIndex - ring; dy = -ring; }
+          else if (sideIndex < side * 2) { dx = ring; dy = sideIndex - ring - side; }
+          else if (sideIndex < side * 3) { dx = ring - (sideIndex - side * 2); dy = ring; }
+          else { dx = -ring; dy = ring - (sideIndex - side * 3); }
+        }
+        const candidate = { x: origin.x + dx * step, y: origin.y + dy * step };
+        const clear = occupied.every((entry) => Math.hypot(candidate.x - entry.point.x, candidate.y - entry.point.y)
+          + 1e-6 >= requiredCenterDistance(node, entry.node));
+        if (clear) { point = candidate; break; }
+      }
+      if (!point) {
+        const rightmost = Math.max(origin.x, ...occupied.map((entry) => entry.point.x));
+        const required = Math.max(0, ...occupied.map((entry) => requiredCenterDistance(node, entry.node)));
+        point = { x: rightmost + required + 1, y: origin.y + nodeIndex * step };
+      }
+      result[node.node_id] = point;
+      occupied.push({ node, point });
+    });
+    return result;
+  }
+
+  async function refreshExpansionGraph(expansion, generation, addedNodeIds = [], batchJobId = null) {
+    if (!expansionScopeIsCurrent(expansion, generation)) return null;
+    const payload = await request(`/${encodeURIComponent(expansion.mapId)}/graph`);
+    if (!expansionScopeIsCurrent(expansion, generation)) return null;
+    const graphNodes = normalizeNodes(payload);
+    const oldMap = state.map;
+    const nextPositions = Object.assign(Object.create(null), state.positions);
+    graphNodes.forEach((node, index) => {
+      const current = nextPositions[node.node_id];
+      if (current && Number.isFinite(Number(current.x)) && Number.isFinite(Number(current.y))) return;
+      const serverPoint = node.position;
+      if (serverPoint && Number.isFinite(Number(serverPoint.x)) && Number.isFinite(Number(serverPoint.y))) {
+        nextPositions[node.node_id] = { x: Number(serverPoint.x), y: Number(serverPoint.y) };
+      } else if (!addedNodeIds.includes(node.node_id) && !node.removed && !node.tombstone) {
+        // A concurrent graph change is read without rearranging its new nodes.
+        nextPositions[node.node_id] = expansionNodePosition(node, index, graphNodes.length, nextPositions);
+      }
+    });
+    const addedNodes = graphNodes.filter((node) => addedNodeIds.includes(node.node_id) && !node.removed && !node.tombstone);
+    const generated = layoutExpansionNodesNearSeed(addedNodes, expansion.seedNodeId, graphNodes, nextPositions);
+    Object.assign(nextPositions, generated);
+    state.positions = nextPositions;
+    const positionsChanged = Object.keys(generated).length > 0;
+    const viewSettings = {
+      ...(payload.map?.view_settings || {}),
+      ...(oldMap?.view_settings || {}),
+      viewport: { ...state.view },
+      layers: { ...state.layers },
+      label_mode: state.labelMode,
+    };
+    state.map = { ...(normalizeMap(payload.map) || oldMap || {}), view_settings: viewSettings };
+    state.graph = {
+      ...payload,
+      map: state.map,
+      nodes: graphNodes.map((node) => ({
+        ...node,
+        ...(nextPositions[node.node_id] ? { position: { ...nextPositions[node.node_id] } } : {}),
+      })),
+    };
+    if (batchJobId || addedNodes.length) {
+      state.expansionHighlightNodeIds = new Set(addedNodes.map((node) => node.node_id));
+    }
+    const batchRecord = batchJobId ? expansionBatchRecord(expansion, batchJobId) : null;
+    if (batchRecord?.batch_result) {
+      const visibleIds = new Set(graphNodes.map((node) => node.node_id));
+      batchRecord.batch_result.hidden_node_ids = (addedNodeIds || []).filter((nodeId) => !visibleIds.has(nodeId));
+      if (expansion.batchJobId === batchJobId && expansion.selectedBatchJobId === batchJobId) {
+        expansion.batchResult = { ...expansion.batchResult, hidden_node_ids: [...batchRecord.batch_result.hidden_node_ids] };
+      }
+    }
+    state.spacingViolationCount = countSpacingViolations(activeNodes());
+    renderGraph();
+    if (positionsChanged) {
+      state.positionsDirty = true;
+      scheduleViewSave();
+    }
+    return payload;
+  }
+
+  function scheduleExpansionBatchPoll(expansion = state.expansion, generation = state.expansionGeneration, selectionGeneration = expansion?.batchSelectionGeneration) {
+    if (!expansion?.batchJobId || expansion.batchPollTimer
+      || expansion.batchPollAttempts >= MAX_EXPANSION_BATCH_POLL_ATTEMPTS
+      || !expansionBatchPollIsActive(expansion.batchJob)
+      || !expansionScopeIsCurrent(expansion, generation)) return;
+    const jobId = expansion.batchJobId;
+    const delay = Math.min(
+      EXPANSION_BATCH_POLL_DELAY + Math.floor(expansion.batchPollAttempts / 10) * EXPANSION_BATCH_POLL_BACKOFF,
+      EXPANSION_BATCH_POLL_MAX_DELAY,
+    );
+    expansion.batchPollTimer = window.setTimeout(() => {
+      expansion.batchPollTimer = null;
+      if (!expansionScopeIsCurrent(expansion, generation)
+        || expansion.batchJobId !== jobId || expansion.batchSelectionGeneration !== selectionGeneration) return;
+      expansion.batchPollAttempts += 1;
+      persistExpansionDraft(expansion);
+      void loadExpansionBatchJob(expansion, generation, selectionGeneration);
+    }, delay);
+  }
+
+  async function loadExpansionBatchJob(expansion = state.expansion, generation = state.expansionGeneration, selectionGeneration = expansion?.batchSelectionGeneration) {
+    const jobId = expansion?.batchJobId;
+    if (!jobId || expansion.batchLoading || !expansionScopeIsCurrent(expansion, generation)
+      || expansion.batchSelectionGeneration !== selectionGeneration || expansion.selectedBatchJobId !== jobId) return;
+    expansion.batchLoading = true;
+    expansion.batchError = '';
+    renderPreviewPanel();
+    try {
+      const payload = await request(`/${encodeURIComponent(expansion.mapId)}/jobs/${encodeURIComponent(jobId)}`);
+      if (!expansionScopeIsCurrent(expansion, generation) || expansion.batchJobId !== jobId
+        || expansion.batchSelectionGeneration !== selectionGeneration || expansion.selectedBatchJobId !== jobId) return;
+      const job = payload.job && typeof payload.job === 'object' ? payload.job : null;
+      expansion.batchJob = job;
+      const cursor = job?.cursor;
+      const knownJobStatuses = new Set(['queued', 'running', 'active', 'analysis_wait', 'paused', 'completed', 'partial', 'failed', 'stopped']);
+      const knownItemStatuses = new Set(['metadata_pending', 'metadata_failed', 'skipped_no_abstract', 'identity_unresolved', 'skipped_removed', 'analysis_queued', 'analysis_running', 'analysis_failed', 'completed']);
+      const items = cursor?.items && typeof cursor.items === 'object' && !Array.isArray(cursor.items) ? Object.values(cursor.items) : [];
+      expansion.batchUnknown = !job || job.operation !== 'expand_batch'
+        || !knownJobStatuses.has(String(job.status || '').toLowerCase())
+        || !job.status || !cursor || typeof cursor !== 'object'
+        || !cursor.items || typeof cursor.items !== 'object' || Array.isArray(cursor.items)
+        || items.some((item) => !knownItemStatuses.has(String(item?.status || item?.metadata_status || item?.analysis_status || '').toLowerCase()));
+      if (job && ['completed', 'partial', 'failed', 'stopped'].includes(String(job.status || '').toLowerCase())) {
+        expansion.batchPollAttempts = 0;
+      }
+      const record = expansionBatchRecord(expansion, jobId);
+      if (record) record.last_read_at = new Date().toISOString();
+      persistExpansionDraft(expansion);
+      if (!expansion.batchUnknown && expansionBatchPollIsActive(job)) scheduleExpansionBatchPoll(expansion, generation, selectionGeneration);
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation) || expansion.batchSelectionGeneration !== selectionGeneration
+        || expansion.batchJobId !== jobId) return;
+      expansion.batchError = `批次进度读取失败：${errorAction(error, '请手动刷新批次状态；不会重新提交或重跑后台步骤。')}`;
+      if (expansion.batchPollAttempts < MAX_EXPANSION_BATCH_POLL_ATTEMPTS && expansion.batchJob) scheduleExpansionBatchPoll(expansion, generation, selectionGeneration);
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation) && expansion.batchSelectionGeneration === selectionGeneration
+        && expansion.batchJobId === jobId && expansion.selectedBatchJobId === jobId) {
+        expansion.batchLoading = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  function refreshExpansionBatchStatus() {
+    const expansion = state.expansion;
+    if (!expansion?.batchJobId || expansion.batchLoading) return;
+    if (expansion.batchPollTimer) window.clearTimeout(expansion.batchPollTimer);
+    expansion.batchPollTimer = null;
+    expansion.batchPollAttempts = 0;
+    expansion.batchError = '';
+    persistExpansionDraft(expansion);
+    void loadExpansionBatchJob(expansion, state.expansionGeneration, expansion.batchSelectionGeneration);
+  }
+
+  function selectExpansionBatch(jobId) {
+    const expansion = state.expansion;
+    if (!expansion || !expansionBatchRecord(expansion, jobId)) return;
+    activateExpansionBatchRecord(expansion, jobId);
+    persistExpansionDraft(expansion);
+    renderPreviewPanel();
+    void loadExpansionBatchJob(expansion, state.expansionGeneration, expansion.batchSelectionGeneration);
+  }
+
+  async function readCurrentExpansionState(expansion = state.expansion, generation = state.expansionGeneration) {
+    if (!expansionScopeIsCurrent(expansion, generation) || expansion.conflictRefreshing) return;
+    expansion.conflictRefreshing = true;
+    expansion.conflictError = '';
+    expansion.needsRevalidate = true;
+    expansion.revalidationResult = null;
+    persistExpansionDraft(expansion);
+    renderPreviewPanel();
+    try {
+      await refreshExpansionGraph(expansion, generation);
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      const previews = EXPANSION_KINDS
+        .filter((kind) => expansion.sides[kind].previewId)
+        .map((kind) => loadExpansionPreview(kind, expansion, generation));
+      await Promise.all(previews);
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      expansion.requiresPostConflictRevalidation = true;
+      expansion.needsRevalidate = true;
+      const selectedKindsReady = expansionSelections(expansion).every((selection) => {
+        const side = expansion.sides[EXPANSION_KINDS.find((kind) => expansion.sides[kind].previewId === selection.preview_id)];
+        return Boolean(side?.preview && !side.loading && !side.error && side.preview.pagination?.state !== 'loading');
+      });
+      if (!selectedKindsReady) expansion.conflictError = '地图已重新读取，但所选方向仍在读取或失败；请等待或手动重读后再重核。';
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      expansion.conflictError = `读取当前地图或预览失败：${errorAction(error, '请手动重读后再重核选择。')}`;
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation)) {
+        expansion.conflictRefreshing = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  async function revalidateExpansionSelections() {
+    const expansion = state.expansion;
+    if (!expansion || !expansionScopeIsCurrent(expansion) || expansion.revalidating || expansion.conflictRefreshing) return;
+    const selections = expansionSelections(expansion);
+    if (!selections.length) {
+      expansion.revalidationError = '请至少保留一个方向的候选，再执行重核。';
+      renderPreviewPanel();
+      return;
+    }
+    if (selections.some((selection) => {
+      const side = expansion.sides[EXPANSION_KINDS.find((kind) => expansion.sides[kind].previewId === selection.preview_id)];
+      return !side?.preview || side.loading || side.error || side.preview.pagination?.state === 'loading';
+    })) {
+      expansion.revalidationError = '所选方向仍在读取；请等待或手动重读后再重核。';
+      renderPreviewPanel();
+      return;
+    }
+    const generation = state.expansionGeneration;
+    expansion.revalidating = true;
+    expansion.revalidationError = '';
+    renderPreviewPanel();
+    try {
+      const result = await request(`/${encodeURIComponent(expansion.mapId)}/previews/revalidate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          expected_revision: Number(state.map?.revision),
+          idempotency_key: makeIdempotencyKey(),
+          selections,
+        }),
+      });
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      expansion.revalidationResult = result;
+      expansion.needsRevalidate = false;
+      expansion.requiresPostConflictRevalidation = true;
+      if (Number.isInteger(result.revision)) state.map = { ...state.map, revision: result.revision };
+      (Array.isArray(result.previews) ? result.previews : []).forEach((item) => {
+        const side = EXPANSION_KINDS.map((kind) => expansion.sides[kind]).find((candidate) => candidate.previewId === item.preview_id);
+        if (side?.preview) side.preview = { ...side.preview, preview_revision: item.preview_revision, base_revision: item.base_revision };
+      });
+      persistExpansionDraft(expansion);
+      await Promise.all(EXPANSION_KINDS.filter((kind) => expansion.sides[kind].previewId)
+        .map((kind) => loadExpansionPreview(kind, expansion, generation)));
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      expansion.needsRevalidate = true;
+      expansion.revalidationError = `选择重核失败：${expansionErrorMessage(error, expansion.activeTab)}`;
+      if (Number(error?.status) === 409) await readCurrentExpansionState(expansion, generation);
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation)) {
+        expansion.revalidating = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  function viewExpansionAddedPapers() {
+    const expansion = state.expansion;
+    const nodeIds = expansion?.batchResult?.node_ids;
+    if (!Array.isArray(nodeIds) || !nodeIds.length) return;
+    const rendered = nodeIds.filter((nodeId) => refs.nodesGroup?.querySelector(`[data-node-id="${CSS.escape(String(nodeId))}"]`));
+    if (!rendered.length) {
+      setStatus('新增论文已提交，但当前图中未显示这些节点；筛选和视图保持不变，请检查当前筛选或图层后查看。', 'waiting');
+      return;
+    }
+    const hiddenCount = nodeIds.length - rendered.length;
+    void selectNode(String(rendered[0]));
+    setStatus(hiddenCount > 0
+      ? `已打开一篇新增论文；另有 ${hiddenCount} 篇未显示，筛选和视图保持不变，请检查当前筛选或图层。`
+      : '已打开一篇新增论文；新增节点仍保持高亮。', 'waiting');
+  }
+
+  async function retryExpansionMetadata() {
+    const expansion = state.expansion;
+    const items = expansion?.batchJob?.cursor?.items;
+    if (!expansion?.batchJobId || !items || expansion.batchRetryLoading || !expansionBatchCanRetryMetadata(expansion.batchJob)) return;
+    const batchJobId = expansion.batchJobId;
+    const selectionGeneration = expansion.batchSelectionGeneration;
+    const nodeIds = Object.entries(items)
+      .filter(([, item]) => ['metadata_failed', 'skipped_no_abstract'].includes(String(item?.status || '').toLowerCase()))
+      .map(([nodeId]) => nodeId)
+      .slice(0, MAX_PREVIEW_SELECTION);
+    if (!nodeIds.length) return;
+    const generation = state.expansionGeneration;
+    expansion.batchRetryLoading = true;
+    expansion.batchError = '';
+    renderPreviewPanel();
+    try {
+      const payload = await request(`/${encodeURIComponent(expansion.mapId)}/jobs/${encodeURIComponent(batchJobId)}/retry`, {
+        method: 'POST',
+        body: JSON.stringify({ node_ids: nodeIds, steps: ['metadata'], idempotency_key: makeIdempotencyKey() }),
+      });
+      if (!expansionScopeIsCurrent(expansion, generation) || expansion.batchSelectionGeneration !== selectionGeneration || expansion.batchJobId !== batchJobId) return;
+      if (payload.job) expansion.batchJob = payload.job;
+      expansion.batchPollAttempts = 0;
+      persistExpansionDraft(expansion);
+      await loadExpansionBatchJob(expansion, generation, selectionGeneration);
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation) || expansion.batchSelectionGeneration !== selectionGeneration || expansion.batchJobId !== batchJobId) return;
+      expansion.batchError = `元数据重试未能启动：${errorAction(error, '请稍后重新读取批次状态。')}`;
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation) && expansion.batchSelectionGeneration === selectionGeneration && expansion.batchJobId === batchJobId) {
+        expansion.batchRetryLoading = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  async function retryExpansionAnalyses() {
+    const expansion = state.expansion;
+    const items = expansion?.batchJob?.cursor?.items;
+    if (!expansion?.batchJobId || !items || expansion.batchRetryLoading) return;
+    const batchJobId = expansion.batchJobId;
+    const selectionGeneration = expansion.batchSelectionGeneration;
+    const analysisIds = [...new Set(Object.values(items)
+      .filter((item) => String(item?.status || '').toLowerCase() === 'analysis_failed' && item?.analysis_id && item?.retryable !== false)
+      .map((item) => String(item.analysis_id)))];
+    if (!analysisIds.length) return;
+    const generation = state.expansionGeneration;
+    expansion.batchRetryLoading = true;
+    expansion.batchError = '';
+    renderPreviewPanel();
+    try {
+      const payload = await request(`/${encodeURIComponent(expansion.mapId)}/analysis-queue/retry`, {
+        method: 'POST',
+        body: JSON.stringify({ analysis_ids: analysisIds, idempotency_key: makeIdempotencyKey() }),
+      });
+      if (!expansionScopeIsCurrent(expansion, generation) || expansion.batchSelectionGeneration !== selectionGeneration || expansion.batchJobId !== batchJobId) return;
+      state.analysisQueue = normalizeAnalysisQueue(payload);
+      state.queueSignature = analysisQueueSignature(state.analysisQueue);
+      renderAnalysisQueue();
+      expansion.batchPollAttempts = 0;
+      await loadExpansionBatchJob(expansion, generation, selectionGeneration);
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation) || expansion.batchSelectionGeneration !== selectionGeneration || expansion.batchJobId !== batchJobId) return;
+      expansion.batchError = `分析重试未能启动：${errorAction(error, '请稍后重新读取批次状态。')}`;
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation) && expansion.batchSelectionGeneration === selectionGeneration && expansion.batchJobId === batchJobId) {
+        expansion.batchRetryLoading = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
+  async function mutateExpansionMapQueue(action, button) {
+    await mutateAnalysisQueue(action, button);
+    const expansion = state.expansion;
+    if (expansion) {
+      if (action === 'resume' && expansion.batchJobId) await loadExpansionBatchJob(expansion, state.expansionGeneration);
+      renderPreviewPanel();
+    }
+  }
+
+  async function submitExpansionBatch() {
+    const expansion = state.expansion;
+    if (!expansion || expansion.batchApplying || !expansionScopeIsCurrent(expansion)) return;
+    const selections = expansionSelections(expansion);
+    const invalid = expansionSelectedInvalidKeys(expansion);
+    const selectionCount = expansionSelectedIdentities(expansion).size;
+    if (!selections.length) return;
+    if (selectionCount > MAX_PREVIEW_SELECTION || selectionCount > Math.max(0, MAX_MAP_NODES - activeNodes().length)) return;
+    if (expansion.needsRevalidate || (expansion.requiresPostConflictRevalidation && !expansionSelectionIsCovered(expansion))) {
+      expansion.needsRevalidate = true;
+      expansion.batchError = '地图版本变化后必须先重核当前选择，再次确认。';
+      renderPreviewPanel();
+      return;
+    }
+    if (invalid.size) {
+      expansion.batchError = '仍有失效候选处于选择状态；请取消这些候选后再次确认。';
+      renderPreviewPanel();
+      return;
+    }
+    if (selections.some((selection) => {
+      const side = EXPANSION_KINDS.map((kind) => expansion.sides[kind]).find((candidate) => candidate.previewId === selection.preview_id);
+      return !side?.preview || side.loading || side.creating || side.preview.pagination?.state === 'loading';
+    })) return;
+    const generation = state.expansionGeneration;
+    const body = {
+      expected_revision: Number(state.map?.revision),
+      idempotency_key: makeIdempotencyKey(),
+      selections,
+    };
+    expansion.batchApplying = true;
+    expansion.batchError = '';
+    renderPreviewPanel();
+    try {
+      const result = await request(`/${encodeURIComponent(expansion.mapId)}/previews/batch-apply`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      const nodeIds = Array.isArray(result.node_ids) ? result.node_ids.map(String) : [];
+      const batchResult = {
+        added_count: Number(result.added_count) || 0,
+        existing_count: Number(result.existing_count) || 0,
+        node_ids: nodeIds,
+        batch_job_id: typeof result.batch_job_id === 'string' ? result.batch_job_id : null,
+        hidden_node_ids: [],
+      };
+      const newBatchJobId = batchResult.batch_job_id;
+      saveSelectedExpansionBatchRecord(expansion);
+      if (newBatchJobId) {
+        const existingRecord = expansionBatchRecord(expansion, newBatchJobId);
+        const newRecord = {
+          batch_job_id: newBatchJobId,
+          batch_result: { ...batchResult, node_ids: [...nodeIds], hidden_node_ids: [] },
+          poll_attempts: 0,
+          last_status: null,
+          last_counts: null,
+          last_read_at: null,
+        };
+        if (existingRecord) Object.assign(existingRecord, newRecord);
+        else expansion.batchRecords.push(newRecord);
+        expansion.batchApplyNotice = '';
+        activateExpansionBatchRecord(expansion, newBatchJobId, false);
+        expansion.batchUnknown = false;
+      } else {
+        expansion.batchApplyNotice = `本次确认新增 ${batchResult.added_count} 篇，未创建新的批次任务。此前已保存的批次状态仍保留，可从历史记录中选择读取。`;
+      }
+      expansion.revalidationResult = null;
+      expansion.needsRevalidate = false;
+      expansion.requiresPostConflictRevalidation = false;
+      EXPANSION_KINDS.forEach((kind) => expansion.sides[kind].selectedCandidateIds.clear());
+      (Array.isArray(result.previews) ? result.previews : []).forEach((item) => {
+        const side = EXPANSION_KINDS.map((kind) => expansion.sides[kind]).find((candidate) => candidate.previewId === item.preview_id);
+        if (side?.preview) side.preview = { ...side.preview, preview_revision: item.preview_revision, base_revision: item.base_revision };
+      });
+      if (Number.isInteger(result.revision) && state.map) state.map = { ...state.map, revision: result.revision };
+      persistExpansionDraft(expansion);
+      renderPreviewPanel();
+      await refreshExpansionGraph(expansion, generation, nodeIds, newBatchJobId);
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      await Promise.all(EXPANSION_KINDS.filter((kind) => expansion.sides[kind].previewId)
+        .map((kind) => loadExpansionPreview(kind, expansion, generation)));
+      if (expansion.batchJobId) await loadExpansionBatchJob(expansion, generation, expansion.batchSelectionGeneration);
+    } catch (error) {
+      if (!expansionScopeIsCurrent(expansion, generation)) return;
+      const code = String(error?.code || '').toUpperCase();
+      if (Number(error?.status) === 409 || ['MAP_CONFLICT', 'MAP_PREVIEW_VERSION_CONFLICT', 'MAP_PREVIEW_REVALIDATION_REQUIRED', 'MAP_PREVIEW_BUSY'].includes(code)) {
+        expansion.requiresPostConflictRevalidation = true;
+        expansion.needsRevalidate = true;
+        expansion.conflictError = '地图或候选版本已变化。当前地图与两侧预览已重新读取；请检查变化并显式重核后再次确认。';
+        expansion.batchError = '';
+        await readCurrentExpansionState(expansion, generation);
+      } else {
+        expansion.batchError = `批量提交失败：${errorAction(error, '选择和预览草稿已保留；请读取当前地图状态后重试。')}`;
+      }
+    } finally {
+      if (expansionScopeIsCurrent(expansion, generation)) {
+        expansion.batchApplying = false;
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+      }
+    }
+  }
+
   function expansionSelectedIdentities(expansion = state.expansion) {
     const identities = new Set();
     EXPANSION_KINDS.forEach((kind) => {
@@ -2907,11 +3542,12 @@
     const expansion = state.expansion;
     const side = expansion?.sides?.[kind];
     const candidate = side?.preview?.candidates?.find((item) => String(item?.candidate_id || '') === candidateId);
-    if (!candidate || candidate.already_present || candidate.existing || candidate.removed || !String(candidate.identity_key || '').trim()) return;
+    if (!candidate) return;
     if (checked) {
+      if (candidate.already_present || candidate.existing || candidate.removed || !String(candidate.identity_key || '').trim()) return;
       const existingIdentities = expansionSelectedIdentities(expansion);
       const identity = String(candidate.identity_key).trim();
-      const available = Math.max(0, MAX_MAP_NODES - normalizeNodes(state.graph).length);
+      const available = Math.max(0, MAX_MAP_NODES - activeNodes().length);
       const limit = Math.min(MAX_PREVIEW_SELECTION, available);
       if (!existingIdentities.has(identity) && existingIdentities.size >= limit) {
         setStatus(`本次最多选择 ${limit} 个不同论文身份；请先取消其他选择。`, 'waiting');
@@ -2922,8 +3558,198 @@
     } else {
       side.selectedCandidateIds.delete(candidateId);
     }
+    if (expansion.requiresPostConflictRevalidation) {
+      expansion.needsRevalidate = !expansionSelectionIsCovered(expansion);
+    }
     persistExpansionDraft(expansion);
     renderPreviewPanel();
+  }
+
+  function renderExpansionBatchPanel(expansion) {
+    if (!expansion.batchJobId && !expansion.batchResult && !expansion.needsRevalidate
+      && !expansion.revalidationResult && !expansion.conflictRefreshing
+      && !expansion.batchError && !expansion.revalidationError && !expansion.batchApplyNotice
+      && !(expansion.batchRecords || []).length) return null;
+    const panel = createElement('section', 'literature-map-expansion-batch');
+    panel.id = 'literature-map-expansion-batch';
+    panel.append(createElement('h4', '', '批次摘要与分析进度'));
+    if (expansion.batchApplyNotice) {
+      const notice = createElement('p', 'literature-map-expansion-state', expansion.batchApplyNotice);
+      notice.id = 'literature-map-expansion-batch-notice';
+      panel.append(notice);
+    }
+    if ((expansion.batchRecords || []).length) {
+      const history = createElement('div', 'literature-map-expansion-batch-history');
+      history.id = 'literature-map-expansion-batch-history';
+      history.append(createElement('p', 'literature-map-expansion-state', '以下状态是上次读取结果；选择批次后会重新读取最新进度。'));
+      const records = createElement('div', 'literature-map-expansion-batch-records');
+      [...expansion.batchRecords].reverse().forEach((record) => {
+        const selected = record.batch_job_id === expansion.batchJobId;
+        const lastStatus = record.last_status
+          ? expansionBatchStateLabel(record.last_status)
+          : '尚未读取';
+        const button = createElement('button', selected ? 'secondary-button is-selected' : 'secondary-button',
+          `批次 ${record.batch_job_id} · 上次读取：${lastStatus} · 点击读取最新状态`);
+        button.type = 'button';
+        button.dataset.expansionBatchJobId = record.batch_job_id;
+        button.setAttribute('aria-pressed', String(selected));
+        button.addEventListener('click', () => selectExpansionBatch(record.batch_job_id));
+        records.append(button);
+      });
+      history.append(records);
+      panel.append(history);
+    }
+    if (expansion.conflictRefreshing) {
+      panel.append(createElement('p', 'literature-map-expansion-state', '正在只读读取当前地图与两侧预览；之后仍需你显式重核和再次确认。'));
+    }
+    if (expansion.conflictError) {
+      const conflict = createElement('p', 'literature-map-expansion-error', expansion.conflictError);
+      conflict.setAttribute('role', 'alert');
+      panel.append(conflict);
+    }
+    if (expansion.revalidationError) {
+      const error = createElement('p', 'literature-map-expansion-error', expansion.revalidationError);
+      error.setAttribute('role', 'alert');
+      panel.append(error);
+    }
+    if (expansion.needsRevalidate) {
+      panel.append(createElement('p', 'literature-map-expansion-state', '地图版本变化后，候选已重新读取；不会自动重核或重发。请检查失效标记后显式重核当前选择。'));
+      const revalidate = createElement('button', 'secondary-button', expansion.revalidating ? '正在重核选择…' : '重核当前选择');
+      revalidate.type = 'button';
+      revalidate.id = 'literature-map-expansion-revalidate';
+      revalidate.disabled = expansion.revalidating || expansion.conflictRefreshing || expansionSelections(expansion).length === 0
+        || expansionSelections(expansion).some((selection) => {
+          const side = expansion.sides[EXPANSION_KINDS.find((kind) => expansion.sides[kind].previewId === selection.preview_id)];
+          return !side?.preview || side.loading || Boolean(side.error) || side.preview.pagination?.state === 'loading';
+        });
+      revalidate.addEventListener('click', () => revalidateExpansionSelections());
+      panel.append(revalidate);
+    }
+    if (expansion.revalidationResult) {
+      const changes = expansion.revalidationResult.changes && typeof expansion.revalidationResult.changes === 'object'
+        ? Object.entries(expansion.revalidationResult.changes)
+        : [];
+      const changeText = changes.map(([previewId, counts]) => {
+        const side = EXPANSION_KINDS.map((kind) => expansion.sides[kind]).find((item) => item.previewId === previewId);
+        const label = side ? expansionKindLabel(side.kind) : '关联预览';
+        return `${label}：已有状态变化 ${Number(counts?.already_present) || 0} 项，移除状态变化 ${Number(counts?.removed) || 0} 项`;
+      });
+      const invalid = Array.isArray(expansion.revalidationResult.invalid_selections) ? expansion.revalidationResult.invalid_selections : [];
+      panel.append(createElement('p', 'literature-map-expansion-revalidation', invalid.length
+        ? `重核完成：${invalid.length} 项无效，仍保留在草稿中；取消失效项后再次明确确认。${changeText.length ? ` ${changeText.join('；')}` : ''}`
+        : `重核完成：所选候选均有效。${changeText.length ? ` ${changeText.join('；')}` : ''}`));
+      if (invalid.length) {
+        const list = createElement('ul', 'literature-map-expansion-invalid-list');
+        invalid.forEach((item) => {
+          const side = EXPANSION_KINDS.map((kind) => expansion.sides[kind]).find((candidate) => candidate.previewId === item.preview_id);
+          const candidate = side?.preview?.candidates?.find((entry) => entry.candidate_id === item.candidate_id);
+          list.append(createElement('li', '', `${metadataText(candidate?.title, '候选论文')}：${expansionInvalidReasonLabel(item.reason)}`));
+        });
+        panel.append(list);
+      }
+    }
+    if (expansion.batchError) {
+      const error = createElement('p', 'literature-map-expansion-error', expansion.batchError);
+      error.setAttribute('role', 'alert');
+      panel.append(error);
+    }
+    if (expansion.batchResult) {
+      const counts = expansion.batchJob?.counts || {};
+      const pending = ['metadata_pending', 'analysis_queued', 'analysis_running']
+        .reduce((sum, key) => sum + (Number(counts[key]) || 0), 0);
+      const pendingText = expansion.batchJob
+        ? `待处理 ${pending} 项`
+        : '后台待分析进度读取中';
+      panel.append(createElement('p', 'literature-map-expansion-batch-summary',
+        `已新增 ${Number(expansion.batchResult.added_count) || 0} 篇 · 已有 ${Number(expansion.batchResult.existing_count) || 0} 篇 · ${pendingText}`));
+      const nodeIds = Array.isArray(expansion.batchResult.node_ids) ? expansion.batchResult.node_ids : [];
+      if (nodeIds.length) {
+        panel.append(createElement('p', 'literature-map-expansion-state', '新增节点已高亮；地图原有位置、分组、颜色、图层和视口保持不变。'));
+        const view = createElement('button', 'secondary-button', '查看新增论文');
+        view.type = 'button';
+        view.id = 'literature-map-expansion-view-added';
+        view.addEventListener('click', () => viewExpansionAddedPapers());
+        panel.append(view);
+      }
+      if (Array.isArray(expansion.batchResult.hidden_node_ids) && expansion.batchResult.hidden_node_ids.length) {
+        panel.append(createElement('p', 'literature-map-expansion-state', `有 ${expansion.batchResult.hidden_node_ids.length} 篇新增论文未显示；当前筛选或图层可能将其隐藏，筛选与视图未自动更改。`));
+      }
+    }
+    if (expansion.batchJobId) {
+      const job = expansion.batchJob;
+      if (expansion.batchLoading) panel.append(createElement('p', 'literature-map-expansion-state', '正在读取已保存的批次进度…'));
+      if (job) panel.append(createElement('p', 'literature-map-expansion-batch-status', expansionBatchStateLabel(job.status)));
+      if (expansion.batchUnknown) {
+        panel.append(createElement('p', 'literature-map-expansion-state', '服务返回了无法识别的批次或步骤状态；未自动重试后台任务。可手动读取最新状态。'));
+      }
+      const counts = job?.counts && typeof job.counts === 'object' ? job.counts : null;
+      if (counts) {
+        const summaryKeys = ['metadata_pending', 'metadata_failed', 'identity_unresolved', 'skipped_no_abstract', 'skipped_removed', 'analysis_queued', 'completed', 'failed'];
+        const summary = summaryKeys.map((key) => `${({ metadata_pending: '补充中', metadata_failed: '摘要失败', identity_unresolved: '身份未确认', skipped_no_abstract: '无摘要跳过', skipped_removed: '已移出跳过', analysis_queued: '分析排队', completed: '完成', failed: '失败' })[key]} ${Number(counts[key]) || 0}`).join(' · ');
+        panel.append(createElement('p', 'literature-map-expansion-batch-counts', `批次共 ${Number(counts.total) || 0} 篇 · ${summary}`));
+      }
+      const items = job?.cursor?.items && typeof job.cursor.items === 'object' && !Array.isArray(job.cursor.items)
+        ? Object.entries(job.cursor.items)
+        : [];
+      if (items.length) {
+        const names = new Map(normalizeNodes(state.graph).map((node) => [String(node.node_id), String(node.title || node.node_id)]));
+        const list = createElement('div', 'literature-map-expansion-batch-items');
+        items.forEach(([nodeId, item]) => {
+          const row = createElement('article', 'literature-map-expansion-batch-item');
+          row.append(createElement('strong', '', names.get(nodeId) || nodeId));
+          row.append(createElement('span', '', expansionBatchItemStatus(item)));
+          if (item?.error_code) row.append(createElement('span', 'literature-map-expansion-batch-error-code', `错误码：${String(item.error_code)}`));
+          list.append(row);
+        });
+        panel.append(list);
+      }
+      const metadataRetryIds = items.filter(([, item]) => ['metadata_failed', 'skipped_no_abstract'].includes(String(item?.status || '').toLowerCase())).map(([nodeId]) => nodeId);
+      if (metadataRetryIds.length && !expansion.batchUnknown) {
+        if (expansionBatchCanRetryMetadata(job)) {
+          const retry = createElement('button', 'secondary-button', expansion.batchRetryLoading ? '正在重试元数据…' : `显式重试元数据 ${metadataRetryIds.length} 项`);
+          retry.type = 'button';
+          retry.id = 'literature-map-expansion-retry-metadata';
+          retry.disabled = expansion.batchRetryLoading;
+          retry.addEventListener('click', () => retryExpansionMetadata());
+          panel.append(retry);
+        } else {
+          panel.append(createElement('p', 'literature-map-expansion-state', '本批其它步骤仍在处理；批次结束后可显式重试元数据。'));
+        }
+      }
+      const failedAnalysisIds = [...new Set(items.filter(([, item]) => String(item?.status || '').toLowerCase() === 'analysis_failed' && item?.analysis_id && item?.retryable !== false).map(([, item]) => String(item.analysis_id)))];
+      if (failedAnalysisIds.length && !expansion.batchUnknown) {
+        const retry = createElement('button', 'secondary-button', expansion.batchRetryLoading ? '正在重试分析…' : `重试失败分析 ${failedAnalysisIds.length} 项`);
+        retry.type = 'button';
+        retry.id = 'literature-map-expansion-retry-analysis';
+        retry.disabled = expansion.batchRetryLoading;
+        retry.addEventListener('click', () => retryExpansionAnalyses());
+        panel.append(retry);
+      }
+      const queueState = String(state.analysisQueue?.state || '').toLowerCase();
+      if (['active', 'paused'].includes(queueState)) {
+        panel.append(createElement('p', 'literature-map-expansion-map-queue-note', '地图级暂停或恢复会影响同图其它待分析论文。'));
+        const action = queueState === 'paused' ? 'resume' : 'pause';
+        const button = createElement('button', 'secondary-button', action === 'pause' ? '暂停同图摘要队列' : '恢复同图摘要队列');
+        button.type = 'button';
+        button.id = action === 'pause' ? 'literature-map-expansion-pause-map-queue' : 'literature-map-expansion-resume-map-queue';
+        button.addEventListener('click', () => mutateExpansionMapQueue(action, button));
+        panel.append(button);
+      }
+      const needsManualRefresh = expansion.batchUnknown || Boolean(expansion.batchError)
+        || (expansion.batchPollAttempts >= MAX_EXPANSION_BATCH_POLL_ATTEMPTS && expansionBatchPollIsActive(job));
+      if (needsManualRefresh) {
+        if (!expansion.batchUnknown && !expansion.batchError) {
+          panel.append(createElement('p', 'literature-map-expansion-state', '批次仍在后台处理；自动读取已暂停。手动刷新只读取进度，不会重新提交或重跑摘要。'));
+        }
+        const refresh = createElement('button', 'secondary-button', '手动刷新批次状态');
+        refresh.type = 'button';
+        refresh.id = 'literature-map-expansion-batch-refresh';
+        refresh.disabled = expansion.batchLoading;
+        refresh.addEventListener('click', () => refreshExpansionBatchStatus());
+        panel.append(refresh);
+      }
+    }
+    return panel;
   }
 
   function renderExpansionPanel() {
@@ -2958,7 +3784,7 @@
     refs.previewPanel.append(tabs);
 
     const identities = expansionSelectedIdentities(expansion);
-    const nodeCount = normalizeNodes(state.graph).length;
+    const nodeCount = activeNodes().length;
     const available = Math.max(0, MAX_MAP_NODES - nodeCount);
     refs.previewPanel.append(createElement('p', 'literature-map-expansion-capacity', `已选 ${identities.size}/20 个新身份 · 地图容量 ${nodeCount}/200（还可加入 ${available}）`));
 
@@ -3026,6 +3852,9 @@
       candidates.forEach((candidate) => {
         const candidateId = String(candidate.candidate_id);
         const identityKey = String(candidate.identity_key || '').trim();
+        const selected = side.selectedCandidateIds.has(candidateId);
+        const invalidSelection = (Array.isArray(expansion.revalidationResult?.invalid_selections) ? expansion.revalidationResult.invalid_selections : [])
+          .find((item) => item.preview_id === side.previewId && item.candidate_id === candidateId);
         const row = createElement('article', 'literature-map-expansion-candidate');
         row.dataset.candidateId = candidateId;
         const title = createElement('strong', 'literature-map-expansion-candidate-title', metadataText(candidate.title, '标题未提供'));
@@ -3034,15 +3863,18 @@
         const checkbox = createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = candidateId;
-        checkbox.checked = side.selectedCandidateIds.has(candidateId);
+        checkbox.checked = selected;
         const alreadyPresent = Boolean(candidate.already_present || candidate.existing);
         const removed = Boolean(candidate.removed);
-        checkbox.disabled = alreadyPresent || removed || !identityKey;
+        checkbox.disabled = (alreadyPresent || removed || !identityKey) && !selected;
         checkbox.addEventListener('change', () => updateExpansionSelection(side.kind, candidateId, checkbox.checked));
         const select = createElement('label', 'literature-map-expansion-candidate-select');
         const selectionText = createElement('span', '', alreadyPresent ? '已在当前地图' : removed ? '已移除墓碑' : !identityKey ? '身份未确认，暂不能选择' : '加入待确认集合');
         select.append(checkbox, selectionText);
         row.append(select);
+        if (invalidSelection) {
+          row.append(createElement('span', 'literature-map-expansion-invalid', expansionInvalidReasonLabel(invalidSelection.reason)));
+        }
         if (removed) {
           const restoreId = candidate.node_id || candidate.existing_node_id;
           if (restoreId) {
@@ -3080,13 +3912,30 @@
       tabpanel.append(paginationActions);
     }
     refs.previewPanel.append(tabpanel);
+    const batchPanel = renderExpansionBatchPanel(expansion);
+    if (batchPanel) refs.previewPanel.append(batchPanel);
 
     const actions = createElement('div', 'literature-map-expansion-actions');
-    const apply = createElement('button', 'send-button', '批量确认待接入');
+    const selections = expansionSelections(expansion);
+    const selectedIdentities = expansionSelectedIdentities(expansion).size;
+    const invalidSelected = expansionSelectedInvalidKeys(expansion).size > 0;
+    const selectionReady = selections.length > 0 && selections.every((selection) => {
+      const side = EXPANSION_KINDS.map((kind) => expansion.sides[kind]).find((candidate) => candidate.previewId === selection.preview_id);
+      return Boolean(side?.preview && !side.loading && !side.creating && !side.error && side.preview.pagination?.state !== 'loading');
+    });
+    const needsRevalidation = expansion.needsRevalidate
+      || (expansion.requiresPostConflictRevalidation && !expansionSelectionIsCovered(expansion));
+    const hasCapacity = selectedIdentities <= MAX_PREVIEW_SELECTION
+      && selectedIdentities <= Math.max(0, MAX_MAP_NODES - nodeCount);
+    const apply = createElement('button', 'send-button', `批量确认所选论文${selections.length ? `（${selectedIdentities}个新身份）` : ''}`);
     apply.type = 'button';
     apply.id = 'literature-map-expansion-apply';
-    apply.disabled = true;
-    apply.title = '批量重核与原子提交将在后续阶段接入。';
+    apply.disabled = !selectionReady || !hasCapacity || invalidSelected || needsRevalidation
+      || expansion.batchApplying || expansion.revalidating || expansion.conflictRefreshing;
+    apply.title = needsRevalidation
+      ? '地图版本变化后请先显式重核当前选择。'
+      : (invalidSelected ? '请取消失效候选后再次确认。' : '一次提交两个方向中已选的候选，并保留现有地图布局。');
+    apply.addEventListener('click', () => submitExpansionBatch());
     actions.append(apply);
     const close = createElement('button', 'secondary-button', '关闭扩展预览');
     close.type = 'button';
@@ -3118,12 +3967,66 @@
     state.previewKind = null;
     state.previewNodeId = null;
     const draft = readExpansionDraft(ownerId, mapId, seedNodeId);
+    const batchRecordsById = new Map();
+    (Array.isArray(draft?.batch_records) ? draft.batch_records : []).forEach((record) => {
+      const jobId = typeof record?.batch_job_id === 'string' ? record.batch_job_id : '';
+      if (!jobId) return;
+      batchRecordsById.set(jobId, {
+        batch_job_id: jobId,
+        batch_result: record.batch_result && typeof record.batch_result === 'object' ? record.batch_result : null,
+        poll_attempts: Math.max(0, Math.min(MAX_EXPANSION_BATCH_POLL_ATTEMPTS, Number(record.poll_attempts) || 0)),
+        last_status: typeof record.last_status === 'string' ? record.last_status : null,
+        last_counts: record.last_counts && typeof record.last_counts === 'object' ? record.last_counts : null,
+        last_read_at: typeof record.last_read_at === 'string' ? record.last_read_at : null,
+      });
+    });
+    const legacyBatchJobId = typeof draft?.batch_job_id === 'string' ? draft.batch_job_id : null;
+    if (legacyBatchJobId && !batchRecordsById.has(legacyBatchJobId)) {
+      batchRecordsById.set(legacyBatchJobId, {
+        batch_job_id: legacyBatchJobId,
+        batch_result: draft?.batch_result && typeof draft.batch_result === 'object' ? draft.batch_result : null,
+        poll_attempts: Math.max(0, Math.min(MAX_EXPANSION_BATCH_POLL_ATTEMPTS, Number(draft?.batch_poll_attempts) || 0)),
+        last_status: null,
+        last_counts: null,
+        last_read_at: null,
+      });
+    }
+    const batchRecords = Array.from(batchRecordsById.values());
+    const preferredBatchJobId = typeof draft?.selected_batch_job_id === 'string'
+      ? draft.selected_batch_job_id
+      : legacyBatchJobId;
+    const selectedBatchRecord = batchRecords.find((record) => record.batch_job_id === preferredBatchJobId)
+      || batchRecords[batchRecords.length - 1]
+      || null;
     const expansion = {
       ownerId,
       mapId,
       seedNodeId,
       activeTab: EXPANSION_KINDS.includes(draft?.active_tab) ? draft.active_tab : 'references',
       sides: Object.fromEntries(EXPANSION_KINDS.map((kind) => [kind, expansionSide(kind, draft?.sides?.[kind])])),
+      batchRecords,
+      selectedBatchJobId: selectedBatchRecord?.batch_job_id || null,
+      batchJobId: selectedBatchRecord?.batch_job_id || null,
+      batchResult: selectedBatchRecord?.batch_result
+        || (selectedBatchRecord?.batch_job_id === legacyBatchJobId && draft?.batch_result && typeof draft.batch_result === 'object' ? draft.batch_result : null),
+      batchJob: null,
+      batchPollAttempts: Math.max(0, Math.min(MAX_EXPANSION_BATCH_POLL_ATTEMPTS,
+        Number(selectedBatchRecord?.poll_attempts ?? (selectedBatchRecord?.batch_job_id === legacyBatchJobId ? draft?.batch_poll_attempts : 0)) || 0)),
+      batchApplyNotice: typeof draft?.batch_apply_notice === 'string' ? draft.batch_apply_notice : '',
+      batchPollTimer: null,
+      batchSelectionGeneration: 0,
+      batchLoading: false,
+      batchApplying: false,
+      batchRetryLoading: false,
+      batchError: '',
+      batchUnknown: false,
+      conflictRefreshing: false,
+      conflictError: '',
+      revalidating: false,
+      revalidationError: '',
+      needsRevalidate: Boolean(draft?.needs_revalidate),
+      requiresPostConflictRevalidation: Boolean(draft?.needs_revalidate || draft?.revalidation_result),
+      revalidationResult: draft?.revalidation_result && typeof draft.revalidation_result === 'object' ? draft.revalidation_result : null,
     };
     state.expansion = expansion;
     const generation = ++state.expansionGeneration;
@@ -3142,6 +4045,7 @@
           side.errorAction = 'create';
         }
       });
+      if (expansion.batchJobId) void loadExpansionBatchJob(expansion, generation);
       renderPreviewPanel();
       return;
     }
@@ -3712,10 +4616,11 @@
       const point = positions[node.node_id];
       const group = createSvgElement('g');
       const selected = node.node_id === state.selectedNodeId || state.multiSelectedNodeIds.has(node.node_id);
+      const expansionHighlighted = state.expansionHighlightNodeIds.has(node.node_id);
       const mapGroup = groupById(node.group_id);
       const provenance = typeof node.provenance === 'string' ? node.provenance : node.provenance?.basis || '';
       const fullTitle = String(node.title || node.node_id || '未命名论文');
-      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}${mapGroup ? ' is-grouped' : ''}`, 'data-node-id': node.node_id, 'data-group-id': mapGroup?.group_id || '', 'data-group-color': mapGroup?.color || '', 'data-provenance': provenance, 'data-citation-known': citationCount(node.citation_count) === null ? 'false' : 'true', tabindex: '0', role: 'button', 'aria-label': nodeAccessibleLabel(node), title: fullTitle });
+      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}${mapGroup ? ' is-grouped' : ''}${expansionHighlighted ? ' is-expansion-highlighted' : ''}`, 'data-node-id': node.node_id, 'data-group-id': mapGroup?.group_id || '', 'data-group-color': mapGroup?.color || '', 'data-provenance': provenance, 'data-citation-known': citationCount(node.citation_count) === null ? 'false' : 'true', tabindex: '0', role: 'button', 'aria-label': nodeAccessibleLabel(node), title: fullTitle });
       const svgTitle = createSvgElement('title');
       svgTitle.textContent = `${fullTitle} · 引用数${citationCountLabel(node)}`;
       group.append(svgTitle);

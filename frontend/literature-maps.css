@@ -184,6 +184,24 @@
 #literature-maps-view .literature-map-expansion-pagination-actions, #literature-maps-view .literature-map-expansion-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 #literature-maps-view .literature-map-expansion-pagination-actions button, #literature-maps-view .literature-map-expansion-actions button { min-height: 34px; padding: 7px 9px; font-size: 10px; }
 #literature-maps-view #literature-map-expansion-apply:disabled { opacity: .68; cursor: not-allowed; }
+#literature-maps-view .literature-map-expansion-invalid { grid-column: 1 / -1; color: #a33232; font: 9px/1.45 'DM Mono', monospace; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-expansion-batch { display: grid; gap: 7px; min-width: 0; padding: 9px; border: 1px solid #ded8f5; border-radius: 8px; background: #f8f7ff; }
+#literature-maps-view .literature-map-expansion-batch h4 { margin: 0; color: var(--ink); font-size: 11px; }
+#literature-maps-view .literature-map-expansion-batch-summary, #literature-maps-view .literature-map-expansion-batch-status, #literature-maps-view .literature-map-expansion-batch-counts, #literature-maps-view .literature-map-expansion-revalidation, #literature-maps-view .literature-map-expansion-map-queue-note { margin: 0; color: var(--muted-strong); font: 9px/1.55 'DM Mono', monospace; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-expansion-batch-summary { color: #5145b8; font-weight: 700; }
+#literature-maps-view .literature-map-expansion-batch-status { color: var(--accent); font-weight: 700; }
+#literature-maps-view .literature-map-expansion-map-queue-note { color: #94621c; }
+#literature-maps-view .literature-map-expansion-invalid-list { display: grid; gap: 3px; max-height: 90px; margin: 0; padding-left: 18px; color: #a33232; font: 9px/1.5 'DM Mono', monospace; overflow: auto; }
+#literature-maps-view .literature-map-expansion-batch-history { display: grid; gap: 5px; min-width: 0; }
+#literature-maps-view .literature-map-expansion-batch-records { display: grid; gap: 4px; max-height: 110px; overflow: auto; overscroll-behavior: contain; }
+#literature-maps-view .literature-map-expansion-batch-records button { width: 100%; text-align: left; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-expansion-batch-records button.is-selected { border-color: #b8aceb; background: #eeeaff; color: #40369f; }
+#literature-maps-view .literature-map-expansion-batch-items { display: grid; gap: 4px; max-height: 170px; overflow: auto; overscroll-behavior: contain; }
+#literature-maps-view .literature-map-expansion-batch-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; align-items: baseline; min-width: 0; padding: 5px 7px; border: 1px solid #e8e4f4; border-radius: 6px; background: #fff; color: var(--muted-strong); font: 9px/1.45 'DM Mono', monospace; }
+#literature-maps-view .literature-map-expansion-batch-item strong { min-width: 0; color: var(--ink); font: 10px/1.4 Manrope, "Helvetica Neue", Arial, sans-serif; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-expansion-batch-error-code { grid-column: 1 / -1; color: #a33232; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-expansion-batch button { min-height: 32px; width: fit-content; max-width: 100%; padding: 6px 8px; font-size: 9px; }
+#literature-maps-view .literature-map-node.is-expansion-highlighted circle { stroke: #f08c00 !important; stroke-width: 5 !important; filter: drop-shadow(0 0 4px #f08c0088); }
 #literature-maps-view .literature-map-groups { display: grid; gap: 8px; margin: 10px; padding: 10px; border: 1px solid #e2dcff; border-radius: 9px; background: #faf9ff; }
 #literature-maps-view .literature-map-groups[hidden] { display: none !important; }
 #literature-maps-view .literature-map-groups-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -231,6 +249,7 @@
   #literature-maps-view .literature-map-preview-panel { max-height: 42dvh; margin: 8px; padding: 9px; overflow: auto; overscroll-behavior: contain; }
   #literature-maps-view .literature-map-expansion-candidates { max-height: 24dvh; }
   #literature-maps-view .literature-map-expansion-candidate-select { max-width: 135px; }
+  #literature-maps-view .literature-map-expansion-batch-items { max-height: 15dvh; }
   #literature-maps-view #literature-map-svg { min-height: 0; height: 100%; }
   /* 1060/1070 sit above the global mobile-nav backdrop/sidebar (1040/1050).
    * The 1100 toggle is temporarily suspended by the explicit drawer state. */

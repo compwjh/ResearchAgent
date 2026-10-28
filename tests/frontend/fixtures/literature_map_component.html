@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=20">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=22">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -189,7 +189,7 @@
     const longLabel = query.has('long-label');
     const largeGraph = query.has('large-graph');
     const mixedLayout = query.has('mixed-layout');
-    const queueMode = query.has('queue') || query.has('queue-race');
+    const queueMode = query.has('queue') || query.has('queue-race') || query.has('expansion-batch-progress');
     const fullReadyNoResult = query.has('full-ready-no-result');
     const fullAvailabilityMismatch = query.has('full-availability-mismatch');
     const fullReadyListMismatch = query.has('full-ready-list-mismatch');
@@ -231,12 +231,33 @@
     const refreshDiff = query.has('refresh-diff');
     const refreshEmpty = query.has('refresh-empty');
     const previewConflict = query.has('preview-conflict');
-    const expansionMode = query.has('expansion') || query.has('expansion-failed-page') || query.has('expansion-create-citation-fail') || query.has('expansion-capped') || query.has('expansion-stuck-loading');
+    const expansionBatchMode = query.has('expansion-batch') || query.has('expansion-batch-conflict') || query.has('expansion-batch-hidden') || query.has('expansion-batch-progress') || query.has('expansion-batch-unknown') || query.has('expansion-batch-stuck') || query.has('expansion-batch-full') || query.has('expansion-batch-tombstone-capacity') || query.has('expansion-batch-multiple') || query.has('expansion-batch-scope-race') || query.has('expansion-batch-no-job');
+    const expansionBatchConflict = query.has('expansion-batch-conflict');
+    const expansionBatchProgress = query.has('expansion-batch-progress');
+    const expansionBatchUnknown = query.has('expansion-batch-unknown');
+    const expansionBatchStuck = query.has('expansion-batch-stuck');
+    const expansionBatchMultiple = query.has('expansion-batch-multiple');
+    const expansionBatchScopeRace = query.has('expansion-batch-scope-race');
+    const expansionBatchNoJob = query.has('expansion-batch-no-job');
+    if (query.has('expansion-owner-b')) mockMap.owner_id = 'owner-fixture-b';
+    if (query.has('expansion-batch-full') || query.has('expansion-batch-tombstone-capacity')) {
+      for (let index = 0; index < 198; index += 1) {
+        const removed = query.has('expansion-batch-tombstone-capacity') && index === 0;
+        mockNodes.push({
+          node_id: `capacity-node-${index + 1}`, title: `容量测试论文 ${index + 1}`, authors: [],
+          citation_count: 0, removed, tombstone: removed, group_id: null,
+          position: { x: 1000 + (index % 20) * 170, y: 1000 + Math.floor(index / 20) * 170 },
+        });
+      }
+      mockGraph.nodes = mockNodes;
+    }
+    const expansionMode = query.has('expansion') || query.has('expansion-failed-page') || query.has('expansion-create-citation-fail') || query.has('expansion-capped') || query.has('expansion-stuck-loading') || expansionBatchMode;
     const expansionFailedPage = query.has('expansion-failed-page');
     const expansionCreateCitationFail = query.has('expansion-create-citation-fail');
     const expansionCapped = query.has('expansion-capped');
     const expansionStuckLoading = query.has('expansion-stuck-loading');
     let expansionCitationCreateFailures = 0;
+    if (expansionBatchMode) mockMap.view_settings.viewport = { x: -24, y: -32, scale: 1.25 };
     const pagedPreview = query.has('paged-preview') || query.has('paged-preview-delay') || query.has('paged-preview-race') || query.has('paged-preview-stall');
     const previewCursorStall = query.has('paged-preview-stall');
     const serverPreview = query.has('server-preview') || query.has('server-preview-delay') || query.has('server-preview-race') || pagedPreview;
@@ -388,6 +409,10 @@
     if (serverPreview) Object.assign(previewState, { preview_id: pagedPreview ? 'preview-server-paged' : 'preview-server', kind: 'refresh', status: 'completed', diff: realDiffShape });
     const secondMap = { ...mockMap, map_id: 'map-fixture-b', owner_id: 'owner-fixture-b', name: '第二张地图', topic: '第二主题' };
     const expansionPreviews = new Map();
+    let expansionBatchJob = null;
+    const expansionBatchJobs = new Map();
+    let expansionBatchApplyCalls = 0;
+    let expansionBatchConflictIssued = false;
     const expansionCandidatePage = (kind, offset) => Array.from({ length: 50 }, (_, index) => {
       const candidateIndex = offset + index;
       const candidate = {
@@ -443,6 +468,16 @@
     window.__previewBodies = [];
     window.__expansionPreviewBodies = [];
     window.__expansionPreviewGetCounts = { references: 0, citations: 0 };
+    window.__batchApplyBodies = [];
+    window.__batchJobIds = [];
+    window.__revalidateBodies = [];
+    window.__batchJobGetCount = 0;
+    window.__batchJobGetCounts = {};
+    window.__expansionBatchPollCallbacks = [];
+    window.__releaseExpansionBatchGet = null;
+    window.__metadataRetryBodies = [];
+    window.__metadataRetryJobIds = [];
+    window.__holdExpansionBatchPolls = false;
     window.__loadMoreBodies = [];
     window.__analysisBodies = [];
     window.__conversationBodies = [];
@@ -459,9 +494,15 @@
     window.__requestLog = [];
     window.openConversationFromWorkspace = (conversationId, options) => { window.__openedConversation = conversationId; window.__openedConversationOptions = options || null; };
     window.jumpToKnowledgeBase = (documentId) => { window.__knowledgeBaseIds.push(String(documentId)); };
-    if (analysisPollLimit || expansionStuckLoading) {
+    if (analysisPollLimit || expansionStuckLoading || expansionBatchProgress || expansionBatchUnknown || expansionBatchStuck || expansionBatchMultiple || expansionBatchScopeRace) {
       const fixtureSetTimeout = window.setTimeout.bind(window);
-      window.setTimeout = (callback, delay, ...args) => fixtureSetTimeout(callback, Math.min(Number(delay) || 0, 1), ...args);
+      window.setTimeout = (callback, delay, ...args) => {
+        if ((expansionBatchStuck || expansionBatchMultiple || expansionBatchScopeRace) && window.__holdExpansionBatchPolls && Number(delay) >= 1200) {
+          window.__expansionBatchPollCallbacks.push(callback);
+          return fixtureSetTimeout(callback, 60000, ...args);
+        }
+        return fixtureSetTimeout(callback, Math.min(Number(delay) || 0, 1), ...args);
+      };
     }
     const markdownAnalysisResult = [
       '# 自动主题分析',
@@ -579,7 +620,9 @@
       }
       else if (path === '/api/literature-maps/map-fixture/graph') {
         if (query.has('palette-delay-verification') && paletteTimeoutCalls > 0) await new Promise((resolve) => window.setTimeout(resolve, 300));
-        payload = mockGraph;
+        payload = query.has('expansion-batch-hidden') && expansionBatchJob
+          ? { ...mockGraph, nodes: mockNodes.filter((node) => !expansionBatchJob.cursor.new_node_ids?.includes(node.node_id)) }
+          : mockGraph;
       }
       else if (path === '/api/literature-maps/map-fixture/node-styles' && method === 'PATCH') {
         window.__nodeStyleBodies.push(body);
@@ -733,7 +776,19 @@
         const mapId = match?.[1] || mockMap.map_id;
         const jobId = match?.[2] || '';
         const isPreviewJob = jobId === 'job-server-preview' || jobId === 'job-server-preview-paged';
-        payload = { job: { job_id: jobId, map_id: mapId, operation: isPreviewJob ? 'preview' : 'restore', status: 'completed', step: isPreviewJob ? 'finished' : 'restore', cursor: isPreviewJob ? { preview_id: jobId === 'job-server-preview-paged' ? 'preview-server-paged' : 'preview-server' } : {}, counts: {} } };
+        const batchJob = expansionBatchJobs.get(jobId);
+        if (batchJob) {
+          window.__batchJobGetCount += 1;
+          window.__batchJobGetCounts[jobId] = (window.__batchJobGetCounts[jobId] || 0) + 1;
+          if (expansionBatchScopeRace && window.__batchJobGetCounts[jobId] > 1) {
+            await new Promise((resolve) => { window.__releaseExpansionBatchGet = resolve; });
+          }
+          if (expansionBatchProgress && window.__batchJobGetCounts[jobId] > 4) batchJob.status = 'partial';
+          if (expansionBatchMultiple && jobId === 'batch-expansion-1' && window.__batchJobGetCounts[jobId] > 1) batchJob.status = 'partial';
+          payload = { job: JSON.parse(JSON.stringify(batchJob)) };
+        } else {
+          payload = { job: { job_id: jobId, map_id: mapId, operation: isPreviewJob ? 'preview' : 'restore', status: 'completed', step: isPreviewJob ? 'finished' : 'restore', cursor: isPreviewJob ? { preview_id: jobId === 'job-server-preview-paged' ? 'preview-server-paged' : 'preview-server' } : {}, counts: {} } };
+        }
       }
       else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/nodes\/[^/]+$/) && method === 'GET') {
         const requestedNodeId = decodeURIComponent(path.split('/').pop() || '');
@@ -748,6 +803,141 @@
       else if (path === '/api/literature-maps/map-fixture/nodes/node-h') payload.node = mockNodes.find((node) => node.node_id === 'node-h');
       else if (path === '/api/literature-maps/map-fixture/nodes/node-long') payload.node = mockNodes.find((node) => node.node_id === 'node-long');
       else if (path === '/api/literature-maps/map-fixture/nodes/node-new') payload.node = mockNodes.find((node) => node.node_id === 'node-new');
+      else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews\/revalidate$/) && method === 'POST') {
+        window.__revalidateBodies.push(body);
+        const invalid = [];
+        const previews = [];
+        const validSelections = [];
+        for (const selection of body.selections || []) {
+          const preview = expansionPreviews.get(selection.preview_id);
+          if (!preview) continue;
+          preview.preview_revision += 1;
+          preview.base_revision = mockMap.revision;
+          const selectedIds = new Set(selection.selected_candidate_ids || []);
+          const validIds = [];
+          preview.candidates = preview.candidates.map((candidate) => {
+            const refreshed = { ...candidate };
+            if (expansionBatchConflict && preview.kind === 'references' && candidate.candidate_id === 'references-candidate-1') refreshed.already_present = true;
+            if (expansionBatchConflict && preview.kind === 'citations' && candidate.candidate_id === 'citations-candidate-1') {
+              refreshed.removed = true;
+              refreshed.node_id = 'node-removed-after-preview';
+            }
+            if (selectedIds.has(candidate.candidate_id)) {
+              if (refreshed.removed) invalid.push({ preview_id: preview.preview_id, candidate_id: candidate.candidate_id, reason: 'MAP_NODE_REMOVED' });
+              else validIds.push(candidate.candidate_id);
+            }
+            return refreshed;
+          });
+          previews.push({ preview_id: preview.preview_id, preview_revision: preview.preview_revision, base_revision: preview.base_revision });
+          validSelections.push({ preview_id: preview.preview_id, candidate_ids: validIds });
+        }
+        payload = {
+          schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision,
+          previews, valid_selections: validSelections, invalid_selections: invalid,
+          changes: {
+            'preview-expansion-map-fixture-references-1': { already_present: 1, removed: 0 },
+            'preview-expansion-map-fixture-citations-2': { already_present: 0, removed: 1 },
+          },
+        };
+      }
+      else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews\/batch-apply$/) && method === 'POST') {
+        expansionBatchApplyCalls += 1;
+        window.__batchApplyBodies.push(body);
+        if (expansionBatchConflict && !expansionBatchConflictIssued) {
+          expansionBatchConflictIssued = true;
+          mockMap.revision += 1;
+          const refs = [...expansionPreviews.values()].find((preview) => preview.kind === 'references');
+          const citations = [...expansionPreviews.values()].find((preview) => preview.kind === 'citations');
+          const refsCandidate = refs?.candidates.find((candidate) => candidate.candidate_id === 'references-candidate-1');
+          const citationsCandidate = citations?.candidates.find((candidate) => candidate.candidate_id === 'citations-candidate-1');
+          if (refsCandidate) refsCandidate.already_present = true;
+          if (citationsCandidate) { citationsCandidate.removed = true; citationsCandidate.node_id = 'node-removed-after-preview'; }
+          return new Response(JSON.stringify({ detail: { code: 'MAP_PREVIEW_VERSION_CONFLICT', message: '地图版本已变化，请重新读取后重核选择。' } }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+        }
+        const selectedCandidates = [];
+        for (const selection of body.selections || []) {
+          const preview = expansionPreviews.get(selection.preview_id);
+          for (const candidateId of selection.selected_candidate_ids || []) {
+            const candidate = preview?.candidates.find((item) => item.candidate_id === candidateId);
+            if (candidate) selectedCandidates.push({ preview, candidate });
+          }
+        }
+        const uniqueByIdentity = new Map();
+        let existingCount = 0;
+        for (const entry of selectedCandidates) {
+          if (entry.candidate.already_present || entry.candidate.existing) { existingCount += 1; continue; }
+          if (!entry.candidate.removed) uniqueByIdentity.set(entry.candidate.identity_key, entry);
+        }
+        const newNodeIds = [];
+        const returnNoBatchJob = expansionBatchNoJob && expansionBatchApplyCalls > 1;
+        let index = mockNodes.filter((node) => node.node_id.startsWith('node-expansion-')).length;
+        for (const [identity, entry] of uniqueByIdentity) {
+          if (returnNoBatchJob) continue;
+          index += 1;
+          const nodeId = `node-expansion-${index}`;
+          newNodeIds.push(nodeId);
+          mockNodes.push({
+            node_id: nodeId, identity_key: identity, title: entry.candidate.title,
+            authors: entry.candidate.authors, year: entry.candidate.year, venue: 'Fixture Venue',
+            abstract: null, keywords: [], citation_count: 0, source_url: 'https://example.org/expansion',
+            provenance: { source: 'fixture' }, group_id: null, color_override: null, position: null,
+          });
+          entry.candidate.already_present = true;
+        }
+        mockGraph.nodes = mockNodes;
+        if (newNodeIds.length) mockMap.revision += 1;
+        const statuses = expansionBatchMultiple
+          ? newNodeIds.map(() => 'metadata_failed')
+          : expansionBatchProgress
+          ? ['metadata_pending', 'metadata_failed', 'skipped_no_abstract', 'analysis_queued', 'analysis_running', 'completed', 'analysis_failed']
+          : newNodeIds.map(() => 'metadata_pending');
+        const items = Object.fromEntries(newNodeIds.map((nodeId, indexInBatch) => {
+          const status = expansionBatchUnknown ? 'future_item_state' : (statuses[indexInBatch] || 'analysis_queued');
+          const analysisId = status.startsWith('analysis_') ? `analysis-expansion-${status === 'analysis_failed' ? 'failed' : indexInBatch + 1}` : null;
+          return [nodeId, { node_id: nodeId, status, analysis_id: analysisId, retryable: status.endsWith('_failed'), error_code: status === 'metadata_failed' ? 'SEMANTIC_SCHOLAR_UNAVAILABLE' : null }];
+        }));
+        const batchJobId = returnNoBatchJob ? null : `batch-expansion-${expansionBatchApplyCalls}`;
+        if (batchJobId) {
+          const batchStatus = expansionBatchUnknown ? 'future_batch_state' : (expansionBatchProgress || expansionBatchMultiple || expansionBatchNoJob ? 'active' : 'analysis_wait');
+          expansionBatchJob = {
+            job_id: batchJobId, map_id: mockMap.map_id, operation: 'expand_batch', status: batchStatus,
+            step: expansionBatchUnknown ? 'future_stage' : (expansionBatchProgress ? 'metadata' : 'analysis_wait'),
+            cursor: { seed_node_id: 'node-a', preview_ids: (body.selections || []).map((selection) => selection.preview_id), new_node_ids: newNodeIds, items },
+            counts: expansionBatchMultiple
+              ? { added_count: newNodeIds.length, existing_count: existingCount, total: newNodeIds.length, metadata_failed: newNodeIds.length, failed: newNodeIds.length }
+              : { added_count: newNodeIds.length, existing_count: existingCount, total: newNodeIds.length, metadata_pending: 1, metadata_failed: 1, skipped_no_abstract: 1, analysis_queued: 2, completed: 1, failed: 2 },
+            failed_units: [],
+          };
+          expansionBatchJobs.set(batchJobId, expansionBatchJob);
+          window.__batchJobIds.push(batchJobId);
+        }
+        const previews = (body.selections || []).map((selection) => {
+          const preview = expansionPreviews.get(selection.preview_id);
+          if (!preview) return null;
+          preview.preview_revision += 1;
+          preview.base_revision = mockMap.revision;
+          return { preview_id: preview.preview_id, preview_revision: preview.preview_revision, base_revision: preview.base_revision };
+        }).filter(Boolean);
+        payload = {
+          schema_version: 'literature-map-v1', map_id: mockMap.map_id, revision: mockMap.revision,
+          added_count: newNodeIds.length, existing_count: existingCount, node_ids: newNodeIds,
+          batch_job_id: batchJobId, queue_job_id: batchJobId ? 'queue-expansion-fixture' : null, previews,
+        };
+      }
+      else if (path.match(/\/jobs\/[^/]+\/retry$/) && method === 'POST' && expansionBatchJobs.has(decodeURIComponent(path.match(/\/jobs\/([^/]+)\/retry$/)?.[1] || ''))) {
+        const retryJobId = decodeURIComponent(path.match(/\/jobs\/([^/]+)\/retry$/)?.[1] || '');
+        const retryJob = expansionBatchJobs.get(retryJobId);
+        window.__metadataRetryBodies.push(body);
+        window.__metadataRetryJobIds.push(retryJobId);
+        if (retryJob) {
+          for (const nodeId of body.node_ids || []) {
+            const item = retryJob.cursor.items?.[nodeId];
+            if (item) item.status = 'metadata_pending';
+          }
+          retryJob.status = 'active';
+        }
+        payload = { job: retryJob };
+      }
       else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews\/[^/]+\/load-more$/) && method === 'POST') {
         const match = parsed.pathname.match(/^\/api\/literature-maps\/([^/]+)\/previews\/([^/]+)\/load-more$/);
         const mapId = match?.[1] || '';
@@ -910,7 +1100,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=33"></script>
+  <script src="../../../frontend/literature-maps.js?v=36"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

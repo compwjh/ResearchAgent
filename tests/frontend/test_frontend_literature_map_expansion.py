@@ -25,8 +25,8 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=33" in INDEX
-    assert "/assets/literature-maps.css?v=20" in INDEX
+    assert "/assets/literature-maps.js?v=36" in INDEX
+    assert "/assets/literature-maps.css?v=22" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
@@ -46,7 +46,11 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         "自动读取已暂停",
         "手动刷新状态",
         "引用本文",
-        "批量确认待接入",
+        "/previews/revalidate",
+        "/previews/batch-apply",
+        "MAX_EXPANSION_BATCH_POLL_ATTEMPTS",
+        "analysis-queue/retry",
+        "手动刷新批次状态",
         "继续搜索",
         "刷新预览",
         "打开上次预览",
@@ -75,6 +79,7 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         ".literature-map-expansion-tabs",
         ".literature-map-expansion-tab",
         ".literature-map-expansion-candidate",
+        ".literature-map-expansion-batch",
         ".literature-map-preview-candidate",
         ".literature-map-preview-capacity",
         ".literature-map-job-actions",
@@ -130,9 +135,10 @@ def test_component_fixture_shows_one_two_direction_expansion_panel_and_keeps_gro
         assert removed.get_by_role("button", name="显式恢复").count() == 1
 
         confirm = page.locator("#literature-map-expansion-apply")
-        assert confirm.is_disabled()
-        assert "批量确认待接入" in confirm.inner_text()
+        assert confirm.is_enabled()
+        assert "批量确认所选论文" in confirm.inner_text()
         assert page.evaluate("window.__applyBody") is None
+        assert page.evaluate("window.__batchApplyBodies") == []
         assert page.locator('[data-node-id="node-a"]').get_attribute("data-group-id") == "group-fixture"
         page.close()
         browser.close()
@@ -399,6 +405,494 @@ def test_mobile_expansion_moves_from_detail_sheet_to_nested_map_panel() -> None:
         assert page.locator("#literature-map-preview-panel").evaluate("panel => Boolean(panel.closest('.literature-map-canvas-panel') && panel.closest('#literature-maps-view'))")
         assert page.locator("#literature-map-preview-panel [role=tabpanel]").get_attribute("aria-labelledby")
         assert page.locator("#literature-map-preview-panel [role=tab]").count() == 2
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_applies_both_tabs_once_and_preserves_old_layout() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        before = page.evaluate("window.__mockNodes.map(node => ({ id: node.node_id, position: node.position && { ...node.position }, group: node.group_id || null }))")
+        page.locator('[data-candidate-id="references-candidate-0"] input').check()
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        page.locator('[data-candidate-id="citations-candidate-0"] input').check()
+        page.locator('[data-candidate-id="citations-candidate-1"] input').check()
+        assert "已选 2/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        confirm = page.locator("#literature-map-expansion-apply")
+        assert confirm.is_enabled()
+        confirm.click()
+
+        page.wait_for_function("window.__batchApplyBodies?.length === 1")
+        page.wait_for_function("document.querySelector('#literature-map-expansion-batch')?.textContent.includes('新增 2 篇')")
+        body = page.evaluate("window.__batchApplyBodies[0]")
+        assert body["expected_revision"] == 3
+        assert body["idempotency_key"]
+        assert {selection["preview_id"] for selection in body["selections"]} == {
+            "preview-expansion-map-fixture-references-1",
+            "preview-expansion-map-fixture-citations-2",
+        }
+        assert len(body["selections"]) == 2
+        assert page.evaluate("window.__applyCount") == 0
+        assert not [entry for entry in page.evaluate("window.__requestLog") if entry["method"] == "POST" and entry["path"].endswith("/apply")]
+
+        page.wait_for_function("window.__viewBodies.some(body => body.positions?.some(position => position.node_id === 'node-expansion-1'))", timeout=3000)
+
+        after = page.evaluate("window.__mockNodes.map(node => ({ id: node.node_id, position: node.position && { ...node.position }, group: node.group_id || null }))")
+        for old in before:
+            current = next(node for node in after if node["id"] == old["id"])
+            assert current == old
+        additions = [node for node in after if node["id"].startswith("node-expansion-")]
+        assert len(additions) == 2
+        for node in additions:
+            assert node["position"]
+            assert abs(node["position"]["x"] - 390) < 800
+            assert abs(node["position"]["y"] - 300) < 800
+            assert "is-expansion-highlighted" in page.locator(f'[data-node-id="{node["id"]}"]').get_attribute("class")
+
+        spacing = page.evaluate("""() => {
+          const radius = node => {
+            const raw = node?.citation_count;
+            const count = raw === null || raw === undefined || raw === '' ? null : Number(raw);
+            return count === null || !Number.isFinite(count) || count < 0 ? 8 : Math.min(28, 8 + 2 * Math.log1p(count));
+          };
+          const required = (a, b) => radius(a) + radius(b) + 4 * Math.max(radius(a), radius(b)) + 4;
+          const additions = window.__mockNodes.filter(node => node.node_id.startsWith('node-expansion-'));
+          const occupied = window.__mockNodes.filter(node => !node.removed && !node.tombstone && !node.node_id.startsWith('node-expansion-'));
+          return additions.every(node => occupied.every(other => Math.hypot(node.position.x - other.position.x, node.position.y - other.position.y) + 1e-6 >= required(node, other)))
+            && additions.every((node, index) => additions.slice(index + 1).every(other => Math.hypot(node.position.x - other.position.x, node.position.y - other.position.y) + 1e-6 >= required(node, other)));
+        }""")
+        assert spacing
+
+        view_before = page.evaluate("window.__mockMap.view_settings.viewport")
+        page.get_by_role("button", name="查看新增论文").click()
+        page.wait_for_selector(".literature-map-detail-title")
+        assert page.evaluate("window.__mockMap.view_settings.viewport") == view_before
+        assert page.locator("#literature-map-expansion-batch").is_visible()
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_keeps_new_nodes_hidden_by_current_graph_filters() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-hidden", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        viewport = page.evaluate("({ ...window.__mockMap.view_settings.viewport })")
+        layers = page.evaluate("window.__mockMap.view_settings.layers || null")
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        batch = page.locator("#literature-map-expansion-batch")
+        page.wait_for_function("document.querySelector('#literature-map-expansion-batch')?.textContent.includes('当前筛选或图层可能将其隐藏')")
+        assert "筛选与视图未自动更改" in batch.inner_text()
+        page.get_by_role("button", name="查看新增论文").click()
+        page.wait_for_function("document.querySelector('#literature-map-status')?.textContent.includes('当前图中未显示这些节点')")
+        assert page.evaluate("window.__mockMap.view_settings.viewport") == viewport
+        assert page.evaluate("window.__mockMap.view_settings.layers") == layers
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_respects_two_hundred_active_node_capacity() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-full", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        assert "地图容量 200/200（还可加入 0）" in page.locator(".literature-map-expansion-capacity").inner_text()
+        candidate = page.locator('[data-candidate-id="references-candidate-1"] input')
+        candidate.evaluate("input => input.click()")
+        assert not candidate.is_checked()
+        assert page.locator("#literature-map-expansion-apply").is_disabled()
+        assert page.evaluate("window.__batchApplyBodies") == []
+        assert "最多选择 0 个不同论文身份" in page.locator("#literature-map-status").inner_text()
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_capacity_ignores_removed_tombstones() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-tombstone-capacity", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        assert "地图容量 199/200（还可加入 1）" in page.locator(".literature-map-expansion-capacity").inner_text()
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        assert page.locator("#literature-map-expansion-apply").is_enabled()
+        assert page.evaluate("window.__batchApplyBodies") == []
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_history_preserves_two_inflight_batches_and_old_retry() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-multiple", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.evaluate("window.__holdExpansionBatchPolls = true")
+
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchJobIds?.length === 1 && window.__batchJobGetCounts[window.__batchJobIds[0]] >= 1")
+        first_id = page.evaluate("window.__batchJobIds[0]")
+        assert "批次处理中" in page.locator("#literature-map-expansion-batch").inner_text()
+
+        page.locator('[data-candidate-id="references-candidate-2"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchJobIds?.length === 2 && window.__batchJobGetCounts[window.__batchJobIds[1]] >= 1")
+        second_id = page.evaluate("window.__batchJobIds[1]")
+        assert first_id != second_id
+        history = page.locator("#literature-map-expansion-batch-history")
+        assert history.locator("[data-expansion-batch-job-id]").count() == 2
+        assert "上次读取" in history.inner_text()
+        draft_key = "literature-map-expansion:owner-fixture:map-fixture:node-a"
+        draft = page.evaluate("(key) => JSON.parse(sessionStorage.getItem(key))", draft_key)
+        records = {record["batch_job_id"]: record for record in draft["batch_records"]}
+        assert records[first_id]["batch_result"]["added_count"] == 1
+        assert records[first_id]["batch_result"]["node_ids"] == ["node-expansion-1"]
+        assert records[second_id]["batch_result"]["added_count"] == 1
+        assert records[second_id]["batch_result"]["node_ids"] == ["node-expansion-2"]
+
+        old_record = history.locator(f'[data-expansion-batch-job-id="{first_id}"]')
+        old_record.click()
+        page.wait_for_function(f"window.__batchJobGetCounts['{first_id}'] >= 2")
+        panel = page.locator("#literature-map-expansion-batch")
+        assert "参考文献候选 2" in panel.inner_text()
+        assert page.locator("#literature-map-expansion-retry-metadata").is_visible()
+        page.locator("#literature-map-expansion-retry-metadata").click()
+        page.wait_for_function("window.__metadataRetryJobIds?.length === 1")
+        assert page.evaluate("window.__metadataRetryJobIds[0]") == first_id
+        assert page.evaluate("window.__metadataRetryBodies[0].node_ids") == ["node-expansion-1"]
+
+        post_count = page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length")
+        page.locator("#literature-map-expansion-close").click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function(f"window.__batchJobGetCounts['{first_id}'] >= 4")
+        assert page.locator("#literature-map-expansion-batch-history [data-expansion-batch-job-id]").count() == 2
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == post_count
+        reopened_draft = page.evaluate("(key) => JSON.parse(sessionStorage.getItem(key))", draft_key)
+        reopened_records = {record["batch_job_id"]: record for record in reopened_draft["batch_records"]}
+        assert reopened_records[first_id]["batch_result"]["node_ids"] == ["node-expansion-1"]
+        assert reopened_records[second_id]["batch_result"]["node_ids"] == ["node-expansion-2"]
+        page.locator("#literature-map-expansion-view-added").click()
+        page.wait_for_function("document.querySelector('#literature-map-detail .literature-map-detail-title')?.textContent.includes('参考文献候选 2')")
+
+        page.locator(f'#literature-map-expansion-batch-history [data-expansion-batch-job-id="{second_id}"]').click()
+        page.wait_for_function(f"window.__batchJobGetCounts['{second_id}'] >= 2")
+        assert "参考文献候选 3" in page.locator("#literature-map-expansion-batch").inner_text()
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == post_count
+        page.locator("#literature-map-expansion-view-added").click()
+        page.wait_for_function("document.querySelector('#literature-map-detail .literature-map-detail-title')?.textContent.includes('参考文献候选 3')")
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_without_job_preserves_previous_batch_and_layout() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-no-job", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.evaluate("window.__holdExpansionBatchPolls = true")
+
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchJobIds?.length === 1 && window.__batchJobGetCounts[window.__batchJobIds[0]] >= 1")
+        first_id = page.evaluate("window.__batchJobIds[0]")
+        read_positions = """() => Array.from(document.querySelectorAll('#literature-map-svg .literature-map-node'))
+          .map((node) => [node.dataset.nodeId, node.querySelector('circle')?.getAttribute('cx'), node.querySelector('circle')?.getAttribute('cy')])
+          .sort((left, right) => left[0].localeCompare(right[0]))"""
+        positions_before = page.evaluate(read_positions)
+
+        page.locator('[data-candidate-id="references-candidate-2"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_selector("#literature-map-expansion-batch-notice")
+
+        draft_key = "literature-map-expansion:owner-fixture:map-fixture:node-a"
+        draft = page.evaluate("(key) => JSON.parse(sessionStorage.getItem(key))", draft_key)
+        assert draft["batch_job_id"] == first_id
+        assert draft["selected_batch_job_id"] == first_id
+        assert len(draft["batch_records"]) == 1
+        assert draft["batch_records"][0]["batch_job_id"] == first_id
+        assert draft["batch_records"][0]["batch_result"]["added_count"] == 1
+        assert draft["batch_records"][0]["batch_result"]["node_ids"] == ["node-expansion-1"]
+        assert page.evaluate("window.__batchJobIds") == [first_id]
+        assert page.locator(".literature-map-expansion-batch-status").is_visible()
+        assert "未创建新的批次任务" in page.locator("#literature-map-expansion-batch-notice").inner_text()
+        assert "is-expansion-highlighted" in page.locator('[data-node-id="node-expansion-1"]').get_attribute("class")
+        assert page.evaluate(read_positions) == positions_before
+
+        post_count = page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length")
+        page.locator("#literature-map-expansion-close").click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function(f"window.__batchJobGetCounts['{first_id}'] >= 2")
+        reopened = page.evaluate("(key) => JSON.parse(sessionStorage.getItem(key))", draft_key)
+        assert reopened["selected_batch_job_id"] == first_id
+        assert reopened["batch_records"][0]["batch_result"]["node_ids"] == ["node-expansion-1"]
+        assert "未创建新的批次任务" in page.locator("#literature-map-expansion-batch-notice").inner_text()
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == post_count
+        page.locator("#literature-map-expansion-view-added").click()
+        page.wait_for_function("document.querySelector('#literature-map-detail .literature-map-detail-title')?.textContent.includes('参考文献候选 2')")
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_history_isolated_when_owner_changes_on_same_map_and_seed() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-multiple", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.evaluate("window.__holdExpansionBatchPolls = true")
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchJobIds?.length === 1")
+        first_id = page.evaluate("window.__batchJobIds[0]")
+        owner_a_draft = page.evaluate("sessionStorage.getItem('literature-map-expansion:owner-fixture:map-fixture:node-a')")
+        assert first_id in owner_a_draft
+
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-multiple&expansion-owner-b", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        assert page.locator("#literature-map-expansion-batch-history").count() == 0
+        owner_b_draft = page.evaluate("sessionStorage.getItem('literature-map-expansion:owner-fixture-b:map-fixture:node-a')")
+        assert owner_b_draft is not None
+        assert first_id not in owner_b_draft
+        assert '"batch_records":[]' in owner_b_draft
+        assert first_id in page.evaluate("sessionStorage.getItem('literature-map-expansion:owner-fixture:map-fixture:node-a')")
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_old_generation_response_and_timer_cannot_write_new_scope_draft() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-scope-race", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.evaluate("window.__holdExpansionBatchPolls = true")
+
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchJobIds?.length === 1 && window.__batchJobGetCounts[window.__batchJobIds[0]] >= 1")
+        first_id = page.evaluate("window.__batchJobIds[0]")
+        page.wait_for_function("window.__expansionBatchPollCallbacks?.length === 1")
+
+        page.evaluate("window.__expansionBatchPollCallbacks[0]()")
+        page.wait_for_function("typeof window.__releaseExpansionBatchGet === 'function'")
+        old_scope_key = "literature-map-expansion:owner-fixture:map-fixture:node-a"
+        old_scope_before_response = page.evaluate("(key) => sessionStorage.getItem(key)", old_scope_key)
+
+        page.locator("#literature-map-expansion-close").click()
+        page.locator('[data-node-id="node-b"] circle').click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        new_scope_key = "literature-map-expansion:owner-fixture:map-fixture:node-b"
+        page.wait_for_function("(key) => sessionStorage.getItem(key) !== null", arg=new_scope_key)
+        new_scope_draft = page.evaluate("(key) => sessionStorage.getItem(key)", new_scope_key)
+        assert first_id not in new_scope_draft
+
+        page.evaluate("window.__releaseExpansionBatchGet()")
+        page.wait_for_timeout(50)
+        assert page.evaluate("(key) => sessionStorage.getItem(key)", old_scope_key) == old_scope_before_response
+        assert page.evaluate("(key) => sessionStorage.getItem(key)", new_scope_key) == new_scope_draft
+
+        batch_get_count = page.evaluate("(jobId) => window.__batchJobGetCounts[jobId]", first_id)
+        page.evaluate("window.__expansionBatchPollCallbacks[0]()")
+        page.wait_for_timeout(20)
+        assert page.evaluate("(jobId) => window.__batchJobGetCounts[jobId]", first_id) == batch_get_count
+        assert page.evaluate("(key) => sessionStorage.getItem(key)", new_scope_key) == new_scope_draft
+        page.close()
+        browser.close()
+
+
+def test_expansion_conflict_requires_get_then_explicit_revalidate_then_confirm() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-conflict", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        page.locator('[data-candidate-id="citations-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+
+        page.wait_for_selector("#literature-map-expansion-revalidate")
+        assert len(page.evaluate("window.__batchApplyBodies")) == 1
+        assert page.evaluate("window.__revalidateBodies") == []
+        page.wait_for_function("window.__requestLog.some(entry => entry.method === 'GET' && entry.path === '/api/literature-maps/map-fixture/graph')")
+        for kind in ("references", "citations"):
+            assert page.evaluate(f"window.__requestLog.filter(entry => entry.method === 'GET' && entry.path.includes('preview-expansion-map-fixture-{kind}')).length") >= 2
+
+        assert page.evaluate("window.__batchApplyBodies.length") == 1
+        page.locator("#literature-map-expansion-revalidate").click()
+        page.wait_for_function("window.__revalidateBodies?.length === 1")
+        page.wait_for_selector(".literature-map-expansion-revalidation")
+        assert "无效" in page.locator(".literature-map-expansion-revalidation").inner_text()
+        revalidate = page.evaluate("window.__revalidateBodies[0]")
+        assert revalidate["expected_revision"] == 4
+        assert revalidate["idempotency_key"]
+        assert len(revalidate["selections"]) == 2
+        assert page.evaluate("window.__batchApplyBodies.length") == 1
+
+        invalid = page.locator('[data-candidate-id="citations-candidate-1"] input')
+        assert invalid.is_checked()
+        assert invalid.is_enabled()
+        invalid.uncheck()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchApplyBodies?.length === 2")
+        second = page.evaluate("window.__batchApplyBodies[1]")
+        assert len(second["selections"]) == 1
+        assert second["selections"][0]["selected_candidate_ids"] == ["references-candidate-1"]
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_progress_has_scoped_retry_and_map_queue_controls() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-progress", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        for index in [1, 2, 5, 6, 7, 8, 9]:
+            page.locator(f'[data-candidate-id="references-candidate-{index}"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchApplyBodies?.length === 1")
+        panel = page.locator("#literature-map-expansion-batch")
+        page.wait_for_function("window.__batchJobGetCount >= 1")
+        assert "正在补充摘要" in panel.inner_text()
+        assert "无摘要，已跳过" in panel.inner_text()
+        assert "分析排队中" in panel.inner_text()
+        assert "分析进行中" in panel.inner_text()
+        assert "分析完成" in panel.inner_text()
+        assert "分析失败" in panel.inner_text()
+        assert "影响同图其它待分析论文" in panel.inner_text()
+
+        page.locator("#literature-map-expansion-pause-map-queue").click()
+        page.wait_for_function("window.__queueMutationBodies?.some(body => body.action === 'pause')")
+        page.locator("#literature-map-expansion-resume-map-queue").click()
+        page.wait_for_function("window.__queueMutationBodies?.some(body => body.action === 'resume')")
+
+        page.wait_for_function("window.__batchJobGetCount > 4")
+        assert page.locator("#literature-map-expansion-retry-metadata").is_visible()
+        page.locator("#literature-map-expansion-retry-metadata").click()
+        page.wait_for_function("window.__metadataRetryBodies?.length === 1")
+        metadata_retry = page.evaluate("window.__metadataRetryBodies[0]")
+        assert metadata_retry["node_ids"] == ["node-expansion-2", "node-expansion-3"]
+        assert metadata_retry["steps"] == ["metadata"]
+        assert metadata_retry["idempotency_key"]
+
+        page.locator("#literature-map-expansion-retry-analysis").click()
+        page.wait_for_function("window.__queueMutationBodies?.some(body => body.analysis_ids?.includes('analysis-expansion-failed'))")
+        analysis_retry = page.evaluate("window.__queueMutationBodies.find(body => body.analysis_ids?.includes('analysis-expansion-failed'))")
+        assert analysis_retry["analysis_ids"] == ["analysis-expansion-failed"]
+        assert analysis_retry["idempotency_key"]
+
+        before = page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length")
+        page.locator("#literature-map-expansion-close").click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function("window.__batchJobGetCount >= 2")
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == before
+        page.close()
+
+
+def test_expansion_batch_unknown_status_is_explained_and_can_refresh() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 390, "height": 820}, device_scale_factor=1, is_mobile=True, has_touch=True)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-unknown", wait_until="load")
+        page.locator("#literature-map-mobile-list-open").click()
+        page.locator('[data-map-id="map-fixture"]').click()
+        node = page.locator('[data-node-id="node-a"] circle')
+        box = node.bounding_box()
+        assert box is not None
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_function("document.querySelector('.literature-map-detail-panel')?.classList.contains('is-open')")
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_selector("#literature-map-preview-panel")
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_selector("#literature-map-expansion-batch-refresh")
+        assert "无法识别" in page.locator("#literature-map-expansion-batch").inner_text()
+        assert page.locator("#literature-map-expansion-batch-refresh").is_visible()
+        assert page.evaluate("window.__batchJobGetCount") < 82
+        assert page.evaluate("""() => {
+          const batch = document.querySelector('#literature-map-expansion-batch');
+          const preview = document.querySelector('#literature-map-preview-panel');
+          return batch?.parentElement === preview
+            && preview?.parentElement?.classList.contains('literature-map-canvas-panel')
+            && getComputedStyle(preview).overflowY === 'auto'
+            && Math.abs(parseFloat(getComputedStyle(batch.querySelector('.literature-map-expansion-batch-items')).maxHeight) - window.innerHeight * 0.15) < 2;
+        }""")
+        page.close()
+        browser.close()
+
+
+def test_expansion_batch_polling_stops_at_limit_and_manual_refresh_is_read_only() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-batch-stuck", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        page.locator('[data-candidate-id="references-candidate-1"] input').check()
+        page.locator("#literature-map-expansion-apply").click()
+        page.wait_for_function("window.__batchJobGetCount >= 81", timeout=10000)
+        refresh = page.locator("#literature-map-expansion-batch-refresh")
+        assert refresh.is_visible()
+        assert "自动读取已暂停" in page.locator("#literature-map-expansion-batch").inner_text()
+        stopped_count = page.evaluate("window.__batchJobGetCount")
+        page.wait_for_timeout(40)
+        assert page.evaluate("window.__batchJobGetCount") == stopped_count
+
+        post_count = page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length")
+        page.evaluate("window.__holdExpansionBatchPolls = true")
+        refresh.click()
+        page.wait_for_function(f"window.__batchJobGetCount >= {stopped_count + 1}")
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == post_count
+
+        page.locator("#literature-map-expansion-close").click()
+        page.get_by_role("button", name="扩展关联论文").click()
+        page.wait_for_function(f"window.__batchJobGetCount >= {stopped_count + 2}")
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == post_count
         page.close()
         browser.close()
 
