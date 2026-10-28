@@ -1,7 +1,7 @@
 # Spec043 Task11 阶段二前端独立定向测试报告
 
-日期：2026-10-28（Asia/Shanghai）  
-角色：frontend-tester  
+日期：2026-10-28（Asia/Shanghai）
+角色：frontend-tester
 范围：Task11 双预览原子确认、冲突恢复、布局保护、批次状态与资源合同
 
 ## 结论
@@ -54,8 +54,8 @@ PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages \
 
 ## JS35/CSS22 候选增量复核（独立于 JS34/CSS21 基线）
 
-日期：2026-10-28（Asia/Shanghai）  
-角色：frontend-tester  
+日期：2026-10-28（Asia/Shanghai）
+角色：frontend-tester
 范围：新增批次历史保留与旧批次重试、owner 草稿隔离、旧 generation 响应/timer 竞态，以及精确资源版本合同。
 
 本节记录当前 JS35/CSS22 候选的独立定向结果；上文 **JS34/CSS21 的 29 passed** 保留为原阶段二基线，不与本轮结果合并统计。
@@ -86,8 +86,8 @@ PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages \
 
 ## JS36/CSS22 最终快照候选独立验收
 
-日期：2026-10-28（Asia/Shanghai）  
-角色：frontend-tester  
+日期：2026-10-28（Asia/Shanghai）
+角色：frontend-tester
 范围：双批次结果快照与回开/查看新增一致性、`added_count=0` 且无 job 时保留旧批次与布局、JS36/CSS22 资源合同。
 
 本节是当前 JS36 候选的独立窄验收，只记录以下三个指定用例；本报告上文的 JS34/CSS21 **29 passed** 与 JS35/CSS22 **4 passed** 仍是各自独立基线，不与本次计数相加。
@@ -113,3 +113,38 @@ PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages \
 浏览器结果来自本地 mock API fixture，仅证明前端快照与 UI 行为，不构成真实 API E2E 或部署验收。阻塞项：本次指定范围内无；未运行全前端/后端测试、collection、真实服务或部署验证。
 
 本轮进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-tester/20261028-213840.md`。
+
+## JS37/CSS23 候选排序与元数据独立验收
+
+日期：2026-10-28（Asia/Shanghai）
+角色：frontend-tester
+范围：已加载候选排序与稳定并列、选择/分页游标/请求不变、来源和摘要可用性及明确范围差异、JS37/CSS23 资源合同。
+
+本节记录本次独立窄验收；JS34、JS35、JS36 的各自结果保留在上文，不合并计数。JS37/CSS23 是本地候选文件版本，**JS37 尚未部署**。
+
+工作目录：`/Users/wjh/.codex/worktrees/map-usability/ResearchAgent`。沿用报告中的 Python 3.11 和 `PYTHONPATH`；浏览器回归从当前 worktree 的 `tests/frontend/fixtures/literature_map_component.html` 加载 mock API，并在 `require_escalated` 下实际启动 Chromium。
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/homebrew/opt/python@3.11/bin/python3.11 -m pytest -q \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_candidate_sort_only_reorders_loaded_rows_and_preserves_selection_cursor \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_candidate_metadata_shows_availability_and_definite_scope_differences \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes \
+  tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_map_contract_is_versioned_scoped_and_touch_safe \
+  tests/frontend/test_frontend_map_groups_exports.py::test_export_asset_versions_are_synchronised \
+  tests/frontend/test_frontend_map_groups_exports.py::test_groups_and_export_contract_is_wired_without_html_injection \
+  tests/frontend/test_frontend_literature_map_contract.py::test_navigation_view_and_version_contract_are_wired \
+  tests/frontend/test_frontend_map_analysis_contract.py::test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes
+```
+
+结果：**exit 0；8 passed，0 failed，0 skipped**（1.50 秒）。`node --check frontend/literature-maps.js`：**exit 0**。精确版本合同通过；生产入口和组件 fixture 引用 JS37/CSS23。
+
+覆盖结果：
+
+- 默认顺序保留服务端已加载候选原序；年份和引用数排序只重排当前已加载行。候选已加载边界说明、非全来源排名和未按地图主题过滤提示均通过。
+- 选择跨方向保留；排序前后客户端与服务端分页信息、请求总数、POST 数和 load-more 数不变，未触发 apply。年份 2024 与引用数 6 的并列维持原来源顺序，缺失值排在有效值之后。
+- 来源、检索来源、引用数、摘要可用性以及可确认的年份/来源/会议范围差异均通过；没有可比较来源 ID 时明确标记范围待核实。
+- **覆盖边界：**当前四项排序 fixture 包含年份 2018、2024、缺失值，引用数 6、6、11、缺失值；没有显式数值 `0` 候选。因此本次通过结果证明未知值尾置和稳定并列，但不能单独证明数值 0 的排序边界。
+
+**真实运行边界：**本轮未访问真实 API 或部署页面。报告中已有的 3 次真实 API 成功属于同一 backend frozen hash，不是 JS37 新 UI 的运行证据；不据此声称 JS37 已在真实浏览器中运行。当前结论限定为本地 JS37/CSS23 候选、mock Chromium 回归、静态合同与 JS 语法检查。
+
+本轮进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-tester/20261028-222031-js37.md`。

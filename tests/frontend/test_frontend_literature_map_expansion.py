@@ -25,8 +25,8 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=36" in INDEX
-    assert "/assets/literature-maps.css?v=22" in INDEX
+    assert "/assets/literature-maps.js?v=37" in INDEX
+    assert "/assets/literature-maps.css?v=23" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
@@ -46,6 +46,10 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         "自动读取已暂停",
         "手动刷新状态",
         "引用本文",
+        "sortedExpansionCandidates",
+        "来源范围待核实",
+        "引用数",
+        "摘要可用性待核实",
         "/previews/revalidate",
         "/previews/batch-apply",
         "MAX_EXPANSION_BATCH_POLL_ATTEMPTS",
@@ -79,6 +83,10 @@ def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
         ".literature-map-expansion-tabs",
         ".literature-map-expansion-tab",
         ".literature-map-expansion-candidate",
+        ".literature-map-expansion-sort-controls",
+        ".literature-map-expansion-scope-note",
+        ".literature-map-expansion-candidate-scope",
+        ".literature-map-expansion-scope-tag",
         ".literature-map-expansion-batch",
         ".literature-map-preview-candidate",
         ".literature-map-preview-capacity",
@@ -1193,4 +1201,114 @@ def test_component_fixture_handles_tombstone_restore_and_indexed_document_link()
         indexed_tombstone.get_by_role("button", name="扩展关联论文").click()
         indexed_tombstone.wait_for_selector("#literature-map-preview-panel")
         indexed_tombstone.close()
+        browser.close()
+
+
+def test_expansion_candidate_sort_only_reorders_loaded_rows_and_preserves_selection_cursor() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-candidate-metadata", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+
+        def candidate_ids(kind: str) -> list[str]:
+            return page.locator(f"#literature-map-expansion-panel-{kind} .literature-map-expansion-candidate").evaluate_all(
+                "rows => rows.map(row => row.dataset.candidateId)"
+            )
+
+        references = [
+            "references-candidate-source-first",
+            "references-candidate-source-second",
+            "references-candidate-source-third",
+            "references-candidate-source-fourth",
+        ]
+        citations = [
+            "citations-candidate-source-first",
+            "citations-candidate-source-second",
+            "citations-candidate-source-third",
+            "citations-candidate-source-fourth",
+        ]
+        assert candidate_ids("references") == references
+        controls = page.locator("#literature-map-expansion-sort-references")
+        assert controls.input_value() == "source"
+        assert "排序只对已加载候选生效" in page.locator(".literature-map-expansion-scope-note").inner_text()
+        assert "不是全来源排名" in page.locator(".literature-map-expansion-scope-note").inner_text()
+        assert "未按地图主题“联邦学习”筛选" in page.locator(".literature-map-expansion-scope-note").inner_text()
+
+        page.locator('[data-candidate-id="references-candidate-source-second"] input').check()
+        page.locator('[role="tab"][data-expansion-kind="citations"]').click()
+        page.locator('[data-candidate-id="citations-candidate-source-first"] input').check()
+        pagination_before = page.locator("#literature-map-expansion-panel-citations .literature-map-expansion-pagination").inner_text()
+        server_pagination_before = page.evaluate("window.__expansionPreviewPagination")
+        request_count_before = page.evaluate("window.__requestLog.length")
+        post_count_before = page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length")
+        load_more_before = page.evaluate("window.__loadMoreBodies.length")
+
+        page.locator("#literature-map-expansion-sort-citations").select_option("year")
+        assert candidate_ids("citations") == [citations[1], citations[3], citations[0], citations[2]]
+        assert page.locator('[data-candidate-id="citations-candidate-source-first"] input').is_checked()
+        page.locator("#literature-map-expansion-sort-citations").select_option("citation_count")
+        assert candidate_ids("citations") == [citations[3], citations[0], citations[1], citations[2]]
+        assert page.locator('[data-candidate-id="citations-candidate-source-first"] input').is_checked()
+
+        assert page.locator("#literature-map-expansion-panel-citations .literature-map-expansion-pagination").inner_text() == pagination_before
+        assert page.evaluate("window.__expansionPreviewPagination") == server_pagination_before
+        assert page.evaluate("window.__loadMoreBodies.length") == load_more_before
+        assert page.evaluate("window.__requestLog.length") == request_count_before
+        assert page.evaluate("window.__requestLog.filter(entry => entry.method === 'POST').length") == post_count_before
+        assert page.evaluate("window.__batchApplyBodies.length") == 0
+
+        page.locator('[role="tab"][data-expansion-kind="references"]').click()
+        assert page.locator('[data-candidate-id="references-candidate-source-second"] input').is_checked()
+        assert "已选 2/20 个新身份" in page.locator(".literature-map-expansion-capacity").inner_text()
+        page.close()
+        browser.close()
+
+
+def test_expansion_candidate_metadata_shows_availability_and_definite_scope_differences() -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(f"{FIXTURE.as_uri()}?expansion-candidate-metadata", wait_until="load")
+        _open_expansion(page)
+        page.wait_for_function("window.__expansionPreviewBodies?.length === 2")
+        panel = page.locator("#literature-map-expansion-panel-references")
+        first = page.locator('[data-candidate-id="references-candidate-source-first"]')
+        second = page.locator('[data-candidate-id="references-candidate-source-second"]')
+        missing = page.locator('[data-candidate-id="references-candidate-source-third"]')
+        fourth = page.locator('[data-candidate-id="references-candidate-source-fourth"]')
+
+        assert "来源 IEEE S&P" in first.inner_text()
+        assert "检索来源 IEEE S&P" in first.inner_text()
+        assert "引用数 6" in first.inner_text()
+        assert "摘要可用" in first.inner_text()
+        assert first.locator(".literature-map-expansion-scope-tag[data-scope='year-out-of-range']").inner_text() == "超出年份范围"
+        assert first.locator(".literature-map-expansion-scope-tag[data-scope='source-out-of-range']").inner_text() == "超出来源范围"
+        assert first.locator(".literature-map-expansion-scope-tag[data-scope='conference-out-of-range']").inner_text() == "超出会议范围"
+
+        assert "来源未提供" in second.inner_text()
+        assert "检索来源 Semantic Scholar" in second.inner_text()
+        assert "引用数 6" in second.inner_text()
+        assert "摘要可用" in second.inner_text()
+        assert second.locator(".literature-map-expansion-scope-tag[data-scope='source-unverified']").inner_text() == "来源范围待核实"
+        assert second.locator(".literature-map-expansion-scope-tag[data-scope='conference-unverified']").inner_text() == "会议范围待核实"
+
+        assert "作者未提供" in missing.inner_text()
+        assert "年份未提供" in missing.inner_text()
+        assert "来源未提供" in missing.inner_text()
+        assert "引用数 未知" in missing.inner_text()
+        assert "摘要可用性待核实" in missing.inner_text()
+        assert missing.locator(".literature-map-expansion-scope-tag[data-scope='year-unverified']").inner_text() == "年份范围待核实"
+
+        assert "来源 USENIX Security" in fourth.inner_text()
+        assert "引用数 11" in fourth.inner_text()
+        assert "缺少摘要" in fourth.inner_text()
+        assert panel.locator(".literature-map-expansion-sort-controls").count() == 1
+        assert page.evaluate("window.__loadMoreBodies") == []
+        page.close()
         browser.close()

@@ -105,3 +105,48 @@ PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages \
 - `node --check frontend/literature-maps.js`、5 个受影响测试模块 `py_compile`、`scripts/check_test_layout.py`、`scripts/check_test_naming.py`、`git diff --check -- frontend tests/frontend` 均退出码0；JS36/CSS22 资源同步、批次历史 scoped CSS、无 `innerHTML` 与 CSS 作用域自查通过。
 
 **证据边界：**以上是前端 mock fixture 与静态合同验证。未跑全前端/后端套件、真实 API E2E 或部署；待独立前端窄复审，不代表 Spec043 可收口。
+
+## 2026-10-28 追加：真实验收合同缺口补齐（候选排序与元数据）
+
+主会话对当前部署 `9721cbcb` 的浏览器检查（截图 `/private/tmp/task11-candidate-list-before.png` 与 DOM 记录）发现：候选行只显示标题、作者和年份，排序入口为 0。Task11 产品合同3要求默认保持来源顺序，并能按年份/引用数排序，且声明不是全来源排名；合同4要求关联候选不按原主题静默过滤、已知范围外可见标记；数据合同要求来源、引用数、摘要可用性和缺值明确。本轮按已确认 Task11 范围修复前端，不新增 API/Spec，不改后端或已有真实运行数据。
+
+- 真实 API 响应包只读核对路径：`docs/sdd/plans/043/task-11-runs/20261028-real-api/011-preview-541ca1cec64a4064aa7b272fe4f9e73d.json`。候选位于 `response.json.preview.candidates[]`，字段包括 `venue`、`citation_count`、`abstract` 和 `provenance.provider`；地图范围使用既有 `map.filters.year_start/year_end/source_ids/conference_ids`。UI 直接读取此对象，不改变接口或请求。
+- 每个方向新增独立排序控件，默认来源原序；年份和引用数为降序，缺值排后，并列按服务器原序稳定显示。只排序当前已加载候选副本，选择/分页游标/原始候选不变。切换排序只重绘 DOM，不发 GET/POST、不自动加载下一页；草稿可保存每侧排序方式。
+- 候选行补充刊物/会议来源、检索来源、引用数与摘要可用性。缺少作者/年份/来源/检索源/引用数分别显示未提供或未知；`abstract` 为非空字符串显示“摘要可用”，明确空值显示“缺少摘要”，字段不存在显示“摘要可用性待核实”。
+- 范围提示说明关联列表未按地图主题过滤、结果只代表已加载候选且不是全来源排名。已知年份与 `year_start/year_end` 冲突会标记超出范围；来源或会议只在候选携带可比的明确 ID 时判断。Semantic Scholar provider 不映射到地图来源 ID；没有来源/会议 ID 时显示“范围待核实”。未按标题推断相关性，也未过滤候选。主题搜索与刷新逻辑未改。
+- 新增 fixture 沿真实响应字段组织候选；包含已知范围外、范围匹配、来源/会议无法核实及字段缺值。CSS 新增4个 `#literature-maps-view` scoped hooks。入口、组件 fixture 和受影响资源合同同步 **JS37/CSS23**。
+
+### RED/GREEN 与定向验收
+
+- 两条新增 Chromium 回归先在 JS36 下 **RED：2 failed**。排序用例因没有排序选择器失败；元数据显示用例因来源/venue 不可见失败。后续明确要求的范围差异、未知值尾置与稳定并列、跨标签选择、原分页 cursor 不变及零新增请求均被加入同一组验收断言。
+- 最终定向测试命令（退出码0，8 passed）：
+
+```bash
+PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/homebrew/opt/python@3.11/bin/python3.11 -m pytest -q \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_candidate_sort_only_reorders_loaded_rows_and_preserves_selection_cursor \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_candidate_metadata_shows_availability_and_definite_scope_differences \
+  tests/frontend/test_frontend_literature_map_expansion.py::test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes \
+  tests/frontend/test_frontend_map_mobile_contract.py::test_mobile_map_contract_is_versioned_scoped_and_touch_safe \
+  tests/frontend/test_frontend_map_groups_exports.py::test_export_asset_versions_are_synchronised \
+  tests/frontend/test_frontend_map_groups_exports.py::test_groups_and_export_contract_is_wired_without_html_injection \
+  tests/frontend/test_frontend_literature_map_contract.py::test_navigation_view_and_version_contract_are_wired \
+  tests/frontend/test_frontend_map_analysis_contract.py::test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes
+```
+- 静态命令：
+
+```bash
+node --check frontend/literature-maps.js
+PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/homebrew/opt/python@3.11/bin/python3.11 -m py_compile tests/frontend/test_frontend_literature_map_expansion.py tests/frontend/test_frontend_map_mobile_contract.py tests/frontend/test_frontend_map_groups_exports.py tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_analysis_contract.py
+/opt/homebrew/opt/python@3.11/bin/python3.11 scripts/check_test_layout.py
+/opt/homebrew/opt/python@3.11/bin/python3.11 scripts/check_test_naming.py
+PYTHONPATH=/Users/wjh/ResearchAgent/.venv/lib/python3.11/site-packages /opt/homebrew/opt/python@3.11/bin/python3.11 -m pytest --collect-only -q tests/frontend/test_frontend_literature_map_expansion.py tests/frontend/test_frontend_map_mobile_contract.py tests/frontend/test_frontend_map_groups_exports.py tests/frontend/test_frontend_literature_map_contract.py tests/frontend/test_frontend_map_analysis_contract.py
+git diff --check
+```
+- 最终精确组（两条浏览器回归及六个受影响静态资源/DOM 合同选择器）命令退出码 0：**8 passed（1.51s）**。资源升版初跑暴露两个静态合同仍硬编码 JS36；更新到 JS37 后同组复跑通过。中间一次候选说明文案断言也根据实际说明调整为逐字匹配，没有跳过浏览器回归。
+- 整理测试夹具缩进后再次精确运行两条新增 Chromium 回归：**退出码0，2 passed（1.42s）**。
+- 其它验证命令：`node --check frontend/literature-maps.js`、5个受影响 Python 测试模块 `py_compile`、`/opt/homebrew/opt/python@3.11/bin/python3.11 scripts/check_test_layout.py`、`/opt/homebrew/opt/python@3.11/bin/python3.11 scripts/check_test_naming.py`、受影响5个前端测试模块 `pytest --collect-only -q`、`git diff --check` 均退出码0；collect-only **54 collected，无 collection error**。
+- DOM/CSS/XSS/版本自查通过：4个新增 JS class 均有对应 scoped CSS；入口与 fixture 为 JS37/CSS23；生产 JS 无 `innerHTML`，候选标题/主题均经 `textContent` helper。
+
+**证据边界：**本轮验证只覆盖前端 mock fixture、静态合同和语法；未运行全前端/后端回归，未访问真实服务、未重跑真实 API E2E、未部署。前述真实浏览器截图属于主会话对既有部署的缺口证据，不是本轮修复后的运行证据。等待独立前端窄复审；本交接不表示可部署或 Spec043 收口。
+
+进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-dev/20261028-221500.md`。

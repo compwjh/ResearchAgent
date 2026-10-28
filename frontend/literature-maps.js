@@ -2759,6 +2759,7 @@
         preview_id: expansion.sides[kind].previewId || null,
         selected_candidate_ids: Array.from(expansion.sides[kind].selectedCandidateIds),
         poll_attempts: expansion.sides[kind].pollAttempts,
+        sort_mode: expansion.sides[kind].sortMode,
       }])),
     };
     try { window.sessionStorage.setItem(key, JSON.stringify(draft)); } catch (_) {
@@ -2792,6 +2793,7 @@
       loading: false,
       pollTimer: null,
       pollAttempts: Math.max(0, Math.min(MAX_EXPANSION_POLL_ATTEMPTS, Number(saved?.poll_attempts) || 0)),
+      sortMode: ['source', 'year', 'citation_count'].includes(saved?.sort_mode) ? saved.sort_mode : 'source',
     };
   }
 
@@ -2830,6 +2832,82 @@
       completed: '分析完成',
     };
     return labels[status] || '后台返回了无法识别的步骤状态';
+  }
+
+  function expansionCandidateSourceLabel(candidate) {
+    const venue = metadataText(candidate?.venue, '来源未提供');
+    const providerValue = candidate?.provenance && typeof candidate.provenance === 'object'
+      ? (candidate.provenance.provider || candidate.provenance.source)
+      : candidate?.provenance;
+    const provider = String(providerValue || '').trim();
+    const providerLabels = {
+      semantic_scholar: 'Semantic Scholar', openalex: 'OpenAlex', crossref: 'Crossref', dblp: 'DBLP',
+      usenix: 'USENIX', ieee_sp: 'IEEE S&P', ccs: 'ACM CCS', ndss: 'NDSS',
+    };
+    const providerLabel = provider ? (providerLabels[provider.toLowerCase()] || provider) : '检索来源待核实';
+    return `来源 ${venue} · 检索来源 ${providerLabel}`;
+  }
+
+  function expansionCandidateAbstractLabel(candidate) {
+    if (!Object.prototype.hasOwnProperty.call(candidate || {}, 'abstract')) return '摘要可用性待核实';
+    return typeof candidate.abstract === 'string' && candidate.abstract.trim() ? '摘要可用' : '缺少摘要';
+  }
+
+  function expansionCandidateScopeTags(candidate) {
+    const filters = state.map?.filters && typeof state.map.filters === 'object' ? state.map.filters : {};
+    const tags = [];
+    const parsedStart = parseYear(filters.year_start);
+    const parsedEnd = parseYear(filters.year_end);
+    const yearStart = Number.isNaN(parsedStart) ? null : parsedStart;
+    const yearEnd = Number.isNaN(parsedEnd) ? null : parsedEnd;
+    const year = parseYear(candidate?.year);
+    if ((yearStart !== null || yearEnd !== null) && year !== null && !Number.isNaN(year)) {
+      if ((yearStart !== null && year < yearStart) || (yearEnd !== null && year > yearEnd)) tags.push(['year-out-of-range', '超出年份范围']);
+    } else if ((yearStart !== null || yearEnd !== null) && (year === null || Number.isNaN(year))) {
+      tags.push(['year-unverified', '年份范围待核实']);
+    }
+
+    const selectedSources = Array.isArray(filters.source_ids) ? filters.source_ids.map((value) => String(value).trim().toLowerCase()).filter(Boolean) : [];
+    if (selectedSources.length) {
+      const declaredSource = String(candidate?.source_id || candidate?.provenance?.source_id || '').trim().toLowerCase();
+      const provider = String(candidate?.provenance?.provider || '').trim().toLowerCase();
+      const sourceId = SUPPORTED_MAP_SOURCE_IDS.has(declaredSource)
+        ? declaredSource
+        : (SUPPORTED_MAP_SOURCE_IDS.has(provider) ? provider : '');
+      tags.push(sourceId
+        ? (selectedSources.includes(sourceId) ? null : ['source-out-of-range', '超出来源范围'])
+        : ['source-unverified', '来源范围待核实']);
+    }
+
+    const selectedConferences = Array.isArray(filters.conference_ids) ? filters.conference_ids.map((value) => String(value).trim().toLowerCase()).filter(Boolean) : [];
+    if (selectedConferences.length) {
+      const rawConferenceIds = candidate?.conference_ids ?? candidate?.conference_id
+        ?? candidate?.provenance?.conference_ids ?? candidate?.provenance?.conference_id;
+      const conferenceIds = (Array.isArray(rawConferenceIds) ? rawConferenceIds : [rawConferenceIds])
+        .map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+      tags.push(conferenceIds.length
+        ? (conferenceIds.some((value) => selectedConferences.includes(value)) ? null : ['conference-out-of-range', '超出会议范围'])
+        : ['conference-unverified', '会议范围待核实']);
+    }
+    return tags.filter(Boolean);
+  }
+
+  function expansionCandidateNumber(candidate, sortMode) {
+    const raw = sortMode === 'year' ? candidate?.year : candidate?.citation_count;
+    const value = sortMode === 'year' ? parseYear(raw) : citationCount(raw);
+    return value === null || Number.isNaN(value) ? null : value;
+  }
+
+  function sortedExpansionCandidates(candidates, sortMode) {
+    if (sortMode === 'source') return candidates;
+    return candidates.map((candidate, index) => ({ candidate, index, value: expansionCandidateNumber(candidate, sortMode) }))
+      .sort((left, right) => {
+        if (left.value === null && right.value !== null) return 1;
+        if (left.value !== null && right.value === null) return -1;
+        if (left.value !== null && right.value !== null && left.value !== right.value) return right.value - left.value;
+        return left.index - right.index;
+      })
+      .map((item) => item.candidate);
   }
 
   function expansionRevalidationInvalidKey(previewId, candidateId) {
@@ -3849,7 +3927,28 @@
 
       const list = createElement('div', 'literature-map-expansion-candidates');
       const candidates = Array.isArray(preview.candidates) ? preview.candidates.filter((candidate) => candidate && candidate.candidate_id) : [];
-      candidates.forEach((candidate) => {
+      const topic = String(state.map?.topic || '').trim();
+      const topicDescription = topic ? `未按地图主题“${topic}”筛选` : '未按地图主题筛选';
+      tabpanel.append(createElement('p', 'literature-map-expansion-scope-note', `关联候选按来源顺序返回，${topicDescription}；已知范围差异会标记，信息不足时标为待核实。排序只对已加载候选生效，显示结果不是全来源排名。`));
+      const sortLabel = createElement('label', 'literature-map-expansion-sort-controls', '排序');
+      const sortSelect = createElement('select');
+      sortSelect.id = `literature-map-expansion-sort-${side.kind}`;
+      sortSelect.setAttribute('aria-label', '已加载候选排序方式');
+      [['source', '来源顺序'], ['year', '年份（降序）'], ['citation_count', '引用数（降序）']].forEach(([value, label]) => {
+        const option = createElement('option', '', label);
+        option.value = value;
+        sortSelect.append(option);
+      });
+      sortSelect.value = side.sortMode;
+      sortSelect.addEventListener('change', () => {
+        side.sortMode = ['source', 'year', 'citation_count'].includes(sortSelect.value) ? sortSelect.value : 'source';
+        persistExpansionDraft(expansion);
+        renderPreviewPanel();
+        refs.previewPanel.querySelector(`#literature-map-expansion-sort-${side.kind}`)?.focus({ preventScroll: true });
+      });
+      sortLabel.append(sortSelect);
+      tabpanel.append(sortLabel);
+      sortedExpansionCandidates(candidates, side.sortMode).forEach((candidate) => {
         const candidateId = String(candidate.candidate_id);
         const identityKey = String(candidate.identity_key || '').trim();
         const selected = side.selectedCandidateIds.has(candidateId);
@@ -3858,7 +3957,10 @@
         const row = createElement('article', 'literature-map-expansion-candidate');
         row.dataset.candidateId = candidateId;
         const title = createElement('strong', 'literature-map-expansion-candidate-title', metadataText(candidate.title, '标题未提供'));
-        const meta = createElement('span', 'literature-map-expansion-candidate-meta', `${metadataText(candidate.authors)} · ${metadataText(candidate.year)}`);
+        const authors = metadataText(candidate.authors, '作者未提供');
+        const year = metadataText(candidate.year, '年份未提供');
+        const count = citationCount(candidate.citation_count);
+        const meta = createElement('span', 'literature-map-expansion-candidate-meta', `${authors} · ${year} · ${expansionCandidateSourceLabel(candidate)} · 引用数 ${count === null ? '未知' : count} · ${expansionCandidateAbstractLabel(candidate)}`);
         row.append(title, meta);
         const checkbox = createElement('input');
         checkbox.type = 'checkbox';
@@ -3874,6 +3976,16 @@
         row.append(select);
         if (invalidSelection) {
           row.append(createElement('span', 'literature-map-expansion-invalid', expansionInvalidReasonLabel(invalidSelection.reason)));
+        }
+        const scopeTags = expansionCandidateScopeTags(candidate);
+        if (scopeTags.length) {
+          const scope = createElement('div', 'literature-map-expansion-candidate-scope');
+          scopeTags.forEach(([scopeCode, label]) => {
+            const tag = createElement('span', 'literature-map-expansion-scope-tag', label);
+            tag.dataset.scope = scopeCode;
+            scope.append(tag);
+          });
+          row.append(scope);
         }
         if (removed) {
           const restoreId = candidate.node_id || candidate.existing_node_id;

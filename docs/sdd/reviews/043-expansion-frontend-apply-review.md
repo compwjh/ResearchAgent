@@ -130,3 +130,29 @@
 **最终窄复审结论：PASS — JS36 的批次结果快照绑定与无 job/零新增保留行为符合本轮检查范围；之前报告的两项批次历史 MEDIUM 均已修复。** 此结论仅针对上述前端窄范围，不代表 Spec043 收口、真实 API E2E、部署或后端评审完成。
 
 进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-reviewer/20261028-212347.md`。
+
+## 独立窄复审：候选排序、元数据与范围提示（JS37/CSS23，2026-10-28）
+
+仅检查相对已提交 `9721cbcb` 的候选排序、候选元数据、地图范围差异提示及对应资源版本，不重审此前已关闭的批次历史问题。
+
+- **排序合同通过。** 默认 `sortMode='source'` 返回当前 `preview.candidates` 原数组顺序；年份与引用数均降序，缺失/无效值在末尾，并列使用原数组索引稳定排序。排序对映射后的候选副本执行，不修改原候选列表、两侧选择集合或分页状态。控件变更只保存排序模式并重绘面板；没有 fetch、POST 或触发加载下一页。
+- **元数据合同通过。** UI从候选真实字段读取 `venue`、`provenance.provider`、`citation_count` 和 `abstract`。引用数 `0` 由 `citationCount(0)` 保留并显示为 0；不存在引用数显示未知。明确空摘要显示缺少摘要，字段不存在显示可用性待核实。标题、来源、作者、主题和状态均经 `createElement` 的 `textContent` 写入；JS 无 `innerHTML`。
+- **地图范围提示通过。** 只读真实响应文件 `docs/sdd/plans/043/task-11-runs/20261028-real-api/011-preview-541ca1cec64a4064aa7b272fe4f9e73d.json` 的实际包形为 `response.json.preview.candidates[]`；候选包含 `venue`、`citation_count`、`abstract`、`provenance.provider`，样例有 `citation_count: 0`、`abstract: null`、provider `semantic_scholar`，没有候选 source ID 或 conference ID。真实 `baseline-map.json` 的过滤字段位于 `map.filters`，具体为 `year_start`、`year_end`、`source_ids`、`conference_ids`。实现读取这些字段；不把 Semantic Scholar provider 冒充地图 source ID，无法比较时标记待核实。地图 topic 仅用于“未按主题筛选”的说明，不做 AI 相关性推断，也不静默过滤候选。来源顺序只描述默认返回顺序，说明明确标出结果不是全来源排名。
+- **DOM/CSS/版本通过。** 新增规则均限定于 `#literature-maps-view`；入口与 fixture 同步引用 JS37/CSS23。
+
+### 精确验证
+
+- `test_expansion_candidate_sort_only_reorders_loaded_rows_and_preserves_selection_cursor` 与 `test_expansion_candidate_metadata_shows_availability_and_definite_scope_differences`：提权 Chromium 退出码 0，**2 passed（2.26s）**。
+- `node --check frontend/literature-maps.js`：退出码 0。
+- 未运行更大测试组、后端测试或部署验证。
+
+| Severity | Count | Status |
+|---|---:|---|
+| CRITICAL | 0 | pass |
+| HIGH | 0 | pass |
+| MEDIUM | 0 | pass |
+| LOW | 0 | note |
+
+**本轮窄复审结论：PASS — 本次候选排序、真实元数据展示与地图范围提示符合已确认合同，未发现需阻塞的问题。** 此结论不重开此前批次历史结论，也不代表 Spec043 收口、真实 API E2E、部署或后端评审完成。
+
+进展日志：`.codebuddy/agent-logs/spec-043/task-11/frontend-reviewer/20261028-212347.md`。

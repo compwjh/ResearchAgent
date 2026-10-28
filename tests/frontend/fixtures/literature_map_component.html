@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=22">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=23">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -177,6 +177,9 @@
       if (mockGraph.latest_job) mockGraph.latest_job.map_id = mockMap.map_id;
     }
     const query = new URLSearchParams(window.location.search);
+    if (query.has('expansion-candidate-metadata')) {
+      mockMap.filters = { year_start: 2020, year_end: 2024, source_ids: ['usenix'], conference_ids: ['ccs'] };
+    }
     if (query.has('palette')) {
       mockMap.owner_id = 'owner-fixture';
       mockMap.view_settings = { ...mockMap.view_settings, node_style: { fill_mode: 'filled', fill_opacity: 0.3 } };
@@ -251,7 +254,7 @@
       }
       mockGraph.nodes = mockNodes;
     }
-    const expansionMode = query.has('expansion') || query.has('expansion-failed-page') || query.has('expansion-create-citation-fail') || query.has('expansion-capped') || query.has('expansion-stuck-loading') || expansionBatchMode;
+    const expansionMode = query.has('expansion') || query.has('expansion-candidate-metadata') || query.has('expansion-failed-page') || query.has('expansion-create-citation-fail') || query.has('expansion-capped') || query.has('expansion-stuck-loading') || expansionBatchMode;
     const expansionFailedPage = query.has('expansion-failed-page');
     const expansionCreateCitationFail = query.has('expansion-create-citation-fail');
     const expansionCapped = query.has('expansion-capped');
@@ -413,20 +416,31 @@
     const expansionBatchJobs = new Map();
     let expansionBatchApplyCalls = 0;
     let expansionBatchConflictIssued = false;
-    const expansionCandidatePage = (kind, offset) => Array.from({ length: 50 }, (_, index) => {
-      const candidateIndex = offset + index;
-      const candidate = {
-        candidate_id: `${kind}-candidate-${candidateIndex}`,
-        identity_key: candidateIndex === 0 ? 'identity-shared-across-directions' : `${kind}-identity-${candidateIndex}`,
-        title: `${kind === 'references' ? '参考文献' : '引用本文'}候选 ${candidateIndex + 1}`,
-        authors: [`作者 ${candidateIndex + 1}`],
-        year: 2025 - (candidateIndex % 10),
-        already_present: candidateIndex === 3,
-        removed: candidateIndex === 4,
-      };
-      if (candidateIndex === 4) candidate.node_id = 'node-a';
-      return candidate;
-    });
+    const expansionCandidatePage = (kind, offset) => {
+      if (query.has('expansion-candidate-metadata') && offset === 0) {
+        const prefix = `${kind}-candidate-`;
+        return [
+          { candidate_id: `${prefix}source-first`, identity_key: `${kind}-identity-source-first`, title: '来源顺序第一', authors: ['作者甲'], year: 2018, venue: 'IEEE S&P', citation_count: 6, abstract: '已有摘要', provenance: { provider: 'ieee_sp' }, conference_id: 'ieee-sp' },
+          { candidate_id: `${prefix}source-second`, identity_key: `${kind}-identity-source-second`, title: '来源顺序第二', authors: ['作者乙'], year: 2024, venue: null, citation_count: 6, abstract: '可用摘要', provenance: { provider: 'semantic_scholar' } },
+          { candidate_id: `${prefix}source-third`, identity_key: `${kind}-identity-source-third`, title: '来源顺序第三', authors: [], keywords: [] },
+          { candidate_id: `${prefix}source-fourth`, identity_key: `${kind}-identity-source-fourth`, title: '来源顺序第四', authors: ['作者丁'], year: 2024, venue: 'USENIX Security', citation_count: 11, abstract: null, provenance: { provider: 'usenix' }, conference_id: 'ccs' },
+        ];
+      }
+      return Array.from({ length: 50 }, (_, index) => {
+        const candidateIndex = offset + index;
+        const candidate = {
+          candidate_id: `${kind}-candidate-${candidateIndex}`,
+          identity_key: candidateIndex === 0 ? 'identity-shared-across-directions' : `${kind}-identity-${candidateIndex}`,
+          title: `${kind === 'references' ? '参考文献' : '引用本文'}候选 ${candidateIndex + 1}`,
+          authors: [`作者 ${candidateIndex + 1}`],
+          year: 2025 - (candidateIndex % 10),
+          already_present: candidateIndex === 3,
+          removed: candidateIndex === 4,
+        };
+        if (candidateIndex === 4) candidate.node_id = 'node-a';
+        return candidate;
+      });
+    };
     const expansionPreviewEnvelope = (preview) => ({
       schema_version: 'literature-map-v1',
       preview: {
@@ -468,6 +482,7 @@
     window.__previewBodies = [];
     window.__expansionPreviewBodies = [];
     window.__expansionPreviewGetCounts = { references: 0, citations: 0 };
+    window.__expansionPreviewPagination = {};
     window.__batchApplyBodies = [];
     window.__batchJobIds = [];
     window.__revalidateBodies = [];
@@ -968,6 +983,7 @@
           preview.preview_revision += 1;
           preview.job = { job_id: `job-${preview.kind}-page-${preview.pagination.loaded_count}`, map_id: mapId, operation: 'preview_page', status: 'completed', step: 'finished' };
         }
+        window.__expansionPreviewPagination[preview.kind] = { ...preview.pagination };
         payload = { schema_version: 'literature-map-v1', preview_id: previewId, job_id: preview.job.job_id, preview_revision: preview.preview_revision, pagination: { ...preview.pagination }, job: { ...preview.job } };
       } else if (parsed.pathname.match(/^\/api\/literature-maps\/[^/]+\/previews\/[^/]+$/) && method === 'GET' && expansionPreviews.has(parsed.pathname.split('/').pop())) {
         const preview = expansionPreviews.get(parsed.pathname.split('/').pop());
@@ -1019,6 +1035,7 @@
           job: { job_id: jobId, map_id: mapId, operation: 'preview_page', status: expansionStuckLoading ? 'running' : 'completed', step: 'finished', cursor: { preview_id: previewId } },
         };
         expansionPreviews.set(previewId, preview);
+        window.__expansionPreviewPagination[preview.kind] = { ...pagination };
         payload = { schema_version: 'literature-map-v1', preview_id: previewId, map_id: mapId, job_id: jobId, status: expansionStuckLoading ? 'queued' : 'completed', base_revision: map.revision, preview_revision: 1, pagination: { ...pagination }, job: { ...preview.job } };
       }
       else if (path.endsWith('/previews') && method === 'POST') {
@@ -1100,7 +1117,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=36"></script>
+  <script src="../../../frontend/literature-maps.js?v=37"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>
