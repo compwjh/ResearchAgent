@@ -51,3 +51,25 @@ Verdict: **BLOCK** — 1 HIGH reservation identity issue must be resolved before
 - 未运行全量测试、部署或 Git 操作。
 
 首次 Review Summary 中的 BLOCK 保留为修复前结论；按本次独立复审，canonical reservation 身份不一致写入问题已修复，当前 canonical store 范围通过。
+
+## Startup successor / rebind CAS 独立复审（2026-10-29）
+
+**结论：PASS；本次未发现新增阻塞。** 此切片评审 `rebind_report_generation_successor` 对“WorkItem 已完成、但 Orchestrator 尚未保存 canonical report”以及 startup audit interrupted 两种恢复切点的 CAS 与 ledger 行为。上方初始 HIGH BLOCK 及其修复记录保留为历史；reservation identity 和本次 successor/rebind 均已复核通过。
+
+### 复核结果
+
+- owner/task、当前 plan、plan 行状态、report/task/version、canonical generation identity、request key 均在同一个 `BEGIN IMMEDIATE` 事务内验证；只接受仍为 `generating` 的 canonical report。报告行的原 report JSON 参与条件更新，generation 当前 WorkItem ID 则作为应用层 CAS token（[research_store.py](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/infrastructure/research_store.py:6644)）。
+- 仅允许当前绑定的 synthesizer WorkItem 为 `interrupted` 或 `completed` 时换绑。旧 WorkItem 行不重开、不覆盖其终态或 output；新行复制必要的 synthesis 输入并重新盖 store-owned 身份，状态为 `queued`，绑定同一个 report、report version、plan version 和 request key。对应实现见 [rebind_report_generation_successor](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/infrastructure/research_store.py:6612) 和 [completed checkpoint 回归用例](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_canonical_persistence.py:504)。
+- 只更新 `generation.work_item_id`，不改变 report status、revision、stage、rewrite count、budget 或 claims。claims 中旧 `work_item_id` 保留为历史使用记录。相同 successor 的重放只读返回 `replayed=True`；错误 predecessor、已被竞争者换绑、未知或重复 successor ID 均 fail closed。
+- 多次恢复可沿链重新绑定；每个先前 WorkItem 保持 interrupted/completed 终态，reservation report version 与 ledger 不变。`BEGIN IMMEDIATE` 串行化竞争事务；不同 successor ID 同时争用同一旧绑定时只允许一个获胜，败者不会留下 WorkItem 行。
+
+### 验证
+
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_canonical_persistence.py` — 退出码 0，**26 passed in 0.58s**。
+- 独立 SQLite 探针：同 successor 并发重放结果为一个新绑定、一个 `replayed=True`；仅存在一条 successor，已完成 predecessor 的状态及 output 保持不变。
+- 独立 SQLite 探针：不同 successor 并发竞争结果为一个成功、一个 `ResearchReportGenerationStateConflict`；report 绑定获胜 ID，败者 ID 没有 WorkItem 行。
+- 独立 SQLite 探针：对新 successor 再次 interrupted 后链式 rebind 到第二个 successor，仍为 report version 1，两个 predecessor 均保持 interrupted。
+- 测试中的 completed checkpoint 场景也确认旧输出保持原样，generation claim 继续指向旧 WorkItem；budget/store-state ledger 不重置。
+- 未运行全量测试、部署或 Git 操作。本次未改生产代码或测试。
+
+**当前 canonical store review：PASS。** 原始 BLOCK 仍保留在历史章节；其身份校验缺口已关闭，successor/rebind CAS 无新增问题。

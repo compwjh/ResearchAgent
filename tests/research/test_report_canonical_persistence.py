@@ -9,6 +9,7 @@ from backend.app.research.domain.models import ResearchPlan, ResearchTask
 from backend.app.research.infrastructure.research_store import (
     ResearchReportConflict,
     ResearchReportGenerationStateConflict,
+    ResearchReportReservationConflict,
     ResearchStore,
     ResearchTaskNotFound,
 )
@@ -31,7 +32,7 @@ def _setup(tmp_path):
             False,
             5,
             1500,
-            "completed",
+            "running",
             1,
             "2026-10-29T00:00:00Z",
             "2026-10-29T00:00:00Z",
@@ -359,4 +360,229 @@ def test_canonical_output_enforces_bounded_validated_envelope(tmp_path):
             quality_validation=_quality_validation(),
             generation_output=_generation_output(),
         )
+
+
+def _interrupt_reservation_work_item(store, reservation):
+    running = store.update_work_item_status(
+        reservation.work_item.work_item_id, "running", attempt=1,
+    )
+    return store.update_work_item_status(
+        running.work_item_id, "interrupted", error_code="STARTUP_AUDIT_INTERRUPTED",
+        last_error_code="STARTUP_AUDIT_INTERRUPTED",
+    )
+
+
+def _complete_reservation_work_item(store, reservation):
+    running = store.update_work_item_status(
+        reservation.work_item.work_item_id, "running", attempt=1,
+    )
+    return store.update_work_item_status(
+        running.work_item_id, "completed",
+        output_json=json.dumps({"status": "completed", "report_version": 1}),
+    )
+
+
+def _rebind_report_successor(store, reservation, successor_id, **overrides):
+    args = {
+        "research_task_id": TASK_ID,
+        "owner_id": OWNER_ID,
+        "report_version": reservation.report.report_version,
+        "expected_work_item_id": reservation.work_item.work_item_id,
+        "successor_work_item_id": successor_id,
+        "request_key": REQUEST_KEY,
+        "plan_version": 1,
+    }
+    args.update(overrides)
+    return store.rebind_report_generation_successor(**args)
+
+
+def test_interrupted_report_reservation_rebinds_same_version_and_preserves_ledger(tmp_path):
+    store, reservation = _setup(tmp_path)
+    old_input = json.loads(reservation.work_item.input_json)
+    old_input["validated_candidates"] = [{"candidate_id": f"paper-{number}"} for number in range(5)]
+    store.update_work_item_input(
+        reservation.work_item.work_item_id,
+        json.dumps(old_input, ensure_ascii=False, sort_keys=True),
+    )
+    progress = store.update_report_generation_state(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        expected_revision=0, stage="evidence_review", rewrite_count=0,
+    )
+    progress = store.update_report_generation_state(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        expected_revision=progress["revision"], stage="comparison", rewrite_count=0,
+    )
+    progress = store.update_report_generation_state(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        expected_revision=progress["revision"], stage="drafting", rewrite_count=0,
+    )
+    progress = store.update_report_generation_state(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        expected_revision=progress["revision"], stage="quality_check", rewrite_count=0,
+        reason_codes=["CJK_COUNT_BELOW_MINIMUM"],
+    )
+    progress = store.update_report_generation_state(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        expected_revision=progress["revision"], stage="targeted_revision", rewrite_count=1,
+        reason_codes=["CJK_COUNT_BELOW_MINIMUM"],
+    )
+    claim = store.claim_report_generation_budget(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        claim_id=str(uuid.uuid4()), agent_run_id="old-work-item:report-1:revision-1",
+        requested_model_loops=20, requested_tool_calls=40, requested_seconds=120,
+    )
+    assert claim["allowed"] is True
+    old = _interrupt_reservation_work_item(store, reservation)
+    store.update_task_status(TASK_ID, OWNER_ID, "interrupted")
+    before_report = store.get_research_report(TASK_ID, OWNER_ID, report_version=1)
+    before_payload = json.loads(before_report.report_json)
+    before_budget = store.get_report_generation_budget(TASK_ID, OWNER_ID, report_version=1)
+    successor_id = "report-successor-1"
+
+    rebound = _rebind_report_successor(store, reservation, successor_id)
+
+    assert rebound.report.report_id == reservation.report.report_id
+    assert rebound.report.report_version == reservation.report.report_version == 1
+    assert rebound.report.plan_version == reservation.report.plan_version == 1
+    assert rebound.report.status == "generating"
+    assert rebound.work_item.work_item_id == successor_id
+    assert rebound.work_item.status == "queued"
+    assert rebound.work_item.task_type == old.task_type == "synthesize_preliminary_report"
+    assert rebound.work_item.role == old.role == "synthesizer"
+    assert rebound.work_item.research_task_id == TASK_ID
+    assert rebound.work_item.plan_version == 1
+    rebound_input = json.loads(rebound.work_item.input_json)
+    assert rebound_input["validated_candidates"] == old_input["validated_candidates"]
+    assert rebound_input["report_id"] == reservation.report.report_id
+    assert rebound_input["report_version"] == 1
+    assert rebound_input["plan_version"] == 1
+    assert rebound_input["request_key"] == REQUEST_KEY
+    assert rebound.replayed is False
+
+    stored_old = store.get_work_item(old.work_item_id)
+    assert stored_old.status == "interrupted"
+    assert stored_old.input_json == old.input_json
+    after_payload = json.loads(rebound.report.report_json)
+    assert after_payload["generation"]["work_item_id"] == successor_id
+    assert after_payload["generation"]["request_key"] == before_payload["generation"]["request_key"]
+    assert after_payload["generation"]["store_state"] == before_payload["generation"]["store_state"]
+    assert after_payload["generation"]["budget"] == before_payload["generation"]["budget"]
+    assert len(store.list_research_reports(TASK_ID, OWNER_ID)) == 1
+    after_budget = store.get_report_generation_budget(TASK_ID, OWNER_ID, report_version=1)
+    assert after_budget["report_totals"] == before_budget["report_totals"]
+    assert after_budget["task_totals"] == before_budget["task_totals"]
+
+    replay = _rebind_report_successor(store, reservation, successor_id)
+    assert replay.replayed is True
+    assert replay.work_item.work_item_id == successor_id
+    assert replay.report.report_json == rebound.report.report_json
+    assert store.get_work_item(old.work_item_id).status == "interrupted"
+    assert store.get_task(TASK_ID, OWNER_ID).status == "interrupted"
+    with pytest.raises(ResearchReportGenerationStateConflict):
+        _rebind_report_successor(
+            store, reservation, successor_id, expected_work_item_id="another-old-work-item",
+        )
+
+    next_old = store.update_work_item_status(successor_id, "running", attempt=2)
+    next_old = store.update_work_item_status(
+        next_old.work_item_id, "interrupted", error_code="STARTUP_AUDIT_INTERRUPTED",
+        last_error_code="STARTUP_AUDIT_INTERRUPTED",
+    )
+    next_reservation = store.get_report_generation_reservation(
+        TASK_ID, OWNER_ID, request_key=REQUEST_KEY,
+    )
+    next_rebound = _rebind_report_successor(
+        store, next_reservation, "report-successor-2",
+    )
+    assert next_rebound.report.report_version == 1
+    assert next_rebound.work_item.status == "queued"
+    assert store.get_work_item(old.work_item_id).status == "interrupted"
+    assert store.get_work_item(next_old.work_item_id).status == "interrupted"
+    assert json.loads(next_rebound.report.report_json)["generation"]["store_state"] == before_payload["generation"]["store_state"]
+
+
+def test_completed_runtime_work_item_rebinds_without_reopening_its_checkpoint_owner(tmp_path):
+    store, reservation = _setup(tmp_path)
+    claim = store.claim_report_generation_budget(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        claim_id=str(uuid.uuid4()), agent_run_id="completed-run-before-canonical-save",
+        requested_model_loops=20, requested_tool_calls=40, requested_seconds=120,
+    )
+    assert claim["allowed"] is True
+    old = _complete_reservation_work_item(store, reservation)
+    store.update_task_status(TASK_ID, OWNER_ID, "interrupted")
+    old_output = old.output_json
+    before_payload = json.loads(store.get_research_report(
+        TASK_ID, OWNER_ID, report_version=1,
+    ).report_json)
+
+    rebound = _rebind_report_successor(store, reservation, "report-successor-after-runtime")
+
+    assert rebound.report.report_version == 1
+    assert rebound.report.status == "generating"
+    assert rebound.work_item.status == "queued"
+    assert rebound.work_item.work_item_id == "report-successor-after-runtime"
+    assert store.get_work_item(old.work_item_id).status == "completed"
+    assert store.get_work_item(old.work_item_id).output_json == old_output
+    after_payload = json.loads(rebound.report.report_json)
+    assert after_payload["generation"]["store_state"] == before_payload["generation"]["store_state"]
+    assert after_payload["generation"]["store_state"]["claims"][0]["work_item_id"] == old.work_item_id
+
+
+@pytest.mark.parametrize(
+    ("override", "error_type"),
+    [
+        ({"owner_id": "other-owner"}, ResearchTaskNotFound),
+        ({"research_task_id": "other-task"}, ResearchTaskNotFound),
+        ({"plan_version": 2}, ResearchReportReservationConflict),
+        ({"request_key": "11111111-1111-4111-8111-111111111111"}, ResearchReportReservationConflict),
+        ({"expected_work_item_id": "other-work-item"}, ResearchReportGenerationStateConflict),
+        ({"report_version": 2}, ResearchReportConflict),
+    ],
+)
+def test_interrupted_report_reservation_rebind_checks_owner_plan_key_and_cas(
+    tmp_path, override, error_type,
+):
+    store, reservation = _setup(tmp_path)
+    _interrupt_reservation_work_item(store, reservation)
+    before = store.get_research_report(TASK_ID, OWNER_ID, report_version=1).report_json
+
+    with pytest.raises(error_type):
+        _rebind_report_successor(store, reservation, "report-successor-invalid", **override)
+
+    assert store.get_research_report(TASK_ID, OWNER_ID, report_version=1).report_json == before
+    assert store.get_work_item("report-successor-invalid") is None
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+def test_report_reservation_cannot_rebind_non_interrupted_terminal_work_item(
+    tmp_path, terminal_status,
+):
+    store, reservation = _setup(tmp_path)
+    store.update_work_item_status(reservation.work_item.work_item_id, "running", attempt=1)
+    old = store.update_work_item_status(
+        reservation.work_item.work_item_id, terminal_status,
+        error_code="TERMINAL_TEST" if terminal_status != "completed" else None,
+    )
+
+    with pytest.raises(ResearchReportGenerationStateConflict):
+        _rebind_report_successor(store, reservation, "report-successor-invalid")
+
+    assert store.get_work_item(old.work_item_id).status == terminal_status
+    assert store.get_work_item("report-successor-invalid") is None
+
+
+def test_terminal_report_reservation_cannot_be_rebound(tmp_path):
+    store, reservation = _setup(tmp_path)
+    _interrupt_reservation_work_item(store, reservation)
+    store.update_report_generation_state(
+        TASK_ID, OWNER_ID, reservation.report.report_version,
+        expected_revision=0, stage="failed", rewrite_count=0,
+        status="failed", published=False, reason_codes=["REPORT_GENERATION_FAILED"],
+    )
+
+    with pytest.raises(ResearchReportGenerationStateConflict):
+        _rebind_report_successor(store, reservation, "report-successor-invalid")
+
+    assert store.get_work_item("report-successor-invalid") is None
 

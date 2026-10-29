@@ -6609,6 +6609,278 @@ class ResearchStore:
             work_item = self._report_reservation_work_item(conn, report)
         return ReportGenerationReservation(report, work_item, True)
 
+    def rebind_report_generation_successor(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+        *,
+        expected_work_item_id: str,
+        successor_work_item_id: str,
+        request_key: str,
+        plan_version: int,
+    ) -> ReportGenerationReservation:
+        """Bind an interrupted reservation to one queued same-version successor.
+
+        The old WorkItem remains terminal (interrupted or completed) and the
+        report's usage/revision ledger is untouched. The expected bound
+        WorkItem ID is the CAS token; replay of the already-bound successor is
+        a read-only idempotent success.
+        """
+        if isinstance(report_version, bool) or not isinstance(report_version, int) or report_version < 1:
+            raise ValueError("report_version must be a positive integer")
+        if isinstance(plan_version, bool) or not isinstance(plan_version, int) or plan_version < 1:
+            raise ValueError("plan_version must be a positive integer")
+        for label, value in (
+            ("expected_work_item_id", expected_work_item_id),
+            ("successor_work_item_id", successor_work_item_id),
+        ):
+            if not isinstance(value, str) or not value or value.strip() != value or len(value) > 200:
+                raise ValueError(f"{label} is invalid")
+        if expected_work_item_id == successor_work_item_id:
+            raise ValueError("successor_work_item_id must differ from expected_work_item_id")
+        key = self._canonical_report_request_key(request_key)
+
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (research_task_id, owner_id),
+                ).fetchone()
+                if task_row is None:
+                    raise ResearchTaskNotFound(research_task_id)
+                if task_row["status"] not in {"running", "interrupted"}:
+                    raise ResearchReportGenerationStateConflict(
+                        "report reservation task is not recoverable"
+                    )
+                if int(task_row["current_plan_version"]) != plan_version:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_VERSION_CONFLICT", "report generation requires the current plan version"
+                    )
+                plan_row = conn.execute(
+                    "SELECT status FROM research_plans WHERE research_task_id=? AND version=?",
+                    (research_task_id, plan_version),
+                ).fetchone()
+                if plan_row is None or plan_row["status"] not in {"active", "completed"}:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_VERSION_CONFLICT", "report generation plan is no longer active"
+                    )
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
+                    (research_task_id, report_version),
+                ).fetchone()
+                if report_row is None:
+                    raise ResearchReportConflict("REPORT_VERSION_CONFLICT")
+                report = ResearchReport.from_row(dict(report_row))
+                if report.plan_version != plan_version:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_VERSION_CONFLICT", "plan version does not match the report reservation",
+                        existing_report=report,
+                    )
+                if report.status != "generating":
+                    raise ResearchReportGenerationStateConflict(
+                        "terminal report generation is immutable"
+                    )
+
+                payload, generation, _state = self._generation_json(report_row)
+                if (
+                    payload.get("report_id") != report.report_id
+                    or payload.get("report_version") != report_version
+                    or generation.get("report_version") != report_version
+                    or generation.get("plan_version") != plan_version
+                ):
+                    raise ResearchReportGenerationStateConflict(
+                        "canonical report identity does not match its reservation"
+                    )
+                stored_key = self._canonical_report_request_key(generation.get("request_key"))
+                if stored_key != key or generation.get("request_key") != key:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_IDEMPOTENCY_KEY_REUSED", "request key does not match the report reservation",
+                        existing_report=report,
+                        existing_work_item_id=(
+                            generation.get("work_item_id")
+                            if isinstance(generation.get("work_item_id"), str) else None
+                        ),
+                    )
+                current_item_id = generation.get("work_item_id")
+                if not isinstance(current_item_id, str) or not current_item_id:
+                    raise ResearchReportGenerationStateConflict(
+                        "report reservation has no bound work item"
+                    )
+
+                if current_item_id == successor_work_item_id:
+                    old_row = conn.execute(
+                        "SELECT * FROM research_work_items WHERE work_item_id=? AND research_task_id=?",
+                        (expected_work_item_id, research_task_id),
+                    ).fetchone()
+                    current_item = self._report_reservation_work_item(conn, report)
+                    old_input = None
+                    if old_row is not None:
+                        try:
+                            old_input = json.loads(old_row["input_json"] or "{}")
+                        except (TypeError, ValueError):
+                            old_input = None
+                    old_binding = old_input.get("report_generation") if isinstance(old_input, dict) else None
+                    current_input = json.loads(current_item.input_json or "{}")
+                    current_binding = (
+                        current_input.get("report_generation") if isinstance(current_input, dict) else None
+                    )
+                    if (
+                        old_row is None
+                        or old_row["status"] not in {"interrupted", "completed"}
+                        or int(old_row["plan_version"]) != plan_version
+                        or old_row["task_type"] != "synthesize_preliminary_report"
+                        or old_row["role"] != "synthesizer"
+                        or not isinstance(old_input, dict)
+                        or old_input.get("report_id") != report.report_id
+                        or old_input.get("report_version") != report_version
+                        or old_input.get("plan_version") != plan_version
+                        or old_input.get("request_key") != key
+                        or old_input.get("request_fingerprint") != current_input.get("request_fingerprint")
+                        or not isinstance(old_binding, dict)
+                        or old_binding.get("report_id") != report.report_id
+                        or old_binding.get("report_version") != report_version
+                        or old_binding.get("plan_version") != plan_version
+                        or old_binding.get("request_key") != key
+                        or old_binding.get("request_fingerprint")
+                        != (current_binding.get("request_fingerprint") if isinstance(current_binding, dict) else None)
+                        or current_item.work_item_id != successor_work_item_id
+                        or current_item.task_type != "synthesize_preliminary_report"
+                        or current_item.role != "synthesizer"
+                        or current_item.plan_version != plan_version
+                    ):
+                        raise ResearchReportGenerationStateConflict(
+                            "successor replay does not match its terminal predecessor"
+                        )
+                    conn.commit()
+                    return ReportGenerationReservation(report, current_item, True)
+
+                if current_item_id != expected_work_item_id:
+                    raise ResearchReportGenerationStateConflict(
+                        "report reservation work item changed concurrently"
+                    )
+                old_item = self._report_reservation_work_item(conn, report)
+                if old_item.status not in {"interrupted", "completed"}:
+                    raise ResearchReportGenerationStateConflict(
+                        "only an interrupted or completed report WorkItem can be replaced"
+                    )
+                if conn.execute(
+                    "SELECT 1 FROM research_work_items WHERE work_item_id=?",
+                    (successor_work_item_id,),
+                ).fetchone() is not None:
+                    raise ResearchReportGenerationStateConflict(
+                        "successor WorkItem ID is already in use"
+                    )
+
+                try:
+                    old_input = json.loads(old_item.input_json or "{}")
+                except (TypeError, ValueError) as exc:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_RESERVATION_WORK_ITEM_INVALID",
+                        "interrupted report WorkItem input is invalid",
+                        existing_report=report,
+                        existing_work_item_id=old_item.work_item_id,
+                    ) from exc
+                if not isinstance(old_input, dict):
+                    raise ResearchReportReservationConflict(
+                        "REPORT_RESERVATION_WORK_ITEM_INVALID",
+                        "interrupted report WorkItem input must be an object",
+                        existing_report=report,
+                        existing_work_item_id=old_item.work_item_id,
+                    )
+                base_input = dict(old_input)
+                for identity_field in (
+                    "report_generation", "report_id", "report_version", "plan_version",
+                    "request_key", "request_fingerprint",
+                ):
+                    base_input.pop(identity_field, None)
+                old_binding = old_input.get("report_generation")
+                fingerprint = old_binding.get("request_fingerprint") if isinstance(old_binding, dict) else None
+                if not isinstance(fingerprint, str):
+                    raise ResearchReportReservationConflict(
+                        "REPORT_RESERVATION_WORK_ITEM_INVALID",
+                        "interrupted report WorkItem has no request fingerprint",
+                        existing_report=report,
+                        existing_work_item_id=old_item.work_item_id,
+                    )
+                successor_input = self._report_reservation_input(
+                    base_input,
+                    report_id=report.report_id,
+                    report_version=report_version,
+                    plan_version=plan_version,
+                    request_key=key,
+                    request_fingerprint=fingerprint,
+                )
+                now = _utcnow()
+                conn.execute(
+                    """INSERT INTO research_work_items(
+                        work_item_id,research_task_id,plan_version,task_type,role,depends_on_json,input_json,
+                        output_json,model_tier,resolved_model,worker_slot,status,attempt,error_code,started_at,
+                        ended_at,retry_count,next_retry_at,last_error_code,created_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        successor_work_item_id,
+                        research_task_id,
+                        plan_version,
+                        old_item.task_type,
+                        old_item.role,
+                        old_item.depends_on_json,
+                        successor_input,
+                        None,
+                        old_item.model_tier,
+                        old_item.resolved_model,
+                        None,
+                        "queued",
+                        old_item.attempt,
+                        None,
+                        None,
+                        None,
+                        old_item.retry_count,
+                        None,
+                        None,
+                        now,
+                        now,
+                    ),
+                )
+                generation["work_item_id"] = successor_work_item_id
+                serialized = json.dumps(
+                    payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+                )
+                changed = conn.execute(
+                    "UPDATE research_reports SET report_json=? "
+                    "WHERE report_id=? AND research_task_id=? AND plan_version=? AND report_version=? "
+                    "AND status='generating' AND report_json=?",
+                    (
+                        serialized,
+                        report.report_id,
+                        research_task_id,
+                        plan_version,
+                        report_version,
+                        report_row["report_json"],
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise ResearchReportGenerationStateConflict(
+                        "report reservation changed concurrently"
+                    )
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE report_id=?", (report.report_id,)
+                ).fetchone()
+                item_row = conn.execute(
+                    "SELECT * FROM research_work_items WHERE work_item_id=?",
+                    (successor_work_item_id,),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return ReportGenerationReservation(
+            ResearchReport.from_row(dict(report_row)),
+            ResearchWorkItem.from_row(dict(item_row)),
+            False,
+        )
+
     _REPORT_GENERATION_STAGES = frozenset(
         {
             "evidence_review",

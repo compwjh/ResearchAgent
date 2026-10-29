@@ -2,7 +2,7 @@
 
 Date: 2026-10-29  
 Role: backend-dev  
-Status: bounded canonical writer implemented; application integration and independent review remain downstream.
+Status: canonical writer and same-reservation terminal WorkItem successor CAS implemented; Store independent review passed; Orchestrator/ResearchService recovery integration remains downstream.
 
 ## Scope
 
@@ -69,3 +69,34 @@ The reservation reader and canonical writer both use this shared check and fail 
 ## Agent log
 
 `.codebuddy/agent-logs/spec-030/task-08/backend-dev/20261029-161859.md`
+
+## Same-reservation recovery successor CAS
+
+Startup/runtime recovery can leave a generating canonical reservation bound to a terminal synthesis WorkItem. `ResearchStore.rebind_report_generation_successor` provides the bounded Store seam:
+
+```python
+rebind_report_generation_successor(
+    research_task_id,
+    owner_id,
+    report_version,
+    *,
+    expected_work_item_id,
+    successor_work_item_id,
+    request_key,
+    plan_version,
+) -> ReportGenerationReservation
+```
+
+The method requires the report to remain `generating`, the owner/task/current plan/report version/request key to match, and the report row to remain bound to `expected_work_item_id`. The predecessor must be terminal `interrupted` or `completed`; failed/cancelled predecessors are rejected. The task may be `running` or `interrupted`. In one transaction the Store inserts a new queued WorkItem with the same task, plan, synthesis type/role, reservation input and fingerprint, dependency list, attempt/retry counters, and model configuration, then conditionally updates only `generation.work_item_id` using the previous canonical `report_json` and expected WorkItem binding as the CAS boundary.
+
+The predecessor stays terminal with its input/output untouched. The report ID/version/status, canonical content, `generation.store_state` (including revision, stage, rewrite count, claims, limits), budget ledger, and usage are not changed. Claims keep their historical WorkItem IDs so the application can validate and reuse an earlier completed AgentRun checkpoint against that predecessor's same-reservation input binding. Replaying the same successor is read-only and returns `replayed=True`; another restart may bind a new successor against the currently bound terminal predecessor. Terminal reports cannot be rebound, and no schema/table/queue was added.
+
+### Successor CAS verification
+
+- RED: 11 successor capability cases failed before the Store seam existed; after adding the Runtime-completed-before-canonical counterexample, that single case also failed while only `interrupted` predecessors were allowed.
+- GREEN: `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_canonical_persistence.py` — exit 0, **26 passed** (final frozen version).
+- `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/infrastructure/research_store.py tests/research/test_report_canonical_persistence.py` — exit 0, all checks passed.
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/infrastructure/research_store.py tests/research/test_report_canonical_persistence.py` — exit 0.
+- `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` — exit 0, `test layout: ok`.
+
+Tests assert that both interrupted and completed predecessors remain unchanged; the successor is queued and bound to the exact existing report version; task/report owner, plan, request key, expected predecessor, terminal-report and failed/cancelled guards fail closed; ledger, rewrite revision and claim WorkItem IDs survive; same-successor replay is idempotent; repeated restart may chain another successor without changing the report version. Orchestrator/ResearchService wiring and checkpoint reuse across historical predecessor WorkItems are owned by the integration slice and still require its targeted tests and independent review.
