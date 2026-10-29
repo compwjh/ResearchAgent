@@ -19,12 +19,12 @@ from typing import Any, Iterable, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_serializer
 
-from backend.app.research.domain.models import ResearchArtifact, ResearchNotification
 from backend.app.research.application.report_quality import (
     REPORT_CONTENT_SCHEMA_VERSION,
     ReportQualityError,
     _validate_report_shape,
 )
+from backend.app.research.domain.models import ResearchArtifact, ResearchNotification
 
 _FORBIDDEN_PARTS = (
     "prompt", "cot", "chain_of_thought", "reasoning", "credential", "password",
@@ -737,6 +737,727 @@ class ReportDeliveryService:
             "artifact_id": artifact.artifact_id, "report_version": artifact.report_version,
             "artifact_type": artifact.artifact_type, "content_hash": artifact.content_hash,
             "created_at": artifact.created_at,
+        }
+
+    _CANONICAL_ARTIFACT_TYPES = ("markdown", "html", "citation_manifest")
+    _CANONICAL_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024
+
+    @staticmethod
+    def _positive_version(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+    def _canonical_delivery_context(
+        self, *, task, session, owner_id: str, reservation, report, report_version: int,
+        rendered: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Re-read and bind the caller's canonical rendering to its reservation."""
+        report_identity = getattr(reservation, "report", None)
+        reservation_item = getattr(reservation, "work_item", None)
+        task_id = getattr(task, "research_task_id", None)
+        session_id = getattr(session, "research_session_id", None)
+        if (
+            isinstance(report_version, bool)
+            or not isinstance(report_version, int)
+            or report_version < 1
+            or not isinstance(owner_id, str)
+            or not owner_id
+            or not isinstance(task_id, str)
+            or not task_id
+            or not isinstance(session_id, str)
+            or not session_id
+            or report_identity is None
+            or reservation_item is None
+            or getattr(task, "owner_id", None) != owner_id
+            or getattr(session, "owner_id", None) != owner_id
+            or getattr(session, "research_task_id", None) != task_id
+            or getattr(session, "conversation_id", None) != getattr(task, "conversation_id", None)
+            or getattr(report, "report_id", None) != getattr(report_identity, "report_id", None)
+            or getattr(report, "research_task_id", None) != task_id
+            or not self._positive_version(getattr(report, "plan_version", None))
+            or getattr(report, "plan_version", None) != getattr(report_identity, "plan_version", None)
+            or not self._positive_version(getattr(report, "report_version", None))
+            or getattr(report, "report_version", None) != report_version
+            or getattr(report_identity, "research_task_id", None) != task_id
+            or not self._positive_version(getattr(report_identity, "plan_version", None))
+            or not self._positive_version(getattr(report_identity, "report_version", None))
+            or getattr(report_identity, "report_version", None) != report_version
+            or getattr(reservation_item, "research_task_id", None) != task_id
+        ):
+            raise ReportSynthesisError(
+                "canonical report reservation binding is invalid",
+                code="REPORT_RESERVATION_BINDING_INVALID",
+            )
+
+        try:
+            current_task = self.store.get_task(task_id, owner_id)
+            current_session = self.store.get_session(session_id, owner_id)
+            current_report = self.store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+        except Exception as exc:
+            raise ReportSynthesisError(
+                "canonical report reservation could not be read",
+                code="REPORT_RESERVATION_BINDING_INVALID",
+            ) from exc
+        if (
+            current_task is None
+            or current_session is None
+            or current_report is None
+            or getattr(current_task, "owner_id", None) != owner_id
+            or getattr(current_task, "research_task_id", None) != task_id
+            or getattr(current_task, "conversation_id", None) != getattr(session, "conversation_id", None)
+            or not self._positive_version(getattr(current_task, "current_plan_version", None))
+            or getattr(current_session, "research_task_id", None) != task_id
+            or getattr(current_session, "conversation_id", None) != getattr(current_task, "conversation_id", None)
+            or getattr(current_session, "owner_id", None) != owner_id
+            or getattr(current_report, "report_id", None) != getattr(report_identity, "report_id", None)
+            or getattr(current_report, "plan_version", None) != getattr(report_identity, "plan_version", None)
+            or getattr(current_report, "report_version", None) != report_version
+            or not self._positive_version(getattr(current_report, "plan_version", None))
+        ):
+            raise ReportSynthesisError(
+                "canonical report reservation binding is invalid",
+                code="REPORT_RESERVATION_BINDING_INVALID",
+            )
+
+        try:
+            canonical = json.loads(current_report.report_json or "{}")
+        except (TypeError, ValueError) as exc:
+            raise ReportSynthesisError(
+                "canonical report payload is invalid", code="REPORT_NOT_PUBLISHABLE",
+            ) from exc
+        if not isinstance(canonical, dict):
+            raise ReportSynthesisError("canonical report payload is invalid", code="REPORT_NOT_PUBLISHABLE")
+        generation = canonical.get("generation")
+        quality = canonical.get("quality_validation")
+        if (
+            canonical.get("report_id") != current_report.report_id
+            or isinstance(canonical.get("report_version"), bool)
+            or not isinstance(canonical.get("report_version"), int)
+            or canonical.get("report_version") != report_version
+            or not isinstance(generation, dict)
+            or isinstance(generation.get("report_version"), bool)
+            or not isinstance(generation.get("report_version"), int)
+            or generation.get("report_version") != report_version
+            or isinstance(generation.get("plan_version"), bool)
+            or not isinstance(generation.get("plan_version"), int)
+            or generation.get("plan_version") != current_report.plan_version
+            or generation.get("work_item_id") != getattr(reservation_item, "work_item_id", None)
+            or not isinstance(generation.get("request_key"), str)
+            or not isinstance(generation.get("agent_run_ids"), list)
+            or not generation["agent_run_ids"]
+            or any(not isinstance(run_id, str) or not run_id for run_id in generation["agent_run_ids"])
+            or not isinstance(quality, dict)
+            or quality.get("status") != "pass"
+            or generation.get("path") != "agent_runner"
+            or generation.get("output_disposition") != "accepted"
+            or not isinstance(canonical.get("report_content"), dict)
+        ):
+            raise ReportSynthesisError(
+                "canonical report has not passed its publication gates",
+                code="REPORT_NOT_PUBLISHABLE",
+            )
+
+        status = getattr(current_report, "status", None)
+        published = generation.get("published")
+        if status == "generating" and (
+            not self._positive_version(getattr(current_session, "current_plan_version", None))
+            or not self._positive_version(getattr(session, "current_plan_version", None))
+            or getattr(current_task, "current_plan_version", None) != current_report.plan_version
+            or getattr(current_session, "current_plan_version", None) != current_report.plan_version
+            or getattr(task, "current_plan_version", None) != current_report.plan_version
+            or getattr(session, "current_plan_version", None) != current_report.plan_version
+        ):
+            raise ReportSynthesisError(
+                "canonical report plan is no longer current", code="REPORT_RESERVATION_BINDING_INVALID",
+            )
+        if not (
+            (status == "generating" and published is False)
+            or (status == "completed" and published is True)
+        ):
+            raise ReportSynthesisError(
+                "canonical report is not in a publishable state", code="REPORT_NOT_PUBLISHABLE",
+            )
+
+        request_key = generation["request_key"]
+        reservation_reader = getattr(self.store, "get_report_generation_reservation", None)
+        try:
+            durable_reservation = (
+                reservation_reader(task_id, owner_id, request_key=request_key)
+                if callable(reservation_reader) else None
+            )
+        except Exception as exc:
+            raise ReportSynthesisError(
+                "canonical report reservation binding is invalid",
+                code="REPORT_RESERVATION_BINDING_INVALID",
+            ) from exc
+        if (
+            durable_reservation is None
+            or getattr(getattr(durable_reservation, "report", None), "report_id", None)
+            != current_report.report_id
+            or getattr(getattr(durable_reservation, "report", None), "plan_version", None)
+            != current_report.plan_version
+            or getattr(getattr(durable_reservation, "report", None), "report_version", None)
+            != report_version
+            or getattr(getattr(durable_reservation, "work_item", None), "work_item_id", None)
+            != generation.get("work_item_id")
+            or getattr(reservation, "work_item", None) is None
+            or getattr(getattr(reservation, "work_item", None), "work_item_id", None)
+            != getattr(getattr(durable_reservation, "work_item", None), "work_item_id", None)
+        ):
+            raise ReportSynthesisError(
+                "canonical report reservation binding is invalid",
+                code="REPORT_RESERVATION_BINDING_INVALID",
+            )
+
+        item = durable_reservation.work_item
+        item_input = getattr(item, "input_params", {})
+        binding = item_input.get("report_generation") if isinstance(item_input, Mapping) else None
+        fingerprint = binding.get("request_fingerprint") if isinstance(binding, Mapping) else None
+        if (
+            getattr(item, "research_task_id", None) != task_id
+            or not self._positive_version(getattr(item, "plan_version", None))
+            or getattr(item, "plan_version", None) != current_report.plan_version
+            or getattr(item, "task_type", None) != "synthesize_preliminary_report"
+            or getattr(item, "role", None) != "synthesizer"
+            or not isinstance(item_input, Mapping)
+            or not isinstance(binding, Mapping)
+            or item_input.get("report_id") != current_report.report_id
+            or isinstance(item_input.get("report_version"), bool)
+            or not isinstance(item_input.get("report_version"), int)
+            or item_input.get("report_version") != report_version
+            or isinstance(item_input.get("plan_version"), bool)
+            or not isinstance(item_input.get("plan_version"), int)
+            or item_input.get("plan_version") != current_report.plan_version
+            or item_input.get("request_key") != request_key
+            or binding.get("report_id") != current_report.report_id
+            or isinstance(binding.get("report_version"), bool)
+            or not isinstance(binding.get("report_version"), int)
+            or binding.get("report_version") != report_version
+            or isinstance(binding.get("plan_version"), bool)
+            or not isinstance(binding.get("plan_version"), int)
+            or binding.get("plan_version") != current_report.plan_version
+            or binding.get("request_key") != request_key
+            or not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or item_input.get("request_fingerprint") != fingerprint
+        ):
+            raise ReportSynthesisError(
+                "canonical report reservation binding is invalid",
+                code="REPORT_RESERVATION_BINDING_INVALID",
+            )
+
+        if not isinstance(rendered, Mapping):
+            raise ReportSynthesisError("canonical renderer output is invalid", code="REPORT_RENDER_INVALID")
+        rendered_report = rendered.get("report")
+        if (
+            not isinstance(rendered_report, Mapping)
+            or rendered_report.get("report_id") != current_report.report_id
+            or not self._positive_version(rendered_report.get("report_version"))
+            or rendered_report.get("report_version") != report_version
+            or not self._positive_version(rendered_report.get("plan_version"))
+            or rendered_report.get("plan_version") != current_report.plan_version
+            or rendered_report.get("report_content") != canonical.get("report_content")
+            or not isinstance(rendered_report.get("quality_validation"), Mapping)
+            or rendered_report["quality_validation"].get("status") != "pass"
+        ):
+            raise ReportSynthesisError("canonical renderer output is invalid", code="REPORT_RENDER_INVALID")
+
+        trusted_render = self._trusted_canonical_render({
+            "task": current_task,
+            "report": current_report,
+            "work_item": item,
+            "canonical": canonical,
+            "generation": generation,
+        })
+        trusted_report = trusted_render["report"]
+        supplied_quality = rendered_report["quality_validation"]
+        trusted_quality = trusted_report["quality_validation"]
+        required_quality_keys = set(trusted_quality) - {"revision_count"}
+        if (
+            not required_quality_keys.issubset(supplied_quality)
+            or any(supplied_quality.get(key) != trusted_quality.get(key) for key in required_quality_keys)
+            or rendered_report.get("citation_manifest") != trusted_report.get("citation_manifest")
+            or rendered.get("markdown") != trusted_render.get("markdown")
+            or rendered.get("html") != trusted_render.get("html")
+        ):
+            raise ReportSynthesisError(
+                "canonical rendering differs from server rendering",
+                code="REPORT_RENDER_INVALID",
+            )
+        manifest_json = json.dumps(
+            trusted_report["citation_manifest"],
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        )
+        contents = {
+            "markdown": trusted_render["markdown"],
+            "html": trusted_render["html"],
+            "citation_manifest": manifest_json,
+        }
+        if any(len(value.encode("utf-8")) > self._CANONICAL_ARTIFACT_MAX_BYTES for value in contents.values()):
+            raise ReportSynthesisError("canonical artifact exceeds its size limit", code="REPORT_RENDER_INVALID")
+        return {
+            "task": current_task,
+            "session": current_session,
+            "report": current_report,
+            "work_item": item,
+            "canonical": canonical,
+            "generation": generation,
+            "request_key": request_key,
+            "activity_key": f"research-report:{task_id}:{report_version}",
+            "contents": contents,
+            "generated_by_agent_run_id": generation["agent_run_ids"][-1],
+        }
+
+    def _trusted_canonical_render(self, context: Mapping[str, Any]) -> dict[str, Any]:
+        """Re-render canonical content against owner-scoped durable evidence."""
+        from backend.app.research.application.evidence_matrix import EvidenceMatrixService
+        from backend.app.research.application.report_generation import render_report_payload
+        from backend.app.research.application.report_quality import ReportQualityContext
+
+        task = context["task"]
+        report = context["report"]
+        canonical = context["canonical"]
+        generation = context["generation"]
+        work_item = context["work_item"]
+        task_id = task.research_task_id
+        owner_id = task.owner_id
+        plan_version = report.plan_version
+
+        item_input = getattr(work_item, "input_params", {})
+        candidates = item_input.get("validated_candidates") if isinstance(item_input, Mapping) else None
+        if not isinstance(candidates, list) or not 5 <= len(candidates) <= 64:
+            raise ReportSynthesisError(
+                "canonical report selected candidates are unavailable", code="REPORT_RENDER_INVALID",
+            )
+        selected_paper_ids: list[str] = []
+        for candidate in candidates:
+            if not isinstance(candidate, Mapping):
+                raise ReportSynthesisError(
+                    "canonical report selected candidates are invalid", code="REPORT_RENDER_INVALID",
+                )
+            paper_id = candidate.get("candidate_id", candidate.get("catalog_paper_id"))
+            if not isinstance(paper_id, str) or not paper_id.strip() or len(paper_id.strip()) > 200:
+                raise ReportSynthesisError(
+                    "canonical report selected candidates are invalid", code="REPORT_RENDER_INVALID",
+                )
+            selected_paper_ids.append(paper_id.strip())
+        if len(set(selected_paper_ids)) != len(selected_paper_ids):
+            raise ReportSynthesisError(
+                "canonical report selected candidates are duplicated", code="REPORT_RENDER_INVALID",
+            )
+
+        try:
+            selections = self.store.list_selections(task_id)
+            approved_ids = {
+                getattr(selection, "catalog_paper_id", None)
+                for selection in selections
+            }
+            if not set(selected_paper_ids).issubset(approved_ids):
+                raise ValueError("candidate is outside durable selection")
+            matrix = EvidenceMatrixService(self.store).read_matrix(
+                task_id, owner_id, plan_version=plan_version,
+            )
+            upgrades_reader = getattr(self.store, "list_evidence_upgrades", None)
+            upgrades = upgrades_reader(task_id) if callable(upgrades_reader) else []
+            quality_context = ReportQualityContext(
+                task_id=task_id,
+                plan_version=plan_version,
+                selected_paper_ids=selected_paper_ids,
+                evidence_matrix=matrix,
+                evidence_upgrades=upgrades,
+            )
+            rendered = render_report_payload(
+                {"report_content": canonical["report_content"]},
+                report_id=report.report_id,
+                report_version=report.report_version,
+                context=quality_context,
+            )
+        except ReportSynthesisError:
+            raise
+        except Exception as exc:
+            raise ReportSynthesisError(
+                "canonical report could not be re-rendered from durable evidence",
+                code="REPORT_RENDER_INVALID",
+            ) from exc
+
+        store_state = generation.get("store_state")
+        rewrite_count = store_state.get("rewrite_count") if isinstance(store_state, Mapping) else None
+        if (
+            isinstance(rewrite_count, bool)
+            or not isinstance(rewrite_count, int)
+            or not 0 <= rewrite_count <= 2
+        ):
+            raise ReportSynthesisError(
+                "canonical report revision state is invalid", code="REPORT_RENDER_INVALID",
+            )
+        expected_quality = dict(rendered["report"]["quality_validation"])
+        expected_quality["revision_count"] = rewrite_count
+        if expected_quality != canonical.get("quality_validation"):
+            raise ReportSynthesisError(
+                "canonical quality validation differs from durable evidence",
+                code="REPORT_RENDER_INVALID",
+            )
+        rendered_report = dict(rendered["report"])
+        rendered_report["quality_validation"] = expected_quality
+        rendered["report"] = rendered_report
+        return rendered
+
+    def _read_canonical_artifacts(
+        self, *, task_id: str, owner_id: str, report_version: int,
+        contents: Mapping[str, str],
+    ) -> dict[str, ResearchArtifact]:
+        expected_types = set(contents)
+        existing: dict[str, ResearchArtifact] = {}
+        for artifact in self.store.list_artifacts_for_task(
+            task_id, owner_id, report_version=report_version,
+        ):
+            if artifact.artifact_type not in expected_types:
+                continue
+            if artifact.artifact_type in existing:
+                raise ReportSynthesisError(
+                    "canonical artifact identity is duplicated", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                )
+            existing[artifact.artifact_type] = artifact
+        return existing
+
+    def _link_canonical_message(
+        self, *, session, task_id: str, owner_id: str,
+        report_version: int, message_id: str,
+    ):
+        current_session = self.store.get_session(session.research_session_id, owner_id)
+        if current_session is None:
+            raise ReportSynthesisError("canonical report session is unavailable", code="ARTIFACT_NOT_READY")
+        if current_session.final_message_id not in {None, message_id}:
+            linked_id = current_session.final_message_id
+            linked_reader = getattr(self.memory_repository, "get_message", None)
+            linked_message = linked_reader(linked_id, owner_id) if callable(linked_reader) else None
+            linked_is_session_activity = (
+                linked_message is not None
+                and getattr(linked_message, "message_id", None) == linked_id
+                and getattr(linked_message, "owner_id", None) == owner_id
+                and getattr(linked_message, "conversation_id", None) == current_session.conversation_id
+                and getattr(linked_message, "role", None) == "assistant"
+                and getattr(linked_message, "parent_message_id", None) == current_session.activity_message_id
+                and getattr(linked_message, "status", None) in {"pending", "completed", "partial", "failed"}
+                and isinstance(getattr(linked_message, "content", None), str)
+                and bool(linked_message.content)
+            )
+            artifacts_reader = getattr(self.store, "list_artifacts_for_task", None)
+            if linked_is_session_activity and callable(artifacts_reader):
+                linked_versions = set()
+                for artifact in artifacts_reader(task_id, owner_id):
+                    artifact_version = getattr(artifact, "report_version", None)
+                    if (
+                        not self._positive_version(artifact_version)
+                        or artifact_version <= report_version
+                        or getattr(artifact, "artifact_type", None) != "markdown"
+                        or getattr(artifact, "research_task_id", None) != task_id
+                        or not isinstance(getattr(artifact, "content", None), str)
+                        or artifact.content != linked_message.content
+                    ):
+                        continue
+                    content_hash = hashlib.sha256(artifact.content.encode("utf-8")).hexdigest()
+                    if getattr(artifact, "content_hash", None) == content_hash:
+                        linked_versions.add(artifact_version)
+                for artifact_version in sorted(linked_versions, reverse=True):
+                    newer_message = self.memory_repository.get_activity_message(
+                        current_session.conversation_id,
+                        owner_id,
+                        f"research-report:{task_id}:{artifact_version}",
+                    )
+                    if (
+                        newer_message is not None
+                        and newer_message.message_id == linked_id
+                        and newer_message.content == linked_message.content
+                        and newer_message.role == linked_message.role
+                        and newer_message.parent_message_id == linked_message.parent_message_id
+                        and newer_message.status == linked_message.status
+                    ):
+                        return current_session
+        return self.store.update_session_links(
+            current_session.research_session_id,
+            owner_id,
+            final_message_id=message_id,
+        )
+
+    def prepare_canonical(
+        self, *, task, session, owner_id: str, reservation, report,
+        report_version: int, rendered: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Persist canonical artifacts and a pending activity, without publishing.
+
+        The report row must already contain a validated, accepted AgentRunner
+        result. Callers perform the report-state publish CAS only after this
+        method returns successfully.
+        """
+        context = self._canonical_delivery_context(
+            task=task, session=session, owner_id=owner_id, reservation=reservation,
+            report=report, report_version=report_version, rendered=rendered,
+        )
+        task_id = context["task"].research_task_id
+        contents = context["contents"]
+        artifacts = self._read_canonical_artifacts(
+            task_id=task_id, owner_id=owner_id, report_version=report_version,
+            contents=contents,
+        )
+        for artifact_type in self._CANONICAL_ARTIFACT_TYPES:
+            content = contents[artifact_type]
+            expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            artifact = artifacts.get(artifact_type)
+            if artifact is not None:
+                if (
+                    artifact.content_hash != expected_hash
+                    or artifact.content != content
+                    or artifact.generated_by_agent_run_id != context["generated_by_agent_run_id"]
+                ):
+                    raise ReportSynthesisError(
+                        "canonical artifact immutable conflict", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                    )
+                continue
+            candidate = ResearchArtifact(
+                artifact_id=uuid.uuid4().hex,
+                research_task_id=task_id,
+                report_version=report_version,
+                artifact_type=artifact_type,
+                content_hash=expected_hash,
+                generated_by_agent_run_id=context["generated_by_agent_run_id"],
+                content=content,
+            )
+            try:
+                saved = self.store.create_artifact(candidate, owner_id=owner_id)
+            except Exception as exc:
+                artifacts = self._read_canonical_artifacts(
+                    task_id=task_id, owner_id=owner_id, report_version=report_version,
+                    contents=contents,
+                )
+                saved = artifacts.get(artifact_type)
+                if saved is None:
+                    raise ReportSynthesisError(
+                        "canonical artifact persistence failed", code="ARTIFACT_NOT_READY",
+                    ) from exc
+                if (
+                    saved.content_hash != expected_hash
+                    or saved.content != content
+                    or saved.generated_by_agent_run_id != context["generated_by_agent_run_id"]
+                ):
+                    raise ReportSynthesisError(
+                        "canonical artifact immutable conflict", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                    ) from exc
+            artifacts[artifact_type] = saved
+
+        artifacts = self._read_canonical_artifacts(
+            task_id=task_id, owner_id=owner_id, report_version=report_version,
+            contents=contents,
+        )
+        if set(artifacts) != set(self._CANONICAL_ARTIFACT_TYPES):
+            raise ReportSynthesisError("canonical artifacts are incomplete", code="ARTIFACT_NOT_READY")
+        for artifact_type, content in contents.items():
+            artifact = artifacts[artifact_type]
+            expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            if (
+                artifact.content_hash != expected_hash
+                or artifact.content != content
+                or artifact.generated_by_agent_run_id != context["generated_by_agent_run_id"]
+            ):
+                raise ReportSynthesisError(
+                    "canonical artifact immutable conflict", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                )
+
+        current_session = self.store.get_session(session.research_session_id, owner_id)
+        existing_message = self.memory_repository.get_activity_message(
+            current_session.conversation_id, owner_id, context["activity_key"],
+        )
+        if existing_message is not None and (
+            existing_message.content != contents["markdown"]
+            or existing_message.role != "assistant"
+            or existing_message.parent_message_id != current_session.activity_message_id
+        ):
+            raise ReportSynthesisError(
+                "canonical final message immutable conflict", code="ARTIFACT_IMMUTABLE_CONFLICT",
+            )
+        current_report = self.store.get_research_report(
+            task_id, owner_id, report_version=report_version,
+        )
+        if current_report is None:
+            raise ReportSynthesisError("canonical report reservation disappeared", code="REPORT_NOT_PUBLISHABLE")
+        try:
+            latest_payload = json.loads(current_report.report_json or "{}")
+        except (TypeError, ValueError) as exc:
+            raise ReportSynthesisError(
+                "canonical report payload is invalid", code="REPORT_NOT_PUBLISHABLE",
+            ) from exc
+        latest_generation = latest_payload.get("generation") if isinstance(latest_payload, dict) else None
+        if (
+            not isinstance(latest_generation, dict)
+            or latest_payload.get("report_id") != context["report"].report_id
+            or latest_payload.get("report_version") != report_version
+            or latest_payload.get("report_content") != context["canonical"].get("report_content")
+            or latest_payload.get("quality_validation") != context["canonical"].get("quality_validation")
+            or latest_generation.get("request_key") != context["request_key"]
+            or latest_generation.get("work_item_id") != context["generation"].get("work_item_id")
+            or latest_generation.get("plan_version") != context["generation"].get("plan_version")
+            or latest_generation.get("path") != "agent_runner"
+            or latest_generation.get("output_disposition") != "accepted"
+        ):
+            raise ReportSynthesisError(
+                "canonical report changed during artifact preparation", code="REPORT_NOT_PUBLISHABLE",
+            )
+        report_is_published = current_report.status == "completed" and latest_generation.get("published") is True
+        if not (
+            (current_report.status == "generating" and latest_generation.get("published") is False)
+            or report_is_published
+        ):
+            raise ReportSynthesisError(
+                "canonical report is not in a publishable state", code="REPORT_NOT_PUBLISHABLE",
+            )
+        if existing_message is not None:
+            if existing_message.status not in {"pending", "completed"}:
+                raise ReportSynthesisError(
+                    "canonical final message has an invalid state", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                )
+            if existing_message.status == "completed" and not report_is_published:
+                raise ReportSynthesisError(
+                    "canonical final message completed before publish", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                )
+        message = existing_message or self.memory_repository.create_activity_message(
+            current_session.conversation_id,
+            owner_id,
+            contents["markdown"],
+            activity_idempotency_key=context["activity_key"],
+            status="pending",
+            parent_message_id=current_session.activity_message_id,
+        )
+        if (
+            message.content != contents["markdown"]
+            or message.role != "assistant"
+            or message.parent_message_id != current_session.activity_message_id
+            or message.status not in {"pending", "completed"}
+            or (message.status == "completed" and not report_is_published)
+        ):
+            raise ReportSynthesisError(
+                "canonical final message immutable conflict", code="ARTIFACT_IMMUTABLE_CONFLICT",
+            )
+        linked_session = self._link_canonical_message(
+            session=current_session,
+            task_id=task_id,
+            owner_id=owner_id,
+            report_version=report_version,
+            message_id=message.message_id,
+        )
+        return {
+            "report_id": current_report.report_id,
+            "research_task_id": task_id,
+            "report_version": report_version,
+            "idempotency_key": context["activity_key"],
+            "artifact_ids": [artifacts[kind].artifact_id for kind in self._CANONICAL_ARTIFACT_TYPES],
+            "artifacts": [self._artifact_payload(artifacts[kind]) for kind in self._CANONICAL_ARTIFACT_TYPES],
+            "message_id": message.message_id,
+            "message_status": message.status,
+            "final_message_id": linked_session.final_message_id,
+            "notification_id": None,
+        }
+
+    def finalize_canonical(
+        self, *, task, session, owner_id: str, reservation, report,
+        report_version: int, rendered: Mapping[str, Any], prepared: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Complete the pending activity and emit notification after publish CAS."""
+        context = self._canonical_delivery_context(
+            task=task, session=session, owner_id=owner_id, reservation=reservation,
+            report=report, report_version=report_version, rendered=rendered,
+        )
+        current_report = context["report"]
+        if current_report.status != "completed" or context["generation"].get("published") is not True:
+            raise ReportSynthesisError(
+                "canonical report publish CAS is not durable", code="REPORT_NOT_PUBLISHED",
+            )
+
+        artifacts = self._read_canonical_artifacts(
+            task_id=context["task"].research_task_id,
+            owner_id=owner_id,
+            report_version=report_version,
+            contents=context["contents"],
+        )
+        if set(artifacts) != set(self._CANONICAL_ARTIFACT_TYPES):
+            raise ReportSynthesisError("canonical artifacts are incomplete", code="ARTIFACT_NOT_READY")
+        for artifact_type, content in context["contents"].items():
+            artifact = artifacts[artifact_type]
+            expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            if (
+                artifact.content_hash != expected_hash
+                or artifact.content != content
+                or artifact.generated_by_agent_run_id != context["generated_by_agent_run_id"]
+            ):
+                raise ReportSynthesisError(
+                    "canonical artifact immutable conflict", code="ARTIFACT_IMMUTABLE_CONFLICT",
+                )
+
+        if (
+            not isinstance(prepared, Mapping)
+            or prepared.get("report_id") != current_report.report_id
+            or prepared.get("research_task_id") != context["task"].research_task_id
+            or isinstance(prepared.get("report_version"), bool)
+            or not isinstance(prepared.get("report_version"), int)
+            or prepared.get("report_version") != report_version
+            or prepared.get("idempotency_key") != context["activity_key"]
+            or prepared.get("artifact_ids")
+            != [artifacts[kind].artifact_id for kind in self._CANONICAL_ARTIFACT_TYPES]
+        ):
+            raise ReportSynthesisError(
+                "canonical delivery preparation does not match reservation",
+                code="REPORT_DELIVERY_PREPARATION_INVALID",
+            )
+
+        session_row = context["session"]
+        message = self.memory_repository.get_activity_message(
+            session_row.conversation_id, owner_id, context["activity_key"],
+        )
+        if (
+            message is None
+            or message.message_id != prepared.get("message_id")
+            or message.content != context["contents"]["markdown"]
+            or message.role != "assistant"
+            or message.parent_message_id != session_row.activity_message_id
+            or message.status not in {"pending", "completed"}
+        ):
+            raise ReportSynthesisError(
+                "canonical pending message is missing or inconsistent",
+                code="REPORT_DELIVERY_PREPARATION_INVALID",
+            )
+        if message.status == "pending":
+            message = self.memory_repository.update_message(
+                message.message_id, owner_id, content=context["contents"]["markdown"], status="completed",
+            )
+        if message is None or message.status != "completed":
+            raise ReportSynthesisError("canonical final message could not be completed", code="ARTIFACT_NOT_READY")
+        linked_session = self._link_canonical_message(
+            session=session_row,
+            task_id=context["task"].research_task_id,
+            owner_id=owner_id,
+            report_version=report_version,
+            message_id=message.message_id,
+        )
+        artifact_ids = [artifacts[kind].artifact_id for kind in self._CANONICAL_ARTIFACT_TYPES]
+        notification = ResearchNotificationService(store=self.store).emit(
+            owner_id=owner_id,
+            research_session_id=session_row.research_session_id,
+            research_task_id=context["task"].research_task_id,
+            notification_kind="completed",
+            subject_version=report_version,
+            payload={
+                "report_version": report_version,
+                "artifact_ids": artifact_ids,
+                "message_id": message.message_id,
+            },
+            idempotency_key=context["activity_key"],
+        )
+        return {
+            **dict(prepared),
+            "message_id": message.message_id,
+            "message_status": message.status,
+            "final_message_id": linked_session.final_message_id,
+            "notification_id": notification.notification_id,
         }
 
     def deliver(
