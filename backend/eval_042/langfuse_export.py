@@ -27,17 +27,29 @@ def _get(url: str) -> dict:
         return json.loads(resp.read().decode())
 
 
+def _request(method: str, url: str, body: dict | None = None) -> tuple[int, object]:
+    """统一 DELETE/POST 请求，返回 (status_code, parsed_json_or_None)。
+
+    全部经 assert_loopback 守卫，复用 _auth_header；不引入第二套鉴权实现。
+    非 2xx 由 urllib 抛 HTTPError 如实上抛，由调用方处理（不静默兜底）。
+    """
+    assert_loopback(url)
+    headers = _auth_header()
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers = {**headers, "Content-Type": "application/json"}
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        status = resp.status
+        raw = resp.read().decode()
+        return status, (json.loads(raw) if raw else None)
+
+
 def _post(url: str, body: dict) -> dict:
     """POST JSON 到本机 Langfuse public API（loopback 守卫）。返回解析后的 JSON。"""
-    assert_loopback(url)
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        headers={**_auth_header(), "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())
+    _, payload = _request("POST", url, body)
+    return payload if payload is not None else {}
 
 
 def post_score(name: str, value: float, trace_id: str, comment: str,
@@ -52,10 +64,29 @@ def post_score(name: str, value: float, trace_id: str, comment: str,
     return _post(f"{LANGFUSE_BASE}/api/public/scores", body)
 
 
+def delete_score(score_id: str) -> bool:
+    """删除一条 score（仅本评测自己写过的）。走 DELETE .../api/public/scores/{score_id}。
+
+    - 复用 _request（经 assert_loopback 守卫）与 _auth_header，不引入第二套鉴权实现；
+    - 接受 200/202/204 为成功，返回 True；非 2xx（含 4xx/5xx）由 urllib 抛 HTTPError 如实上抛，
+      由调用方计入 delete_errors 并跳过该条写回（绝不静默兜底）。
+    """
+    status, _ = _request("DELETE", f"{LANGFUSE_BASE}/api/public/scores/{score_id}")
+    return status in (200, 202, 204)
+
+
 def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
     """按 trace 回查已挂的 score 列表（分页，用于验证写回）。
 
-    注意：Langfuse public scores API 的 limit 上限为 100，超出返回 400；
+    ⚠️ 实测（2026-09-24）：本实例 Langfuse public scores API **忽略 traceId 查询参数**，
+    `GET .../scores?traceId=<tid>` 返回的是**全局** score 集合（805 条、mixed traceId），
+    并非该 trace 的 score。故：
+    - 本函数的返回值**不可**当作「某 trace 的 score 列表」直接使用；
+      调用方必须自行按 `s.get("traceId") == trace_id` 二次过滤（eval_run 已如此处理）。
+    - 需要「全量」语义时请直接用 `list_scores_global()`，避免按 trace 循环 N 次
+      重复拉取同一份全局集合（曾因此把同一批 id 重复下发删除 20 次）。
+
+    另注：Langfuse public scores API 的 limit 上限为 100，超出返回 400；
     故分页直到 meta.totalPages，避免单次大 limit 报错。
     """
     out: list[dict] = []
@@ -63,6 +94,26 @@ def list_scores(trace_id: str, limit: int = 100) -> list[dict]:
     while True:
         d = _get(f"{LANGFUSE_BASE}/api/public/scores?traceId={trace_id}"
                  f"&limit={limit}&page={page}")
+        out.extend(d.get("data", []))
+        meta = d.get("meta", {}) or {}
+        total = meta.get("totalPages") or 1
+        if page >= total:
+            break
+        page += 1
+    return out
+
+
+def list_scores_global(limit: int = 100) -> list[dict]:
+    """拉取**全局** score 列表（不带 traceId 参数，分页到 totalPages）。
+
+    存在的理由：`list_scores(trace_id)` 在本实例会被服务端忽略 traceId 而返回全局集合，
+    因此「按 trace 统计 / 批量去重」必须在客户端基于**一次**全局拉取来做，
+    否则同一批 score 会被重复处理 N 次（N = trace 数）。
+    """
+    out: list[dict] = []
+    page = 1
+    while True:
+        d = _get(f"{LANGFUSE_BASE}/api/public/scores?limit={limit}&page={page}")
         out.extend(d.get("data", []))
         meta = d.get("meta", {}) or {}
         total = meta.get("totalPages") or 1

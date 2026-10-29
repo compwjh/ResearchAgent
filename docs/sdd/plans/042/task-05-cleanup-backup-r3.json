@@ -1,0 +1,207 @@
+{
+  "task": "chat_quality",
+  "n_trace_ids": 20,
+  "n_to_delete": 28,
+  "deleted_scores": [
+    {
+      "id": "e60932be-549f-49f1-817b-89a7eb295d09",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "bbbd00e513289c3258a19911e5952983",
+      "timestamp": "2026-09-23T03:25:12.850Z"
+    },
+    {
+      "id": "abb32da6-8b89-4a13-8f44-cd324b29a798",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "bbbd00e513289c3258a19911e5952983",
+      "timestamp": "2026-09-23T03:16:07.855Z"
+    },
+    {
+      "id": "2c43745d-79a1-4ee3-8c99-3e5a196d4301",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "bbbd00e513289c3258a19911e5952983",
+      "timestamp": "2026-09-23T03:12:25.080Z"
+    },
+    {
+      "id": "d8da3f01-3a5a-446b-aae9-ead73ff224d9",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "bbbd00e513289c3258a19911e5952983",
+      "timestamp": "2026-09-23T02:45:07.193Z"
+    },
+    {
+      "id": "445cc422-6416-49ac-b3a9-22768e43f7be",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "d507bfe96375c317f19d6d7e94885f50",
+      "timestamp": "2026-09-23T03:25:10.056Z"
+    },
+    {
+      "id": "a184dcf3-2c60-4b5a-84e9-d1c3a58ec4e1",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "d507bfe96375c317f19d6d7e94885f50",
+      "timestamp": "2026-09-23T03:16:01.319Z"
+    },
+    {
+      "id": "c4f876ac-88c7-4c0e-b6e6-351baf6263ea",
+      "value": 0,
+      "name": "chat_quality",
+      "traceId": "d507bfe96375c317f19d6d7e94885f50",
+      "timestamp": "2026-09-23T03:12:17.985Z"
+    },
+    {
+      "id": "c03878b3-2936-4c55-89ad-35b69a882074",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "84c78c44035c06a265a54aa5a9e93360",
+      "timestamp": "2026-09-23T03:13:35.770Z"
+    },
+    {
+      "id": "8e6ebd72-382d-42de-ad4f-7dea5dd8f82b",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "84c78c44035c06a265a54aa5a9e93360",
+      "timestamp": "2026-09-23T03:09:56.472Z"
+    },
+    {
+      "id": "0349b7e9-487f-4b26-8d98-15f560811c9e",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "9a93fe5d085320fdd3a39f3101327a1e",
+      "timestamp": "2026-09-23T03:23:55.395Z"
+    },
+    {
+      "id": "ff6cf990-46ae-47b6-9ba0-1ef5c9478364",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "9a93fe5d085320fdd3a39f3101327a1e",
+      "timestamp": "2026-09-23T03:13:23.547Z"
+    },
+    {
+      "id": "1819484e-775e-4b0b-a6c7-fd26ee50a623",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "9a93fe5d085320fdd3a39f3101327a1e",
+      "timestamp": "2026-09-23T03:09:26.212Z"
+    },
+    {
+      "id": "53448656-02ae-4cec-948e-e9fb45c543d6",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "478daf1f3d82b2216fa2250bc4b3f33b",
+      "timestamp": "2026-09-23T03:12:09.889Z"
+    },
+    {
+      "id": "b0375167-b545-4682-94d8-e1d50d0f628d",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "69cd24386fd0c19ddfd6c991ec901003",
+      "timestamp": "2026-09-23T03:12:01.283Z"
+    },
+    {
+      "id": "5245c393-b931-4f5b-a297-2c31d14b8a9c",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "228b8cf38b85febc5838026f022c65b9",
+      "timestamp": "2026-09-23T03:11:53.783Z"
+    },
+    {
+      "id": "4b854c13-f2b6-4657-af2f-3651777669d9",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "acecedc7ab8f6a44bcdf2fe14fb2f5fc",
+      "timestamp": "2026-09-23T03:11:39.562Z"
+    },
+    {
+      "id": "e822013a-937a-4932-b84b-d52d882056df",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "3d3e59a38dbfb97a0a7dfa1dd75c0810",
+      "timestamp": "2026-09-23T03:11:33.899Z"
+    },
+    {
+      "id": "fe7b5dec-3f5d-466d-b363-60e172e3608a",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "16c1c5c4883e12f91dda8cdd6c82f407",
+      "timestamp": "2026-09-23T03:11:26.742Z"
+    },
+    {
+      "id": "6e766738-ac2d-49cd-a950-39f6e4d9fc7d",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "0b654de23faadce42fc3efdc07de0ccf",
+      "timestamp": "2026-09-23T03:11:19.630Z"
+    },
+    {
+      "id": "41faf5e3-c58b-46ec-b586-2f1b973af5a9",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "60f8fa8924a9a29e8be34681187e9ab1",
+      "timestamp": "2026-09-23T03:11:12.810Z"
+    },
+    {
+      "id": "75841fcc-299b-4052-95f4-412eeb7c8917",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "b37bfc1853fdb014a46f6b728dba1460",
+      "timestamp": "2026-09-23T03:11:04.172Z"
+    },
+    {
+      "id": "9e9a70ca-004c-4acb-87d4-aa1852d7975c",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "959a71648d40b20278008adc9a8a597a",
+      "timestamp": "2026-09-23T03:10:57.460Z"
+    },
+    {
+      "id": "b28c4bc6-2c1a-4896-bdc8-a867d0fcb340",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "eb53272fdae501965ddef90376a28baf",
+      "timestamp": "2026-09-23T03:10:50.254Z"
+    },
+    {
+      "id": "26f08174-8d97-4eb3-88a8-4fc4a6d6d911",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "f7fe6f9d6f9a8edb61bcf0d6ee2de6f8",
+      "timestamp": "2026-09-23T03:10:34.138Z"
+    },
+    {
+      "id": "6dc14701-092c-4ee7-98c0-17fa5274292b",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "29c97aefb086cf65fb76f594bd6ecf81",
+      "timestamp": "2026-09-23T03:10:26.519Z"
+    },
+    {
+      "id": "88e59e27-1fe5-492e-ba52-20f55e680c83",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "63d39d2d853c34860f450d0309098dd6",
+      "timestamp": "2026-09-23T03:10:18.965Z"
+    },
+    {
+      "id": "b574e5d9-f88b-4a1c-ae53-c44de03673d4",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "c2e31d6c4ea33838f13450e9b2d3172f",
+      "timestamp": "2026-09-23T03:10:10.217Z"
+    },
+    {
+      "id": "c5458b00-acd1-4dcf-80da-5e42407ecd8a",
+      "value": 1,
+      "name": "chat_quality",
+      "traceId": "f589b138fca8aa17d0d924bab2e8519e",
+      "timestamp": "2026-09-23T03:10:03.048Z"
+    }
+  ],
+  "misdelete_before": {
+    "global_total": 854,
+    "global_non_target": 806
+  }
+}

@@ -2,7 +2,15 @@
 
 ## 状态
 
-**当前状态：已确认（2026-09-22 用户确认：主 agent 为架构师自身，子 agent 用 `hy3`）**
+**当前状态：已完成（2026-09-24 验收评审「有条件通过」+ 架构师签署）**
+
+> 状态演进：待确认 → 已确认（2026-09-22 用户确认：主 agent 为架构师自身，子 agent 用 `hy3`）
+> → 实施中（Task 02 Go）→ **已完成（2026-09-24）**。
+> 验收：`docs/sdd/reviews/042-acceptance-review.md`（边界 9/9 达成、「明确不做」7/7 未突破、
+> 全量回归真实回归 0、阻塞项无）。**附带条件**：遗留 L1/L2/L3/L4 随本文档一并移交，
+> 不得被解释为「已闭环」——L1 归 spec-013/041；L2 为 Langfuse 异步删除队列限制（每 trace score 未收敛到 1 条，
+> 代码幂等正确，保留复跑校验命令）；L3 为 memory 维度 gold 系构造真值、人工一致率仍缺；
+> L4 为统计口径错误已如实纠正（「每 trace 90 条」→ 全局 48 条）。
 
 > 经 **grill with docs** 分析：事实已由文档与实测取到（见「背景与依据」）。
 > **Q1–Q8 已于 2026-09-22 全部裁决完成**（裁决结果见文末 grill 记录），grill 设计树**前沿已空**。
@@ -188,12 +196,14 @@ chat_quality 上 9b/27b 自一致率均 **1.0**、跨判官一致率 **1.0**（n
 | 01 | 编写 spec-042（含 grill with docs 分析） | 本文件 | — | 完成（待确认） |
 | 02 | Go/No-Go：验证最高风险前提（判官质量 + 数据桥接 + F5 路由矛盾） | [`task-02-validate-feasibility.md`](../plans/042/task-02-validate-feasibility.md) | 01 | 已完成（**Go**） |
 | 03 | 专用记忆探针重测 `memory_correctness`（收敛遗留 L2） | [`task-03-memory-probe.md`](../plans/042/task-03-memory-probe.md) | 02 | 已完成（`adopt:qwen3.5:9b`，[报告](../plans/042/task-03-memory-probe-report.md)） |
+| 04 | `chat_quality` 常态化评测闭环与回归基线 + 人工一致率 | [`task-04-chat-quality-baseline.md`](../plans/042/task-04-chat-quality-baseline.md) | 02, 03 | 已完成（[报告](../plans/042/task-04-baseline-report.md)） |
+| 05 | score 写回幂等化与存量重复清理 | [`task-05-idempotent-score-writeback.md`](../plans/042/task-05-idempotent-score-writeback.md) | 04 | 已完成（[报告](../plans/042/task-05-report.md)） |
 
 ## 评审记录
 
 - 需求评审：`docs/sdd/reviews/042-requirement-review.md`（待评审（未执行））
 - 技术评审：`docs/sdd/reviews/042-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/042-acceptance-review.md`（待评审（未执行））
+- 验收评审：`docs/sdd/reviews/042-acceptance-review.md`（**已完成：有条件通过，2026-09-24，架构师已签署**）
 
 ## 变更日志（Changelog）
 

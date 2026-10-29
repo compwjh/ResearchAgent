@@ -1,0 +1,28 @@
+{
+  "task": "chat_quality",
+  "annotator": "architect(human)",
+  "annotated_at": "2026-09-23",
+  "note": "人工独立标注，标注时未查看判官输出。idx8=partial（把可观测性 tracing 答成通用追踪/定位）；idx18/19=poor（input 为空、无任务可依，回答 'Hi there' 不构成有效回答）。",
+  "labels": {
+    "9a93fe5d085320fdd3a39f3101327a1e": "good",
+    "84c78c44035c06a265a54aa5a9e93360": "good",
+    "f589b138fca8aa17d0d924bab2e8519e": "good",
+    "c2e31d6c4ea33838f13450e9b2d3172f": "good",
+    "63d39d2d853c34860f450d0309098dd6": "good",
+    "29c97aefb086cf65fb76f594bd6ecf81": "good",
+    "f7fe6f9d6f9a8edb61bcf0d6ee2de6f8": "good",
+    "eb53272fdae501965ddef90376a28baf": "good",
+    "959a71648d40b20278008adc9a8a597a": "partial",
+    "b37bfc1853fdb014a46f6b728dba1460": "good",
+    "60f8fa8924a9a29e8be34681187e9ab1": "good",
+    "0b654de23faadce42fc3efdc07de0ccf": "good",
+    "16c1c5c4883e12f91dda8cdd6c82f407": "good",
+    "3d3e59a38dbfb97a0a7dfa1dd75c0810": "good",
+    "acecedc7ab8f6a44bcdf2fe14fb2f5fc": "good",
+    "228b8cf38b85febc5838026f022c65b9": "good",
+    "69cd24386fd0c19ddfd6c991ec901003": "good",
+    "478daf1f3d82b2216fa2250bc4b3f33b": "good",
+    "d507bfe96375c317f19d6d7e94885f50": "poor",
+    "bbbd00e513289c3258a19911e5952983": "poor"
+  }
+}

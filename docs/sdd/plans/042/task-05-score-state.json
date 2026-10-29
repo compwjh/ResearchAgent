@@ -1,0 +1,124 @@
+{
+  "entries": {
+    "chat_quality:9a93fe5d085320fdd3a39f3101327a1e": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "cee26882-594d-449a-95f6-e00a3f2bfe43"
+    },
+    "chat_quality:84c78c44035c06a265a54aa5a9e93360": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:f589b138fca8aa17d0d924bab2e8519e": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "cee26882-594d-449a-95f6-e00a3f2bfe43"
+    },
+    "chat_quality:c2e31d6c4ea33838f13450e9b2d3172f": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "cee26882-594d-449a-95f6-e00a3f2bfe43"
+    },
+    "chat_quality:63d39d2d853c34860f450d0309098dd6": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:29c97aefb086cf65fb76f594bd6ecf81": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:f7fe6f9d6f9a8edb61bcf0d6ee2de6f8": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:eb53272fdae501965ddef90376a28baf": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:959a71648d40b20278008adc9a8a597a": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:b37bfc1853fdb014a46f6b728dba1460": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:60f8fa8924a9a29e8be34681187e9ab1": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:0b654de23faadce42fc3efdc07de0ccf": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:16c1c5c4883e12f91dda8cdd6c82f407": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:3d3e59a38dbfb97a0a7dfa1dd75c0810": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:acecedc7ab8f6a44bcdf2fe14fb2f5fc": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:228b8cf38b85febc5838026f022c65b9": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:69cd24386fd0c19ddfd6c991ec901003": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:478daf1f3d82b2216fa2250bc4b3f33b": {
+      "task": "chat_quality",
+      "value": 1.0,
+      "label": "good",
+      "score_id": "833a20da-aa62-4b68-8e0e-89ec03e6e0f7"
+    },
+    "chat_quality:d507bfe96375c317f19d6d7e94885f50": {
+      "task": "chat_quality",
+      "value": 0.0,
+      "label": "poor",
+      "score_id": "874d98e7-cfd5-431e-a5b0-25baf3e5d261"
+    },
+    "chat_quality:bbbd00e513289c3258a19911e5952983": {
+      "task": "chat_quality",
+      "value": 0.0,
+      "label": "poor",
+      "score_id": "8643ce69-1df9-4e2c-9d79-ac2474757e4f"
+    }
+  }
+}
