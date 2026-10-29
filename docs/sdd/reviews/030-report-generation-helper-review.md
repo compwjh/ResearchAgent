@@ -167,3 +167,27 @@ Verdict: **BLOCK** — 原预算/阶段恢复/质量状态/改写与同版发布
 - 未运行全量测试、部署或真实模型。本轮没有修改业务代码或测试。
 
 **当前 helper 与 startup recovery 评审：PASS。** 原 BLOCK 中的 startup interrupted successor/rebind P1 已闭环，没有新增 HIGH/P1 阻塞。
+
+## Context field text-safety follow-up review — 2026-10-30
+
+**当前窄审结论：PASS。** 该修复只在 `Orchestrator` 的 server-built report context 中使用 `_safe_report_context_text`；共享的 `report_synthesis._safe_text_input` 和 `_FORBIDDEN_PARTS` 未放宽。合法 facet `password authentication login security`、研究问题 `password authentication` / `token-based login` 可通过 builder、Runtime marker 校验，以及 model JSON → `report_content` 输出解析/schema/runtime 校验。
+
+### 安全与兼容核对
+
+- [orchestrator.py:106](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:106) 的上下文校验仍限制最大长度、文件路径/文件名、URL、控制字符，并拒绝凭据赋值与常见 secret 格式。测试覆盖合法 password/token 主题、`password=hunter2`、API key JSON、Bearer JWT、`sk-proj-...`；敏感值不会出现在对外诊断中。
+- 该专用函数没有更改通用 artifact/report text guard；独立调用 `_safe_text_input("password authentication login security", ...)` 仍会按原策略拒绝，因此 title/最终渲染器等既有边界没有全局放开。
+- 从真实 fixture 构建的 marker 经 `_validate_report_quality_context` 接受：包含 5 个 selected paper、5 条 evidence、2 个 approved dimensions；marker 仍使用 `report-quality-v1` 字段和版本绑定，没有 schema 放宽。
+- 完整 JSON report envelope 经 `_parse_json_mapping`、`validate_report_synthesis_output`、Runtime `_validate_output("synthesizer", ...)` 顺序验证通过。`research_question`、5 篇分析的 method/finding、comparison statement 中的合法 “password authentication” / “token-based login” 均被保留，未被输出 schema 拒绝。
+- **边界说明（非阻塞）：** 专用 builder 文本检查本身会接受非 JWT 形态的裸 `Bearer <opaque-value>`；Runtime marker 的现有 `validate_safe_scope` 仍会在构造模型输入前以 `REPORT_CONTEXT_INVALID` 拒绝该内容。独立探针确认 provider 不会被调用，因此未发现凭据进入模型的路径；若未来有绕过 Runtime marker 的新消费者，应将 Bearer 检测并入其信任边界。
+
+### 定向验证
+
+| 命令 / 探针 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_quality_context.py` | 0 | `29 passed in 3.36s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_content_runtime.py` | 0 | `19 passed in 0.65s` |
+| 独立 builder → Runtime marker probe | 0 | 学术词通过，5 papers/5 evidence；共享通用 text guard 仍严格 |
+| 独立 JSON parse → synthesis schema → Runtime output validation probe | 0 | 学术 password/token 文本完整保留，5 篇分析全部通过结构/引用校验 |
+| 独立 opaque Bearer marker probe | 0 | 专用 builder 接受，Runtime marker 以稳定码拒绝，provider 未调用 |
+
+本轮只审查上下文文本安全、marker 与 report_content 输出兼容；未修改业务代码/测试，未运行全量测试、模型或部署。

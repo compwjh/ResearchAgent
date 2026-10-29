@@ -48,8 +48,6 @@ from backend.app.research.application.report_synthesis import (
     ReportSynthesisError,
     ReportSynthesizer,
     ResearchNotificationService,
-    _safe_catalog_metadata,
-    _safe_text_input,
     render_markdown_html,
     report_output_hash,
     validate_report_synthesis_output,
@@ -81,6 +79,52 @@ _REPORT_STATUS = "preliminary"
 # least five candidates.  This does not create candidates or download papers;
 # it only raises the deterministic selection cap within the existing pool.
 _MIN_REPORT_CANDIDATES = 5
+
+_REPORT_CONTEXT_SECRET_ASSIGNMENT_RE = re.compile(
+    r"""(?ix)(?:
+        [\"']\b(?:password|passwd|pwd|token|access[_-]?token|api[_-]?key|access[_-]?key|client[_-]?secret|secret|authorization|cookie|credential)\b[\"']\s*:\s*[\"'][^\"']+[\"']
+        |\b(?:password|passwd|pwd|token|access[_-]?token|api[_-]?key|access[_-]?key|client[_-]?secret|secret|authorization|cookie|credential)\b\s*[:=]\s*(?!<redacted>|redacted\b|none\b|null\b|n/?a\b|not\s+set\b)[^\s,;\]}]{3,256}
+    )"""
+)
+_REPORT_CONTEXT_SECRET_FORMAT_RE = re.compile(
+    r"""(?ix)(?:
+        \bsk-[a-z0-9_-]{16,}\b
+        |\bgh[pousr]_[a-z0-9]{20,}\b
+        |\bAKIA[0-9A-Z]{16}\b
+        |\beyJ[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{8,}\b
+        |-----BEGIN\s+(?:RSA\s+|OPENSSH\s+|EC\s+)?PRIVATE\s+KEY-----
+    )"""
+)
+_REPORT_CONTEXT_PATH_RE = re.compile(r"(?:^[/\\]|^[A-Za-z]:[/\\]|\.\.?[/\\]|[/\\]\.\.?[/\\])")
+_REPORT_CONTEXT_FILENAME_RE = re.compile(
+    r"(?:^|\s)(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:md|markdown|html|json|pdf|py|sqlite3)(?:$|\s)",
+    re.I,
+)
+_REPORT_CONTEXT_URL_RE = re.compile(r"(?:https?://|ftp://|www\.)", re.I)
+
+
+def _safe_report_context_text(value: Any, field: str, *, max_length: int) -> str:
+    """Validate bounded research text without rejecting security-domain terms.
+
+    Research questions, approved dimensions, and catalog abstracts commonly
+    discuss passwords or tokens.  Those words alone are not credentials; only
+    credential-shaped assignments and recognizable secret formats are
+    rejected here.  This helper is limited to the server-built report context.
+    """
+    if not isinstance(value, str):
+        raise ReportSynthesisError(f"invalid {field}")
+    text = value.strip()
+    if (
+        len(text) > max_length
+        or _REPORT_CONTEXT_PATH_RE.search(text)
+        or _REPORT_CONTEXT_FILENAME_RE.search(text)
+        or _REPORT_CONTEXT_URL_RE.search(text)
+        or _REPORT_CONTEXT_SECRET_ASSIGNMENT_RE.search(text)
+        or _REPORT_CONTEXT_SECRET_FORMAT_RE.search(text)
+        or any(ord(char) < 32 and char not in "\n\r\t" for char in text)
+    ):
+        raise ReportSynthesisError(f"unsafe {field}")
+    return text
 
 
 class ReportQualityContextUnavailable(ValueError):
@@ -4290,8 +4334,8 @@ class Orchestrator:
             dimensions = [
                 {
                     "dimension_id": str(item["dimension_id"]),
-                    "label": _safe_text_input(item.get("label"), "dimension label", max_length=500),
-                    "definition": _safe_text_input(item.get("definition"), "dimension definition", max_length=2000),
+                    "label": _safe_report_context_text(item.get("label"), "dimension label", max_length=500),
+                    "definition": _safe_report_context_text(item.get("definition"), "dimension definition", max_length=2000),
                 }
                 for item in plan_dimensions
             ]
@@ -4397,8 +4441,9 @@ class Orchestrator:
                         or locator.get("catalog_snapshot_id") != snapshot.get("catalog_snapshot_id")
                     ):
                         continue
-                    safe = _safe_catalog_metadata({"title": snapshot.get("title")})
-                    excerpt = safe.get("title", "")
+                    excerpt = _safe_report_context_text(
+                        snapshot.get("title"), "evidence excerpt", max_length=8000,
+                    )[:300]
                 elif level == "abstract":
                     abstract = snapshot.get("abstract")
                     digest = snapshot.get("abstract_digest")
@@ -4413,8 +4458,10 @@ class Orchestrator:
                         or locator.get("abstract_digest") != expected_digest
                     ):
                         continue
-                    safe = _safe_catalog_metadata({"title": snapshot.get("title"), "abstract": abstract})
-                    excerpt = safe.get("abstract", "")
+                    _safe_report_context_text(snapshot.get("title"), "paper title", max_length=8000)
+                    excerpt = _safe_report_context_text(
+                        abstract, "evidence excerpt", max_length=8000,
+                    )[:6000]
                 else:
                     # EvidenceMatrixService.read_matrix already downgrades stale
                     # fulltext rows. Recheck the task-bound upgrade explicitly;
@@ -4448,7 +4495,9 @@ class Orchestrator:
                     ]
                     if not summaries:
                         continue
-                    excerpt = _safe_text_input(summaries[0], "evidence excerpt", max_length=4000)
+                    excerpt = _safe_report_context_text(
+                        summaries[0], "evidence excerpt", max_length=4000,
+                    )
             except (ReportSynthesisError, EvidenceMatrixError, TypeError, ValueError):
                 continue
             if excerpt:
@@ -4462,7 +4511,7 @@ class Orchestrator:
             raise ReportQualityContextUnavailable("verified_current_plan_evidence_excerpt_projection")
 
         try:
-            research_question = _safe_text_input(
+            research_question = _safe_report_context_text(
                 getattr(task, "goal", None), "research question", max_length=2000,
             )
         except ReportSynthesisError as error:

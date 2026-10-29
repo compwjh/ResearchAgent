@@ -39,16 +39,20 @@ from backend.app.research.infrastructure.research_store import ResearchStore
 def _seed_report_context(
     tmp_path, *, persist_matrix: bool = True, add_fulltext: bool = False,
     fulltext_summary: str | None = None, trusted_paper_count: int = 5,
+    approved_facets: list[str] | None = None, research_question: str | None = None,
+    abstract_template: str | None = None,
 ):
     store = ResearchStore(tmp_path / "research.sqlite3")
     catalog_store = PaperDiscoveryStore(database_path=tmp_path / "paper-search.sqlite3")
     task = ResearchTask(
-        "task-report-context", "owner", "conversation", "分析五篇论文的方法与局限",
+        "task-report-context", "owner", "conversation",
+        research_question or "分析五篇论文的方法与局限",
         "zh", "balanced", False, 5, 300, "running", 1, "", "",
     )
+    approved_facets = approved_facets or ["研究方法"]
     store.create_task(task)
     store.create_plan(ResearchPlan(
-        task.research_task_id, 1, "approved task plan", json.dumps(["研究方法"]),
+        task.research_task_id, 1, "approved task plan", json.dumps(approved_facets),
         "active", "2026-10-29T00:00:00Z", "test",
     ))
     paper_ids = [f"paper-{index}" for index in range(1, 6)]
@@ -78,7 +82,11 @@ def _seed_report_context(
     evidence = []
     evidence_ids = []
     for index, paper_id in enumerate(paper_ids, start=1):
-        abstract = f"Frozen abstract {index}: evidence-bound text."
+        abstract = (
+            abstract_template.format(index=index)
+            if abstract_template is not None
+            else f"Frozen abstract {index}: evidence-bound text."
+        )
         digest = hashlib.sha256(abstract.encode("utf-8")).hexdigest()
         candidates.append({
             "paper_id": paper_id,
@@ -165,9 +173,9 @@ def _seed_report_context(
             "owner",
             plan_version=1,
             dimensions=[{
-                "dimension_id": "facet-1", "label": "研究方法",
-                "definition": "已批准研究范围维度：研究方法", "display_order": 0,
-            }],
+                "dimension_id": f"facet-{index}", "label": facet,
+                "definition": f"已批准研究范围维度：{facet}", "display_order": index - 1,
+            } for index, facet in enumerate(approved_facets, start=1)],
             claims=[{
                 "claim_id": "claim-method", "topic": "研究方法",
                 "statement": "当前摘要对研究方法提供了受限描述。",
@@ -361,6 +369,92 @@ def _selected_candidates(candidates):
         "abstract": item["abstract"],
         "verified": True,
     } for item in candidates]
+
+
+def test_report_quality_context_allows_password_and_token_security_topics(tmp_path):
+    store, catalog_store, task, work_item, candidates = _seed_report_context(
+        tmp_path,
+        approved_facets=["password authentication and token-based login"],
+        research_question="比较 password authentication 与 token-based login",
+        abstract_template=(
+            "Frozen abstract {index}: password authentication and token-based login evidence."
+        ),
+    )
+    orchestrator = _orchestrator_with_frozen_candidates(store, catalog_store)
+
+    context = orchestrator._build_report_quality_context(
+        task=task,
+        owner_id="owner",
+        work_item=work_item,
+        selected_candidates=_selected_candidates(candidates),
+        stage="evidence_review",
+        revision_count=0,
+    )
+
+    assert context["dimensions"][0]["label"] == "password authentication and token-based login"
+    assert context["research_question"] == "比较 password authentication 与 token-based login"
+    assert len(context["evidence"]) == 5
+    assert all("password authentication" in item["excerpt"] for item in context["evidence"])
+
+
+@pytest.mark.parametrize(
+    "credential_text",
+    [
+        "password=hunter2",
+        '"api_key":"sk-proj-abcdefghijklmnop"',
+    ],
+)
+def test_report_quality_context_rejects_credential_assignments_in_approved_dimensions(
+    tmp_path, credential_text,
+):
+    store, catalog_store, task, work_item, candidates = _seed_report_context(
+        tmp_path, approved_facets=[credential_text],
+    )
+    orchestrator = _orchestrator_with_frozen_candidates(store, catalog_store)
+
+    with pytest.raises(ReportQualityContextUnavailable) as error:
+        orchestrator._build_report_quality_context(
+            task=task,
+            owner_id="owner",
+            work_item=work_item,
+            selected_candidates=_selected_candidates(candidates),
+            stage="evidence_review",
+            revision_count=0,
+        )
+
+    assert error.value.dependency == "approved_plan_comparison_dimensions"
+    assert credential_text not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "secret_material",
+    [
+        "password=hunter2",
+        "Bearer eyJabcdefghijk.abcdefghijklmnop.abcdefghijk",
+        "sk-proj-abcdefghijklmnop",
+    ],
+)
+def test_report_quality_context_excludes_verified_abstracts_with_secret_material(
+    tmp_path, secret_material,
+):
+    store, catalog_store, task, work_item, candidates = _seed_report_context(
+        tmp_path,
+        abstract_template=f"Frozen abstract {{index}} includes {secret_material}.",
+    )
+    orchestrator = _orchestrator_with_frozen_candidates(store, catalog_store)
+
+    with pytest.raises(ReportQualityContextUnavailable) as error:
+        orchestrator._build_report_quality_context(
+            task=task,
+            owner_id="owner",
+            work_item=work_item,
+            selected_candidates=_selected_candidates(candidates),
+            stage="evidence_review",
+            revision_count=0,
+        )
+
+    assert error.value.dependency == "verified_current_plan_evidence_excerpt_projection"
+    assert secret_material not in str(error.value)
 
 
 def _reserve_running_report(store, task, *, request_key, request_payload):
