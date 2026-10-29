@@ -16,6 +16,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import math
 import re
 import subprocess
 import sys
@@ -296,7 +297,12 @@ def get_available_models() -> List[str]:
         return _load_models_locked(force=False)
 
 
-def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None) -> ChatOllama:
+def create_chat_model(
+    model_name: str,
+    *,
+    reasoning: Optional[bool | str] = None,
+    timeout_seconds: Optional[float] = None,
+) -> ChatOllama:
     """创建会话模型，按名称自动分发 provider（spec-035 Task03）。
 
     命中线上注册表（`provider:model` 形式的 id）→ 返回 ``ChatOpenAI``；
@@ -315,6 +321,12 @@ def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None
     线上模型（ChatOpenAI）不支持 Ollama 专有的 `think` 开关；命中线上分支时
     `reasoning` 参数被**忽略**并打 debug 日志，不影响构造。
     """
+    request_timeout = None
+    if timeout_seconds is not None:
+        request_timeout = float(timeout_seconds)
+        if not math.isfinite(request_timeout) or request_timeout <= 0:
+            raise ValueError("timeout_seconds must be a finite positive number")
+
     # 线上注册表分发：命中即返回 ChatOpenAI。
     # 函数内延迟 import，避免与 model_catalog 形成循环依赖
     # （model_catalog.is_model_available 会延迟 import 本模块的 get_available_models，
@@ -333,16 +345,26 @@ def create_chat_model(model_name: str, *, reasoning: Optional[bool | str] = None
             model=entry.model,
             api_key=entry.api_key,
             base_url=entry.base_url,
-            timeout=60.0,
-            max_retries=2,
+            timeout=request_timeout if request_timeout is not None else 60.0,
+            # Runtime grants cover the complete synchronous provider call.
+            # Retrying inside one client call would multiply that allowance;
+            # transient fallback remains owned by ResearchAgentRunner.
+            max_retries=0 if request_timeout is not None else 2,
         )
 
+    client_kwargs = {"trust_env": False}
+    async_client_kwargs = {"trust_env": False}
+    sync_client_kwargs = {"trust_env": False}
+    if request_timeout is not None:
+        client_kwargs["timeout"] = request_timeout
+        async_client_kwargs["timeout"] = request_timeout
+        sync_client_kwargs["timeout"] = request_timeout
     return ChatOllama(
         model=model_name,
         base_url=OLLAMA_BASE_URL,
-        client_kwargs={"trust_env": False},
-        async_client_kwargs={"trust_env": False},
-        sync_client_kwargs={"trust_env": False},
+        client_kwargs=client_kwargs,
+        async_client_kwargs=async_client_kwargs,
+        sync_client_kwargs=sync_client_kwargs,
         reasoning=reasoning,
     )
 

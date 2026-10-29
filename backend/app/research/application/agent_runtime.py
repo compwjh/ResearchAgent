@@ -8,7 +8,9 @@ It owns neither a model client nor a second registry.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import json
 import random
 import re
@@ -18,6 +20,9 @@ from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from threading import Event
 from typing import Any, Callable, Mapping, Sequence
+
+import anyio
+import sniffio
 
 from backend.app.research.application.evidence_matrix import EvidenceMatrixError
 from backend.app.research.application.matrix_contract import (
@@ -49,6 +54,8 @@ TASK_MODEL_LOOP_HARD_CAP = 640
 TASK_TOOL_CALL_HARD_CAP = 2560
 TASK_TIME_HARD_CAP = 6 * 60 * 60
 MAX_EXTENSIONS = 3
+_ONLINE_FALLBACK_RESERVE_MAX_SECONDS = 30.0
+_ONLINE_FALLBACK_RESERVE_RATIO = 0.25
 
 
 @dataclass(frozen=True)
@@ -1138,40 +1145,91 @@ def _ollama_model_factory(model_name: str, effort: str) -> Any:
 
     requested_effort = str(effort or "").strip().lower()
     online_entry = get_online_model(model_name)
-    if online_entry is not None:
-        adapter = _OllamaRunnerAdapter(
-            create_chat_model(model_name, reasoning=None),
-            model_name=model_name,
-            effort=requested_effort or "off",
-        )
-        adapter.provider = online_entry.provider
-        return adapter
     if requested_effort == "off":
-        return _OllamaRunnerAdapter(
-            create_chat_model(model_name, reasoning=False),
-            model_name=model_name,
-            effort=requested_effort,
-        )
+        provider_reasoning = None if online_entry is not None else False
+        resolved_effort = requested_effort
+    elif online_entry is not None:
+        provider_reasoning = None
+        resolved_effort = requested_effort or "off"
+    else:
+        resolution = resolve_reasoning_effort(model_name, effort)
+        provider_reasoning = resolution.provider_value
+        resolved_effort = getattr(resolution, "effort", effort)
 
-    resolution = resolve_reasoning_effort(model_name, effort)
-    return _OllamaRunnerAdapter(
-        create_chat_model(model_name, reasoning=resolution.provider_value),
+    def build_model(timeout_seconds: float | None = None) -> Any:
+        kwargs = {"reasoning": provider_reasoning}
+        if timeout_seconds is not None:
+            kwargs["timeout_seconds"] = timeout_seconds
+        return create_chat_model(model_name, **kwargs)
+
+    adapter = _OllamaRunnerAdapter(
+        build_model(),
         model_name=model_name,
-        effort=getattr(resolution, "effort", effort),
+        effort=resolved_effort,
+        request_timeout_factory=build_model,
     )
+    if online_entry is not None:
+        adapter.provider = online_entry.provider
+    return adapter
 
 
 class _OllamaRunnerAdapter:
     """Translate the isolated Runner contract to the existing chat API."""
 
-    def __init__(self, model: Any, *, model_name: str, effort: str) -> None:
+    def __init__(
+        self,
+        model: Any,
+        *,
+        model_name: str,
+        effort: str,
+        request_timeout_factory: Callable[[float], Any] | None = None,
+    ) -> None:
         self.model = model
         self.model_name = model_name
         self.reasoning_effort = effort
         self.provider = "ollama"
+        self._request_timeout_factory = request_timeout_factory
+        self._request_timeout_seconds: float | None = None
+        self._retired_async_clients: list[Any] = []
+
+    @staticmethod
+    def _close_sync_clients(model: Any) -> None:
+        clients = (
+            getattr(model, "_client", None),
+            getattr(model, "root_client", None),
+        )
+        seen: set[int] = set()
+        for client in clients:
+            if client is None:
+                continue
+            underlying = getattr(client, "_client", client)
+            if underlying is None or id(underlying) in seen:
+                continue
+            seen.add(id(underlying))
+            close = getattr(underlying, "close", None)
+            if callable(close) and not inspect.iscoroutinefunction(close):
+                with suppress(Exception):
+                    close()
+
+    def set_request_timeout(self, seconds: float) -> None:
+        """Rebuild the provider client with this invocation's remaining grant."""
+        timeout = float(seconds)
+        if timeout <= 0:
+            raise ValueError("request timeout must be positive")
+        self._request_timeout_seconds = timeout
+        if self._request_timeout_factory is not None:
+            previous_model = self.model
+            previous_async_client = getattr(previous_model, "_async_client", None)
+            if previous_async_client is not None:
+                self._retired_async_clients.append(previous_async_client)
+            self.model = self._request_timeout_factory(timeout)
+            self._close_sync_clients(previous_model)
+        self._close_sync_clients(self.model)
 
     def invoke(self, context: Mapping[str, Any], tools: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
         bound = self.model
+        if bound is None:
+            raise AgentRuntimeError("MODEL_UNAVAILABLE")
         if tools and callable(getattr(bound, "bind_tools", None)):
             schemas = [
                 {
@@ -1185,7 +1243,7 @@ class _OllamaRunnerAdapter:
                 for item in tools
             ]
             bound = bound.bind_tools(schemas)
-        response = bound.invoke([
+        messages = [
             {
                 "role": "system",
                 "content": _role_contract_prompt(
@@ -1204,7 +1262,56 @@ class _OllamaRunnerAdapter:
                 ),
             },
             {"role": "user", "content": json.dumps(dict(context), ensure_ascii=False, sort_keys=True)},
-        ])
+        ]
+        async_invoke = getattr(bound, "ainvoke", None)
+        if self._request_timeout_seconds is not None and callable(async_invoke):
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                raise AgentRuntimeError("MODEL_EXECUTION_CONTEXT_INVALID")
+            try:
+                sniffio.current_async_library()
+            except sniffio.AsyncLibraryNotFoundError:
+                pass
+            else:
+                # This adapter is called by the existing synchronous research
+                # worker pool. A synchronous caller already running on an
+                # event-loop thread cannot safely block that same loop; fail
+                # closed instead of nesting anyio.run or bypassing the grant.
+                raise AgentRuntimeError("MODEL_EXECUTION_CONTEXT_INVALID")
+
+            async def invoke_with_deadline():
+                try:
+                    with anyio.fail_after(self._request_timeout_seconds):
+                        return await async_invoke(messages)
+                finally:
+                    # Close the per-invocation async transport in the same
+                    # event loop, including when fail_after cancels a stream.
+                    with anyio.CancelScope(shield=True):
+                        clients = (
+                            *self._retired_async_clients,
+                            getattr(self.model, "_async_client", None),
+                            getattr(self.model, "root_async_client", None),
+                        )
+                        seen: set[int] = set()
+                        for client in clients:
+                            if client is None or id(client) in seen:
+                                continue
+                            seen.add(id(client))
+                            close = getattr(client, "close", None)
+                            if not callable(close):
+                                continue
+                            with suppress(Exception):
+                                close_result = close()
+                                if inspect.isawaitable(close_result):
+                                    await close_result
+                    self._retired_async_clients.clear()
+
+            response = anyio.run(invoke_with_deadline)
+        else:
+            response = bound.invoke(messages)
         raw_calls = getattr(response, "tool_calls", ()) or ()
         calls = []
         for call in raw_calls:
@@ -2339,6 +2446,16 @@ class ResearchAgentRunner:
                 values["fallback_attempted"] = True
             return values
 
+        def current_model_metadata() -> dict[str, Any]:
+            return {
+                "provider": getattr(model, "provider", "ollama" if self.model_router is not None else "injected"),
+                "model": getattr(model, "model_name", resolved_model),
+                "reasoning_effort": getattr(model, "reasoning_effort", input.reasoning_effort),
+                **fallback_metadata(),
+                **resource_metadata,
+                **validation_metadata(),
+            }
+
         def validation_metadata() -> dict[str, Any]:
             if not validation_diagnostics:
                 return {}
@@ -2454,10 +2571,10 @@ class ResearchAgentRunner:
                     return AgentRunOutput("cancelled", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code="CANCELLED", model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if self.clock() - start + budget.elapsed_seconds >= budget.max_seconds:
                     code = "TASK_TIME_LIMIT_REACHED"
-                    self._cancel(run, owner, status="limit_reached")
+                    self._cancel(run, owner, status="limit_reached", error_code=code)
                     lease_held = self._release_lease(input.research_task_id, lease_held)
                     signal = {"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60}
-                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal=signal, model_metadata=validation_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
+                    return AgentRunOutput("limit_reached", checkpoint_ref=last_checkpoint_ref, checkpoint_hash=last_checkpoint_hash, error_code=code, approval_signal=signal, model_metadata=current_model_metadata(), usage={"model_loops": loops, "tool_calls": calls}, tool_results=tuple(summaries))
                 if loops >= budget.max_model_loops or task_loops >= budget.task_max_model_loops:
                     code = "MODEL_LOOP_LIMIT_REACHED" if loops >= budget.max_model_loops else "TASK_MODEL_LIMIT_REACHED"
                     self._cancel(run, owner, status="limit_reached")
@@ -2533,12 +2650,58 @@ class ResearchAgentRunner:
                     if not (detail_tool_disabled and item.get("name") == "fetch_paper_detail")
                     and not (output_only and str(item.get("side_effect_class", "side_effect")) in {"read_only", "none"})
                 )
+                elapsed_seconds = self.clock() - start + budget.elapsed_seconds
+                remaining_seconds = budget.max_seconds - elapsed_seconds
+                if remaining_seconds <= 0:
+                    code = "TASK_TIME_LIMIT_REACHED"
+                    self._cancel(run, owner, status="limit_reached", error_code=code)
+                    lease_held = self._release_lease(input.research_task_id, lease_held)
+                    return AgentRunOutput(
+                        "limit_reached", checkpoint_ref=last_checkpoint_ref,
+                        checkpoint_hash=last_checkpoint_hash, error_code=code,
+                        approval_signal={"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60},
+                        model_metadata=current_model_metadata(),
+                        usage={"model_loops": loops, "tool_calls": calls},
+                        tool_results=tuple(summaries),
+                    )
+                set_request_timeout = getattr(model, "set_request_timeout", None)
+                request_timeout = remaining_seconds
+                fallback_possible = (
+                    not fallback_attempted
+                    and str(getattr(model, "provider", "ollama")).casefold() == "ollama"
+                    and _online_fallback_is_enabled(self.online_fallback_enabled)
+                    and callable(self.online_fallback_factory or self.model_factory)
+                    and self._online_choice() is not None
+                )
+                if fallback_possible:
+                    fallback_reserve = min(
+                        _ONLINE_FALLBACK_RESERVE_MAX_SECONDS,
+                        remaining_seconds * _ONLINE_FALLBACK_RESERVE_RATIO,
+                    )
+                    request_timeout = max(0.001, remaining_seconds - fallback_reserve)
                 try:
+                    if callable(set_request_timeout):
+                        set_request_timeout(request_timeout)
+                    invocation_started = self.clock()
                     response = self._invoke(model, context, invoke_tools)
+                    if callable(set_request_timeout) and self.clock() - invocation_started > request_timeout:
+                        raise AgentRuntimeError("MODEL_TIMEOUT")
                 except AgentRuntimeError as exc:
                     # A provider-level transient failure can switch once to a
                     # registered online alias.  Capability, cancellation and
                     # evidence errors remain terminal and are never exported.
+                    if self.clock() - start + budget.elapsed_seconds >= budget.max_seconds:
+                        code = "TASK_TIME_LIMIT_REACHED"
+                        self._cancel(run, owner, status="limit_reached", error_code=code)
+                        lease_held = self._release_lease(input.research_task_id, lease_held)
+                        return AgentRunOutput(
+                            "limit_reached", checkpoint_ref=last_checkpoint_ref,
+                            checkpoint_hash=last_checkpoint_hash, error_code=code,
+                            approval_signal={"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60},
+                            model_metadata=current_model_metadata(),
+                            usage={"model_loops": loops, "tool_calls": calls},
+                            tool_results=tuple(summaries),
+                        )
                     if fallback_attempted:
                         fallback_error_code = exc.code
                     if not fallback_attempted and exc.code in _ONLINE_FALLBACK_ERROR_CODES:
@@ -2557,7 +2720,31 @@ class ResearchAgentRunner:
                             continue
                         if fallback_error_code:
                             raise AgentRuntimeError(fallback_error_code) from exc
+                    if self.clock() - start + budget.elapsed_seconds >= budget.max_seconds:
+                        code = "TASK_TIME_LIMIT_REACHED"
+                        self._cancel(run, owner, status="limit_reached", error_code=code)
+                        lease_held = self._release_lease(input.research_task_id, lease_held)
+                        return AgentRunOutput(
+                            "limit_reached", checkpoint_ref=last_checkpoint_ref,
+                            checkpoint_hash=last_checkpoint_hash, error_code=code,
+                            approval_signal={"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60},
+                            model_metadata=current_model_metadata(),
+                            usage={"model_loops": loops, "tool_calls": calls},
+                            tool_results=tuple(summaries),
+                        )
                     raise
+                if self.clock() - start + budget.elapsed_seconds >= budget.max_seconds:
+                    code = "TASK_TIME_LIMIT_REACHED"
+                    self._cancel(run, owner, status="limit_reached", error_code=code)
+                    lease_held = self._release_lease(input.research_task_id, lease_held)
+                    return AgentRunOutput(
+                        "limit_reached", checkpoint_ref=last_checkpoint_ref,
+                        checkpoint_hash=last_checkpoint_hash, error_code=code,
+                        approval_signal={"kind": "resource_extension", "reason": code, "increment_seconds": 90 * 60},
+                        model_metadata=current_model_metadata(),
+                        usage={"model_loops": loops, "tool_calls": calls},
+                        tool_results=tuple(summaries),
+                    )
                 mark_feedback_invocation_completed()
                 if _is_cancelled(input.cancellation_token):
                     self._cancel(run, owner)
