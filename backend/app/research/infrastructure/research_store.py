@@ -28,9 +28,10 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import Any, Callable, Iterator, Mapping, Optional
 
 from backend.app.platform.config import BASE_DIR
 from backend.app.research.domain.contracts import (
@@ -332,6 +333,32 @@ class ResearchArtifactConflict(Exception):
 
 class ResearchReportConflict(Exception):
     code = "REPORT_VERSION_CONFLICT"
+
+
+class ResearchReportReservationConflict(ResearchReportConflict):
+    """A report reservation cannot be safely replayed or created."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        existing_report: ResearchReport | None = None,
+        existing_work_item_id: str | None = None,
+    ):
+        self.code = code
+        self.existing_report = existing_report
+        self.existing_work_item_id = existing_work_item_id
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class ReportGenerationReservation:
+    """The durable report slot and its bound synthesis WorkItem."""
+
+    report: ResearchReport
+    work_item: ResearchWorkItem
+    replayed: bool
 
 
 class NotificationConflict(Exception):
@@ -6054,6 +6081,459 @@ class ResearchStore:
     # ------------------------------------------------------------------ #
     # PreliminaryReport
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _canonical_report_request_key(request_key: str) -> str:
+        if not isinstance(request_key, str):
+            raise ValueError("report request_key must be a UUID")
+        try:
+            return str(uuid.UUID(request_key))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ValueError("report request_key must be a UUID") from exc
+
+    @staticmethod
+    def _canonical_report_request_json(value: Mapping[str, Any], *, max_bytes: int) -> str:
+        if not isinstance(value, Mapping):
+            raise ValueError("report reservation payload must be an object")
+        try:
+            serialized = json.dumps(
+                dict(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("report reservation payload must be JSON serializable") from exc
+        if len(serialized.encode("utf-8")) > max_bytes:
+            raise ValueError("report reservation payload exceeds its size limit")
+        return serialized
+
+    @staticmethod
+    def _report_request_key_from_row(row: sqlite3.Row | Mapping[str, Any]) -> str | None:
+        try:
+            report_json = json.loads(row["report_json"])
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not isinstance(report_json, dict):
+            return None
+        generation = report_json.get("generation")
+        if not isinstance(generation, dict):
+            return None
+        key = generation.get("request_key")
+        if not isinstance(key, str):
+            return None
+        try:
+            return str(uuid.UUID(key))
+        except (ValueError, AttributeError, TypeError):
+            return None
+
+    @classmethod
+    def _find_report_generation_row(
+        cls, connection: sqlite3.Connection, research_task_id: str, request_key: str
+    ) -> sqlite3.Row | None:
+        rows = connection.execute(
+            "SELECT * FROM research_reports WHERE research_task_id=? ORDER BY report_version",
+            (research_task_id,),
+        ).fetchall()
+        matches = [row for row in rows if cls._report_request_key_from_row(row) == request_key]
+        if len(matches) > 1:
+            raise RuntimeError("duplicate report request_key reservation")
+        return matches[0] if matches else None
+
+    @staticmethod
+    def _report_reservation_work_item(
+        connection: sqlite3.Connection, report: ResearchReport
+    ) -> ResearchWorkItem:
+        try:
+            generation = json.loads(report.report_json).get("generation", {})
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise RuntimeError("report reservation generation record is invalid") from exc
+        work_item_id = generation.get("work_item_id") if isinstance(generation, dict) else None
+        if not isinstance(work_item_id, str) or not work_item_id:
+            raise RuntimeError("report reservation has no bound work item")
+        row = connection.execute(
+            "SELECT * FROM research_work_items WHERE work_item_id=? AND research_task_id=?",
+            (work_item_id, report.research_task_id),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("report reservation work item is missing")
+        item = ResearchWorkItem.from_row(dict(row))
+        if item.task_type != "synthesize_preliminary_report" or item.role != "synthesizer":
+            raise RuntimeError("report reservation is bound to a non-synthesis work item")
+        if int(item.plan_version) != int(report.plan_version):
+            raise RuntimeError("report reservation work item plan does not match")
+        try:
+            item_input = json.loads(item.input_json or "{}")
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("report reservation work item input is invalid") from exc
+        binding = item_input.get("report_generation") if isinstance(item_input, dict) else None
+        if (
+            not isinstance(binding, dict)
+            or binding.get("report_id") != report.report_id
+            or int(binding.get("report_version") or 0) != int(report.report_version)
+            or binding.get("request_key") != generation.get("request_key")
+        ):
+            raise RuntimeError("report reservation binding does not match its work item")
+        return item
+
+    @staticmethod
+    def _report_reservation_input(
+        base_input: Mapping[str, Any],
+        *,
+        report_id: str,
+        report_version: int,
+        plan_version: int,
+        request_key: str,
+        request_fingerprint: str,
+    ) -> str:
+        value = dict(base_input)
+        value["report_id"] = report_id
+        value["report_version"] = int(report_version)
+        value["request_key"] = request_key
+        value["report_generation"] = {
+            "report_id": report_id,
+            "report_version": int(report_version),
+            "plan_version": int(plan_version),
+            "request_key": request_key,
+            "request_fingerprint": request_fingerprint,
+        }
+        try:
+            serialized = json.dumps(
+                value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("report work item input must be JSON serializable") from exc
+        if len(serialized.encode("utf-8")) > 100_000:
+            raise ValueError("report work item input exceeds its size limit")
+        return serialized
+
+    def reserve_report_generation(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        *,
+        plan_version: int,
+        request_key: str,
+        request_payload: Mapping[str, Any],
+        work_item_input: Mapping[str, Any] | None = None,
+        report_version: int | None = None,
+    ) -> ReportGenerationReservation:
+        """Atomically reserve one immutable report version and synthesis WorkItem.
+
+        The request key and canonical request fingerprint are durable across
+        retries.  Only an unbound queued synthesizer can be reused; an already
+        running or reserved WorkItem is left untouched.
+        """
+        if isinstance(plan_version, bool) or not isinstance(plan_version, int) or plan_version < 1:
+            raise ValueError("plan_version must be a positive integer")
+        if report_version is not None and (
+            isinstance(report_version, bool) or not isinstance(report_version, int) or report_version < 1
+        ):
+            raise ValueError("report_version must be a positive integer")
+        key = self._canonical_report_request_key(request_key)
+        payload_json = self._canonical_report_request_json(request_payload, max_bytes=32_768)
+        payload_fingerprint = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+        caller_input: Mapping[str, Any] = {} if work_item_input is None else work_item_input
+        self._canonical_report_request_json(caller_input, max_bytes=100_000)
+        if any(key_name in caller_input for key_name in ("report_generation", "report_id", "request_key")):
+            raise ValueError("reservation identity fields are store-owned")
+
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row = conn.execute(
+                    "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                    (research_task_id, owner_id),
+                ).fetchone()
+                if task_row is None:
+                    raise ResearchTaskNotFound(research_task_id)
+
+                # Replay lookup precedes the active-version conflict so retries
+                # can recover a completed/failed reservation after later work.
+                existing_row = self._find_report_generation_row(conn, research_task_id, key)
+                if existing_row is not None:
+                    existing_report = ResearchReport.from_row(dict(existing_row))
+                    existing_item = self._report_reservation_work_item(conn, existing_report)
+                    existing_input = json.loads(existing_item.input_json or "{}")
+                    binding = existing_input.get("report_generation") if isinstance(existing_input, dict) else None
+                    existing_fingerprint = binding.get("request_fingerprint") if isinstance(binding, dict) else None
+                    if (
+                        existing_report.plan_version != int(plan_version)
+                        or existing_fingerprint != payload_fingerprint
+                    ):
+                        raise ResearchReportReservationConflict(
+                            "REPORT_IDEMPOTENCY_KEY_REUSED",
+                            "report request key was already used with a different request",
+                            existing_report=existing_report,
+                            existing_work_item_id=existing_item.work_item_id,
+                        )
+                    if report_version is not None and int(report_version) != existing_report.report_version:
+                        raise ResearchReportReservationConflict(
+                            "REPORT_VERSION_CONFLICT",
+                            "requested report version does not match the reservation",
+                            existing_report=existing_report,
+                            existing_work_item_id=existing_item.work_item_id,
+                        )
+                    conn.commit()
+                    return ReportGenerationReservation(existing_report, existing_item, True)
+
+                if int(task_row["current_plan_version"]) != int(plan_version):
+                    raise ResearchReportReservationConflict(
+                        "REPORT_VERSION_CONFLICT", "report generation requires the current plan version"
+                    )
+                plan_row = conn.execute(
+                    "SELECT status FROM research_plans WHERE research_task_id=? AND version=?",
+                    (research_task_id, int(plan_version)),
+                ).fetchone()
+                if plan_row is None:
+                    raise ResearchPlanNotFound(research_task_id, int(plan_version))
+                if plan_row["status"] not in {"active", "completed"}:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_VERSION_CONFLICT", "report generation requires an active or completed plan"
+                    )
+
+                active_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE research_task_id=? AND status='generating' "
+                    "ORDER BY report_version DESC LIMIT 1",
+                    (research_task_id,),
+                ).fetchone()
+                if active_row is not None:
+                    active_report = ResearchReport.from_row(dict(active_row))
+                    active_item_id = None
+                    try:
+                        generation = json.loads(active_report.report_json).get("generation", {})
+                        if isinstance(generation, dict):
+                            active_item_id = generation.get("work_item_id")
+                    except (TypeError, ValueError, AttributeError):
+                        pass
+                    raise ResearchReportReservationConflict(
+                        "REPORT_GENERATION_IN_PROGRESS",
+                        "a report version is already generating",
+                        existing_report=active_report,
+                        existing_work_item_id=active_item_id if isinstance(active_item_id, str) else None,
+                    )
+                if report_version is not None:
+                    raise ResearchReportReservationConflict(
+                        "REPORT_VERSION_CONFLICT", "report_version can only identify an existing reservation"
+                    )
+
+                max_row = conn.execute(
+                    "SELECT MAX(version) AS version FROM ("
+                    "SELECT report_version AS version FROM research_reports WHERE research_task_id=? "
+                    "UNION ALL SELECT report_version AS version FROM research_artifacts WHERE research_task_id=?"
+                    ")",
+                    (research_task_id, research_task_id),
+                ).fetchone()
+                next_version = int(max_row["version"] or 0) + 1
+                report_id = str(uuid.uuid4())
+                now = _utcnow()
+
+                # Reuse only an unbound queued item.  Running items may already
+                # have an AgentRun reading their immutable input, and terminal
+                # items must never be reopened.
+                queued_rows = conn.execute(
+                    "SELECT * FROM research_work_items WHERE research_task_id=? AND plan_version=? "
+                    "AND task_type='synthesize_preliminary_report' AND role='synthesizer' "
+                    "AND status='queued' ORDER BY created_at, work_item_id",
+                    (research_task_id, int(plan_version)),
+                ).fetchall()
+                selected_item: sqlite3.Row | None = None
+                selected_input: dict[str, Any] = {}
+                for candidate in queued_rows:
+                    try:
+                        parsed_input = json.loads(candidate["input_json"] or "{}")
+                    except (TypeError, ValueError):
+                        continue
+                    if (
+                        not isinstance(parsed_input, dict)
+                        or "report_generation" in parsed_input
+                        or parsed_input.get("report_id")
+                        or parsed_input.get("request_key")
+                    ):
+                        continue
+                    selected_item = candidate
+                    selected_input = parsed_input
+                    break
+
+                item_id = str(uuid.uuid4())
+                if selected_item is not None:
+                    item_id = str(selected_item["work_item_id"])
+                    selected_input.update(dict(caller_input))
+                    input_json = self._report_reservation_input(
+                        selected_input,
+                        report_id=report_id,
+                        report_version=next_version,
+                        plan_version=plan_version,
+                        request_key=key,
+                        request_fingerprint=payload_fingerprint,
+                    )
+                    changed = conn.execute(
+                        "UPDATE research_work_items SET input_json=?, updated_at=? "
+                        "WHERE work_item_id=? AND status='queued'",
+                        (input_json, now, item_id),
+                    ).rowcount
+                    if changed != 1:
+                        raise RuntimeError("queued synthesis work item changed during reservation")
+                else:
+                    item_id = f"report-{uuid.uuid4().hex}"
+                    input_json = self._report_reservation_input(
+                        dict(caller_input),
+                        report_id=report_id,
+                        report_version=next_version,
+                        plan_version=plan_version,
+                        request_key=key,
+                        request_fingerprint=payload_fingerprint,
+                    )
+                    dependency_rows = conn.execute(
+                        "SELECT work_item_id FROM research_work_items WHERE research_task_id=? AND plan_version=? "
+                        "AND status='completed' AND task_type IN ('evaluate_papers','check_coverage','replan') "
+                        "ORDER BY created_at, work_item_id",
+                        (research_task_id, int(plan_version)),
+                    ).fetchall()
+                    dependencies_json = json.dumps(
+                        [str(row["work_item_id"]) for row in dependency_rows],
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    conn.execute(
+                        """INSERT INTO research_work_items(
+                            work_item_id,research_task_id,plan_version,task_type,role,depends_on_json,input_json,
+                            output_json,model_tier,resolved_model,worker_slot,status,attempt,error_code,started_at,
+                            ended_at,retry_count,next_retry_at,last_error_code,created_at,updated_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            item_id,
+                            research_task_id,
+                            int(plan_version),
+                            "synthesize_preliminary_report",
+                            "synthesizer",
+                            dependencies_json,
+                            input_json,
+                            None,
+                            None,
+                            None,
+                            None,
+                            "queued",
+                            0,
+                            None,
+                            None,
+                            None,
+                            0,
+                            None,
+                            None,
+                            now,
+                            now,
+                        ),
+                    )
+
+                report_json = json.dumps(
+                    {
+                        "report_id": report_id,
+                        "report_version": next_version,
+                        "generation": {
+                            "plan_version": int(plan_version),
+                            "report_version": next_version,
+                            "path": "agent_runner",
+                            "output_disposition": "not_run",
+                            "published": False,
+                            "request_key": key,
+                            "work_item_id": item_id,
+                            "agent_run_ids": [],
+                            "provider": None,
+                            "model": None,
+                            "fallback_reason_code": None,
+                        },
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                conn.execute(
+                    """INSERT INTO research_reports(
+                        report_id,research_task_id,plan_version,report_version,status,markdown,html,
+                        report_json,limitations_json,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        report_id,
+                        research_task_id,
+                        int(plan_version),
+                        next_version,
+                        "generating",
+                        "",
+                        "",
+                        report_json,
+                        "[]",
+                        now,
+                    ),
+                )
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE report_id=?", (report_id,)
+                ).fetchone()
+                item_row = conn.execute(
+                    "SELECT * FROM research_work_items WHERE work_item_id=?", (item_id,)
+                ).fetchone()
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                if "research_reports.research_task_id, research_reports.report_version" not in str(exc):
+                    raise
+                winner = self._find_report_generation_row(conn, research_task_id, key)
+                if winner is not None:
+                    winner_report = ResearchReport.from_row(dict(winner))
+                    winner_item = self._report_reservation_work_item(conn, winner_report)
+                    winner_input = json.loads(winner_item.input_json or "{}")
+                    winner_binding = winner_input.get("report_generation") if isinstance(winner_input, dict) else None
+                    if (
+                        winner_report.plan_version == int(plan_version)
+                        and isinstance(winner_binding, dict)
+                        and winner_binding.get("request_fingerprint") == payload_fingerprint
+                    ):
+                        return ReportGenerationReservation(winner_report, winner_item, True)
+                active_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE research_task_id=? AND status='generating' "
+                    "ORDER BY report_version DESC LIMIT 1",
+                    (research_task_id,),
+                ).fetchone()
+                if active_row is not None:
+                    active_report = ResearchReport.from_row(dict(active_row))
+                    try:
+                        active_generation = json.loads(active_report.report_json).get("generation", {})
+                    except (TypeError, ValueError, AttributeError):
+                        active_generation = {}
+                    active_item_id = active_generation.get("work_item_id") if isinstance(active_generation, dict) else None
+                    raise ResearchReportReservationConflict(
+                        "REPORT_GENERATION_IN_PROGRESS",
+                        "a report version is already generating",
+                        existing_report=active_report,
+                        existing_work_item_id=active_item_id if isinstance(active_item_id, str) else None,
+                    ) from exc
+                raise ResearchReportReservationConflict(
+                    "REPORT_VERSION_CONFLICT", "report version was reserved concurrently"
+                ) from exc
+            except Exception:
+                conn.rollback()
+                raise
+
+        return ReportGenerationReservation(
+            ResearchReport.from_row(dict(report_row)),
+            ResearchWorkItem.from_row(dict(item_row)),
+            False,
+        )
+
+    def get_report_generation_reservation(
+        self, research_task_id: str, owner_id: str, *, request_key: str
+    ) -> ReportGenerationReservation | None:
+        """Read an owner-scoped reservation by task and idempotency key."""
+        key = self._canonical_report_request_key(request_key)
+        with self._connect() as conn:
+            if not conn.execute(
+                "SELECT 1 FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+                (research_task_id, owner_id),
+            ).fetchone():
+                return None
+            row = self._find_report_generation_row(conn, research_task_id, key)
+            if row is None:
+                return None
+            report = ResearchReport.from_row(dict(row))
+            work_item = self._report_reservation_work_item(conn, report)
+        return ReportGenerationReservation(report, work_item, True)
 
     def next_report_version(self, research_task_id: str, owner_id: str) -> int:
         """Return the next immutable Spec030 version for an owner-bound task."""
