@@ -7,8 +7,9 @@ all facts and locators must already be present in that projection.
 
 from __future__ import annotations
 
+import html as html_module
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -19,6 +20,11 @@ from backend.app.research.application.report_synthesis import (
     ReportSynthesizer,
     _safe_text_input,
     render_markdown_html,
+)
+from backend.app.research.application.report_quality import (
+    ReportQualityContext,
+    ReportQualityError,
+    validate_report_content,
 )
 from backend.app.research.domain.models import ResearchReport
 
@@ -208,6 +214,201 @@ def render_evidence_report(matrix: Mapping[str, Any], *, report_id: str, report_
     return {"report": report, "markdown": markdown, "html": render_markdown_html(markdown)}
 
 
+_SOURCE_LEVEL_LABELS = {
+    "catalog": "目录元数据",
+    "abstract": "摘要",
+    "fulltext": "全文",
+}
+
+_REPORT_TEXT_ENTITIES = str.maketrans({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;",
+    "[": "&#91;", "]": "&#93;", "\\": "&#92;", "`": "&#96;",
+    "*": "&#42;", "_": "&#95;", "{": "&#123;", "}": "&#125;",
+    "#": "&#35;", "+": "&#43;",
+    "-": "&#45;", ".": "&#46;", "!": "&#33;", "|": "&#124;",
+    "~": "&#126;", "=": "&#61;", ":": "&#58;",
+    "'": "&#x27;", '"': "&quot;",
+})
+
+
+def _plain_report_text(value: str) -> str:
+    """Encode dynamic report text so Markdown syntax remains literal text."""
+    return value.translate(_REPORT_TEXT_ENTITIES)
+
+
+def _render_structured_report_html(markdown: str) -> str:
+    """Render structured output without interpreting model text as markup.
+
+    The shared renderer escapes the Markdown source for HTML. Removing that
+    one escaping layer restores the entities emitted by ``_plain_report_text``;
+    encoded angle brackets remain text entities. Citation syntax is left raw
+    only where this module generated it from validated Evidence IDs.
+    """
+    return html_module.unescape(render_markdown_html(markdown))
+
+
+def _report_content_evidence_ids(content: Mapping[str, Any]) -> list[str]:
+    ordered: list[str] = []
+    for analysis in content["paper_analyses"]:
+        for field in ("method", "findings", "limitations"):
+            block = analysis[field]
+            if block["status"] == "supported":
+                ordered.extend(str(value).strip() for value in block["evidence_ids"])
+    for key in ("cross_paper_comparisons", "synthesis_findings", "research_gaps"):
+        for item in content[key]:
+            ordered.extend(str(value).strip() for value in item["evidence_ids"])
+    return list(dict.fromkeys(ordered))
+
+
+def _render_validated_report_content(
+    content: Mapping[str, Any],
+    *,
+    report_id: str,
+    report_version: int,
+    context: ReportQualityContext,
+    title: str,
+) -> dict[str, Any]:
+    try:
+        quality = validate_report_content(content, context)
+    except ReportQualityError as error:
+        raise EvidenceReportError(str(error), code="REPORT_SCHEMA_INVALID") from error
+    if quality.status != "pass":
+        raise EvidenceReportError("report content failed machine quality validation", code="REPORT_SCHEMA_INVALID")
+
+    matrix = context.evidence_matrix
+    evidence_records = matrix.get("evidence", [])
+    evidence_by_id: dict[str, dict[str, Any]] = {}
+    for raw in evidence_records:
+        if isinstance(raw, Mapping):
+            item = dict(raw)
+        elif callable(getattr(raw, "to_dict", None)):
+            item = raw.to_dict()
+        else:
+            raise EvidenceReportError("validated evidence projection is malformed")
+        evidence_id = _clean_id(item.get("evidence_id"), "evidence_id")
+        evidence_by_id[evidence_id] = item
+
+    evidence_ids = _report_content_evidence_ids(content)
+    citation_by_evidence: dict[str, int] = {}
+    citations: list[dict[str, Any]] = []
+    for evidence_id in evidence_ids:
+        item = evidence_by_id.get(evidence_id)
+        if item is None or item.get("status") != "available":
+            raise EvidenceReportError("report content references invalid evidence", code="CITATION_MANIFEST_INVALID")
+        level = item.get("evidence_level")
+        if level not in _SOURCE_LEVEL_LABELS:
+            raise EvidenceReportError("report content references an invalid evidence level", code="CITATION_MANIFEST_INVALID")
+        number = len(citations) + 1
+        citation_by_evidence[evidence_id] = number
+        citations.append({
+            "citation_no": number,
+            "paper_id": _clean_id(item.get("paper_id"), "paper_id"),
+            "evidence_ids": [evidence_id],
+            "claim_ids": [_clean_id(item.get("claim_id"), "claim_id")],
+            "source_level": level,
+        })
+
+    def citation_suffix(ids: Sequence[str]) -> str:
+        return " ".join(f"[{citation_by_evidence[str(value).strip()]}]" for value in ids)
+
+    dimension_labels: dict[str, str] = {}
+    for raw in matrix.get("dimensions", []):
+        item = dict(raw) if isinstance(raw, Mapping) else raw.to_dict()
+        dimension_id = _clean_id(item.get("dimension_id", item.get("id")), "dimension_id")
+        label = item.get("label")
+        raw_label = " ".join(label.split()) if isinstance(label, str) and label.strip() else dimension_id
+        dimension_labels[dimension_id] = _plain_report_text(raw_label)
+
+    lines = [f"# {_plain_report_text(title)}", "", "## 研究问题", "", _plain_report_text(content["research_question"]["text"]), ""]
+    lines.extend(["## 证据范围", "", _plain_report_text(content["evidence_scope"]["text"]), "", "## 逐篇分析", ""])
+    status_labels = {"not_stated": "来源未说明", "unavailable": "来源不可用"}
+    field_labels = {"method": "方法", "findings": "发现", "limitations": "局限"}
+    for index, analysis in enumerate(content["paper_analyses"], start=1):
+        lines.extend([f"### 论文 {index}", ""])
+        for field in ("method", "findings", "limitations"):
+            block = analysis[field]
+            body = _plain_report_text(block["text"]) if block["status"] == "supported" else status_labels[block["status"]]
+            refs = citation_suffix(block["evidence_ids"])
+            suffix = f" {refs}" if refs else ""
+            lines.append(f"- {field_labels[field]}：{body}{suffix}")
+        lines.append("")
+
+    lines.extend(["## 跨论文比较", ""])
+    for item in content["cross_paper_comparisons"]:
+        dimension = dimension_labels[item["dimension_id"]]
+        lines.append(f"### {dimension}")
+        lines.append(f"{_plain_report_text(item['statement'])} {citation_suffix(item['evidence_ids'])}")
+        lines.append("")
+
+    lines.extend(["## 综合发现", ""])
+    for item in content["synthesis_findings"]:
+        lines.append(f"- {_plain_report_text(item['statement'])} {citation_suffix(item['evidence_ids'])}")
+    lines.extend(["", "## 研究缺口", ""])
+    for item in content["research_gaps"]:
+        refs = citation_suffix(item["evidence_ids"])
+        suffix = f" {refs}" if refs else ""
+        lines.append(f"- {_plain_report_text(item['statement'])}{suffix}")
+
+    lines.extend(["", "## 引用清单", ""])
+    lines.extend(
+        f"- [{item['citation_no']}] {_plain_report_text(item['paper_id'])}（来源级别：{_SOURCE_LEVEL_LABELS[item['source_level']]}；Evidence ID：{_plain_report_text(item['evidence_ids'][0])}）"
+        for item in citations
+    )
+    markdown = "\n".join(lines).strip() + "\n"
+    manifest = {"manifest_version": 1, "report_id": report_id, "citations": citations}
+    report = {
+        "report_id": report_id,
+        "report_version": report_version,
+        "plan_version": context.plan_version,
+        "report_content": dict(content),
+        "quality_validation": quality.to_dict(),
+        "citation_manifest": manifest,
+    }
+    return {"report": report, "markdown": markdown, "html": _render_structured_report_html(markdown)}
+
+
+def render_report_payload(
+    payload: Mapping[str, Any],
+    *,
+    report_id: str,
+    report_version: int,
+    context: ReportQualityContext | None,
+    title: str = "深度研究报告",
+) -> dict[str, Any]:
+    """Render validated report_content-v1, or preserve legacy matrix rendering.
+
+    Structured content is rejected unless all machine gates pass. Its Markdown
+    is the sole body source for HTML, whose text escaping is delegated to the
+    existing fixed renderer. A legacy ``evidence-report-v1`` matrix continues
+    through ``render_evidence_report`` unchanged.
+    """
+    if not isinstance(payload, Mapping):
+        raise EvidenceReportError("report payload must be an object")
+    report_id = _clean_id(report_id, "report_id")
+    if isinstance(report_version, bool) or not isinstance(report_version, int) or report_version < 1:
+        raise EvidenceReportError("report_version must be positive")
+    title = _safe_text_input(title, "title", default="深度研究报告")
+
+    if "report_content" in payload:
+        content = payload["report_content"]
+    elif payload.get("schema_version") == "research-report-content-v1":
+        content = payload
+    elif payload.get("schema_version") == "evidence-report-v1":
+        return render_evidence_report(payload, report_id=report_id, report_version=report_version, title=title)
+    else:
+        raise EvidenceReportError("report payload schema is unsupported")
+
+    if context is None:
+        raise EvidenceReportError("report content requires validated task context")
+    return _render_validated_report_content(
+        content,
+        report_id=report_id,
+        report_version=report_version,
+        context=context,
+        title=title,
+    )
+
+
 class ReportGenerationService:
     """Generate and persist one immutable report version from a matrix."""
 
@@ -288,5 +489,5 @@ ReportGenerator = ReportGenerationService
 __all__ = [
     "EvidenceReportError", "ReportGenerationService", "EvidenceReportGenerator",
     "EvidenceReportService", "ReportGenerator",
-    "render_evidence_report",
+    "render_evidence_report", "render_report_payload",
 ]

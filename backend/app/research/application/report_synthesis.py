@@ -17,9 +17,14 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_serializer
 
 from backend.app.research.domain.models import ResearchArtifact, ResearchNotification
+from backend.app.research.application.report_quality import (
+    REPORT_CONTENT_SCHEMA_VERSION,
+    ReportQualityError,
+    _validate_report_shape,
+)
 
 _FORBIDDEN_PARTS = (
     "prompt", "cot", "chain_of_thought", "reasoning", "credential", "password",
@@ -42,6 +47,110 @@ class ReportSynthesisError(ValueError):
         super().__init__(message or self.code)
 
 
+_REPORT_CONTENT_ID_SCHEMA = {"type": "string", "minLength": 1, "maxLength": 200}
+_REPORT_CONTENT_ID_ARRAY_SCHEMA = {
+    "type": "array", "minItems": 0, "maxItems": 32,
+    "uniqueItems": True, "items": _REPORT_CONTENT_ID_SCHEMA,
+}
+_REPORT_CONTENT_BLOCK_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["status", "text", "evidence_ids"],
+    "properties": {
+        "status": {"type": "string", "enum": ["supported", "not_stated", "unavailable"]},
+        "text": {"type": "string", "maxLength": 4000},
+        "evidence_ids": _REPORT_CONTENT_ID_ARRAY_SCHEMA,
+    },
+}
+REPORT_CONTENT_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "research-report-content-v1; UTF-8 JSON payload at most 512 KiB",
+    "additionalProperties": False,
+    "required": [
+        "schema_version", "research_question", "evidence_scope", "paper_analyses",
+        "cross_paper_comparisons", "synthesis_findings", "research_gaps",
+    ],
+    "properties": {
+        "schema_version": {"type": "string", "const": REPORT_CONTENT_SCHEMA_VERSION},
+        "research_question": {
+            "type": "object", "additionalProperties": False, "required": ["text"],
+            "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 2000}},
+        },
+        "evidence_scope": {
+            "type": "object", "additionalProperties": False, "required": ["text", "paper_ids"],
+            "properties": {
+                "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "paper_ids": {
+                    "type": "array", "minItems": 5, "maxItems": 64, "uniqueItems": True,
+                    "items": _REPORT_CONTENT_ID_SCHEMA,
+                },
+            },
+        },
+        "paper_analyses": {
+            "type": "array", "minItems": 5, "maxItems": 64,
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["paper_id", "method", "findings", "limitations"],
+                "properties": {
+                    "paper_id": _REPORT_CONTENT_ID_SCHEMA,
+                    "method": _REPORT_CONTENT_BLOCK_SCHEMA,
+                    "findings": _REPORT_CONTENT_BLOCK_SCHEMA,
+                    "limitations": _REPORT_CONTENT_BLOCK_SCHEMA,
+                },
+            },
+        },
+        "cross_paper_comparisons": {
+            "type": "array", "minItems": 1, "maxItems": 16,
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["dimension_id", "paper_ids", "statement", "evidence_ids"],
+                "properties": {
+                    "dimension_id": _REPORT_CONTENT_ID_SCHEMA,
+                    "paper_ids": {
+                        "type": "array", "minItems": 2, "maxItems": 64, "uniqueItems": True,
+                        "items": _REPORT_CONTENT_ID_SCHEMA,
+                    },
+                    "statement": {"type": "string", "minLength": 1, "maxLength": 3000},
+                    "evidence_ids": {
+                        "type": "array", "minItems": 2, "maxItems": 32, "uniqueItems": True,
+                        "items": _REPORT_CONTENT_ID_SCHEMA,
+                    },
+                },
+            },
+        },
+        "synthesis_findings": {
+            "type": "array", "minItems": 3, "maxItems": 16,
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["finding_id", "statement", "paper_ids", "evidence_ids"],
+                "properties": {
+                    "finding_id": _REPORT_CONTENT_ID_SCHEMA,
+                    "statement": {"type": "string", "minLength": 1, "maxLength": 3000},
+                    "paper_ids": {
+                        "type": "array", "minItems": 2, "maxItems": 64, "uniqueItems": True,
+                        "items": _REPORT_CONTENT_ID_SCHEMA,
+                    },
+                    "evidence_ids": {
+                        "type": "array", "minItems": 2, "maxItems": 32, "uniqueItems": True,
+                        "items": _REPORT_CONTENT_ID_SCHEMA,
+                    },
+                },
+            },
+        },
+        "research_gaps": {
+            "type": "array", "minItems": 0, "maxItems": 32,
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["statement", "evidence_ids"],
+                "properties": {
+                    "statement": {"type": "string", "minLength": 1, "maxLength": 2000},
+                    "evidence_ids": _REPORT_CONTENT_ID_ARRAY_SCHEMA,
+                },
+            },
+        },
+    },
+}
+
 REPORT_SYNTHESIS_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -58,6 +167,7 @@ REPORT_SYNTHESIS_OUTPUT_SCHEMA: dict[str, Any] = {
         "artifact_ids": {"type": "array", "maxItems": 8},
         "safe_summary": {"type": "object"},
         "source_refs": {"type": "array", "maxItems": 256},
+        "report_content": REPORT_CONTENT_OUTPUT_SCHEMA,
     },
 }
 
@@ -75,6 +185,8 @@ class ReportSynthesisOutput(BaseModel):
     artifact_ids: list[str] = Field(max_length=8)
     safe_summary: dict[str, Any]
     source_refs: list[str] = Field(max_length=256)
+    # Optional for legacy envelopes until the Task08 publication path gates it.
+    report_content: dict[str, Any] | None = None
 
     @field_validator("source_refs", "artifact_ids")
     @classmethod
@@ -82,6 +194,41 @@ class ReportSynthesisOutput(BaseModel):
         if any(not isinstance(item, str) or not _ID_RE.fullmatch(item) for item in value):
             raise ValueError("only stable IDs are allowed")
         return value
+
+    @staticmethod
+    def _validate_raw_report_content_id_lengths(content: Mapping[str, Any]) -> None:
+        ids: list[str] = list(content["evidence_scope"]["paper_ids"])
+        for analysis in content["paper_analyses"]:
+            ids.append(analysis["paper_id"])
+            for field in ("method", "findings", "limitations"):
+                ids.extend(analysis[field]["evidence_ids"])
+        for comparison in content["cross_paper_comparisons"]:
+            ids.extend((comparison["dimension_id"], *comparison["paper_ids"], *comparison["evidence_ids"]))
+        for finding in content["synthesis_findings"]:
+            ids.extend((finding["finding_id"], *finding["paper_ids"], *finding["evidence_ids"]))
+        for gap in content["research_gaps"]:
+            ids.extend(gap["evidence_ids"])
+        if any(len(identifier) > 200 for identifier in ids):
+            raise ValueError("report_content raw IDs must be at most 200 characters")
+
+    @field_validator("report_content")
+    @classmethod
+    def _bounded_report_content(cls, value: dict[str, Any] | None) -> dict[str, Any]:
+        if value is None:
+            raise ValueError("report_content must be an object when present")
+        try:
+            content = dict(_validate_report_shape(value))
+        except ReportQualityError as exc:
+            raise ValueError("report_content schema validation failed") from exc
+        cls._validate_raw_report_content_id_lengths(content)
+        return content
+
+    @model_serializer(mode="wrap")
+    def _preserve_legacy_serialization(self, handler):
+        payload = handler(self)
+        if "report_content" not in self.model_fields_set:
+            payload.pop("report_content", None)
+        return payload
 
 
 def _canonical(value: Mapping[str, Any]) -> bytes:
