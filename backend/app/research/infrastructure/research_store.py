@@ -361,6 +361,21 @@ class ReportGenerationReservation:
     replayed: bool
 
 
+class ResearchReportGenerationStateConflict(ResearchReportConflict):
+    """A state or usage write lost its reservation-level compare-and-swap."""
+
+    code = "REPORT_GENERATION_STATE_CONFLICT"
+
+
+@dataclass(frozen=True)
+class ReportGenerationProgress:
+    report: ResearchReport
+    revision: int
+    stage: str | None
+    rewrite_count: int
+    replayed: bool = False
+
+
 class NotificationConflict(Exception):
     code = "NOTIFICATION_IDEMPOTENCY_CONFLICT"
 
@@ -6142,10 +6157,31 @@ class ResearchStore:
         connection: sqlite3.Connection, report: ResearchReport
     ) -> ResearchWorkItem:
         try:
-            generation = json.loads(report.report_json).get("generation", {})
+            report_payload = json.loads(report.report_json)
         except (TypeError, ValueError, AttributeError) as exc:
             raise RuntimeError("report reservation generation record is invalid") from exc
-        work_item_id = generation.get("work_item_id") if isinstance(generation, dict) else None
+        if not isinstance(report_payload, dict):
+            raise RuntimeError("report reservation JSON must be an object")
+        generation = report_payload.get("generation")
+        if not isinstance(generation, dict):
+            raise RuntimeError("report reservation generation record is invalid")
+        payload_report_version = report_payload.get("report_version")
+        generation_report_version = generation.get("report_version")
+        generation_plan_version = generation.get("plan_version")
+        if (
+            report_payload.get("report_id") != report.report_id
+            or not isinstance(payload_report_version, int)
+            or isinstance(payload_report_version, bool)
+            or payload_report_version != int(report.report_version)
+            or not isinstance(generation_report_version, int)
+            or isinstance(generation_report_version, bool)
+            or generation_report_version != int(report.report_version)
+            or not isinstance(generation_plan_version, int)
+            or isinstance(generation_plan_version, bool)
+            or generation_plan_version != int(report.plan_version)
+        ):
+            raise RuntimeError("canonical report identity does not match its reservation")
+        work_item_id = generation.get("work_item_id")
         if not isinstance(work_item_id, str) or not work_item_id:
             raise RuntimeError("report reservation has no bound work item")
         row = connection.execute(
@@ -6164,11 +6200,47 @@ class ResearchStore:
         except (TypeError, ValueError) as exc:
             raise RuntimeError("report reservation work item input is invalid") from exc
         binding = item_input.get("report_generation") if isinstance(item_input, dict) else None
+        expected_report_version = int(report.report_version)
+        expected_plan_version = int(report.plan_version)
+        try:
+            expected_request_key = ResearchStore._canonical_report_request_key(generation.get("request_key"))
+        except ValueError as exc:
+            raise RuntimeError("report reservation request key is invalid") from exc
+        if generation.get("request_key") != expected_request_key:
+            raise RuntimeError("report reservation request key is not canonical")
+        request_fingerprint = binding.get("request_fingerprint") if isinstance(binding, dict) else None
         if (
-            not isinstance(binding, dict)
-            or binding.get("report_id") != report.report_id
-            or int(binding.get("report_version") or 0) != int(report.report_version)
-            or binding.get("request_key") != generation.get("request_key")
+            not isinstance(request_fingerprint, str)
+            or len(request_fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in request_fingerprint)
+        ):
+            raise RuntimeError("report reservation request fingerprint is invalid")
+        top_level_identity_matches = (
+            isinstance(item_input, dict)
+            and item_input.get("report_id") == report.report_id
+            and isinstance(item_input.get("report_version"), int)
+            and not isinstance(item_input.get("report_version"), bool)
+            and item_input.get("report_version") == expected_report_version
+            and isinstance(item_input.get("plan_version"), int)
+            and not isinstance(item_input.get("plan_version"), bool)
+            and item_input.get("plan_version") == expected_plan_version
+            and item_input.get("request_key") == expected_request_key
+            and item_input.get("request_fingerprint") == request_fingerprint
+        )
+        nested_identity_matches = (
+            isinstance(binding, dict)
+            and binding.get("report_id") == report.report_id
+            and isinstance(binding.get("report_version"), int)
+            and not isinstance(binding.get("report_version"), bool)
+            and binding.get("report_version") == expected_report_version
+            and isinstance(binding.get("plan_version"), int)
+            and not isinstance(binding.get("plan_version"), bool)
+            and binding.get("plan_version") == expected_plan_version
+            and binding.get("request_key") == expected_request_key
+        )
+        if (
+            not top_level_identity_matches
+            or not nested_identity_matches
         ):
             raise RuntimeError("report reservation binding does not match its work item")
         return item
@@ -6186,7 +6258,9 @@ class ResearchStore:
         value = dict(base_input)
         value["report_id"] = report_id
         value["report_version"] = int(report_version)
+        value["plan_version"] = int(plan_version)
         value["request_key"] = request_key
+        value["request_fingerprint"] = request_fingerprint
         value["report_generation"] = {
             "report_id": report_id,
             "report_version": int(report_version),
@@ -6534,6 +6608,1079 @@ class ResearchStore:
             report = ResearchReport.from_row(dict(row))
             work_item = self._report_reservation_work_item(conn, report)
         return ReportGenerationReservation(report, work_item, True)
+
+    _REPORT_GENERATION_STAGES = frozenset(
+        {
+            "evidence_review",
+            "comparison",
+            "drafting",
+            "quality_check",
+            "targeted_revision",
+            "published",
+            "draft_saved",
+            "failed",
+        }
+    )
+    _REPORT_STAGE_TRANSITIONS = {
+        None: frozenset({"evidence_review", "drafting", "failed"}),
+        "evidence_review": frozenset({"comparison", "drafting", "failed"}),
+        "comparison": frozenset({"drafting", "quality_check", "failed"}),
+        "drafting": frozenset({"quality_check", "failed"}),
+        "quality_check": frozenset({"targeted_revision", "published", "draft_saved", "failed"}),
+        "targeted_revision": frozenset({"drafting", "quality_check", "failed"}),
+        "published": frozenset(),
+        "draft_saved": frozenset(),
+        "failed": frozenset(),
+    }
+    _REPORT_CONTENT_KEYS = frozenset(
+        {
+            "schema_version",
+            "research_question",
+            "evidence_scope",
+            "paper_analyses",
+            "cross_paper_comparisons",
+            "synthesis_findings",
+            "research_gaps",
+        }
+    )
+    _REPORT_QUALITY_VALIDATION_KEYS = frozenset(
+        {
+            "schema_version",
+            "status",
+            "cjk_count",
+            "count_method",
+            "paper_count",
+            "comparison_count",
+            "supported_finding_count",
+            "invalid_evidence_count",
+            "failure_codes",
+            "revision_count",
+        }
+    )
+    _REPORT_GENERATION_OUTPUT_KEYS = frozenset(
+        {"path", "output_disposition", "agent_run_ids", "provider", "model", "fallback_reason_code"}
+    )
+    _REPORT_STORE_STATE_KEYS = frozenset({"revision", "stage", "rewrite_count", "claims", "limits"})
+    _REPORT_USAGE_CLAIM_KEYS = frozenset(
+        {
+            "claim_id",
+            "agent_run_id",
+            "work_item_id",
+            "fingerprint",
+            "requested_model_loops",
+            "requested_tool_calls",
+            "requested_seconds",
+            "granted_model_loops",
+            "granted_tool_calls",
+            "granted_seconds",
+            "run_model_loops_limit",
+            "run_tool_calls_limit",
+            "created_at",
+            "settled",
+        }
+    )
+
+    @staticmethod
+    def _generation_json(report_row: sqlite3.Row) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        try:
+            payload = json.loads(report_row["report_json"] or "{}")
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("report reservation JSON is invalid") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("report reservation JSON must be an object")
+        generation = payload.get("generation")
+        if not isinstance(generation, dict):
+            raise RuntimeError("report reservation generation record is invalid")
+        state = generation.get("store_state")
+        if state is None:
+            state = {"revision": 0, "stage": None, "rewrite_count": 0, "claims": [], "limits": {}}
+        if not isinstance(state, dict):
+            raise RuntimeError("report generation store state is invalid")
+        if set(state) - ResearchStore._REPORT_STORE_STATE_KEYS:
+            raise RuntimeError("report generation store state contains unknown fields")
+        if not isinstance(state.get("claims", []), list) or not isinstance(state.get("limits", {}), dict):
+            raise RuntimeError("report generation store state collections are invalid")
+        return payload, generation, state
+
+    @staticmethod
+    def _report_generation_row(
+        connection: sqlite3.Connection,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+    ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        task = connection.execute(
+            "SELECT * FROM research_tasks WHERE research_task_id=? AND owner_id=?",
+            (research_task_id, owner_id),
+        ).fetchone()
+        if task is None:
+            raise ResearchTaskNotFound(research_task_id)
+        report = connection.execute(
+            "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
+            (research_task_id, int(report_version)),
+        ).fetchone()
+        if report is None:
+            raise ResearchReportConflict("REPORT_VERSION_NOT_FOUND")
+        return task, report
+
+    @staticmethod
+    def _report_generation_datetime_seconds(value: Any) -> float | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+
+    @classmethod
+    def _report_generation_elapsed(cls, started_at: Any, ended_at: Any) -> float | None:
+        started = cls._report_generation_datetime_seconds(started_at)
+        ended = cls._report_generation_datetime_seconds(ended_at)
+        if started is None or ended is None or ended < started:
+            return None
+        return ended - started
+
+    @staticmethod
+    def _nonnegative_int(value: Any, label: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{label} must be a nonnegative integer")
+        return value
+
+    @classmethod
+    def _collect_report_generation_usage(
+        cls,
+        connection: sqlite3.Connection,
+        task_row: sqlite3.Row,
+        target_report_row: sqlite3.Row,
+        *,
+        approved_max_seconds: int | None = None,
+        approved_task_model_loops: int | None = None,
+        approved_task_tool_calls: int | None = None,
+        approved_run_model_loops: int | None = None,
+        approved_run_tool_calls: int | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Calculate durable usage plus held claims without trusting Agent output."""
+        profile_seconds = {"speed": 600, "balanced": 1500, "quality": 2700}.get(
+            str(task_row["quality_profile"]), int(task_row["soft_budget_seconds"])
+        )
+        seconds_cap = min(5400, int(task_row["soft_budget_seconds"]), profile_seconds)
+        if approved_max_seconds is not None:
+            seconds_cap = min(seconds_cap, cls._nonnegative_int(approved_max_seconds, "approved_max_seconds"))
+        loops_cap = min(160, 160 if approved_task_model_loops is None else cls._nonnegative_int(approved_task_model_loops, "approved_task_model_loops"))
+        calls_cap = min(640, 640 if approved_task_tool_calls is None else cls._nonnegative_int(approved_task_tool_calls, "approved_task_tool_calls"))
+        run_loops_cap = min(40, 40 if approved_run_model_loops is None else cls._nonnegative_int(approved_run_model_loops, "approved_run_model_loops"))
+        run_calls_cap = min(160, 160 if approved_run_tool_calls is None else cls._nonnegative_int(approved_run_tool_calls, "approved_run_tool_calls"))
+
+        report_rows = connection.execute(
+            "SELECT * FROM research_reports WHERE research_task_id=? ORDER BY report_version",
+            (task_row["research_task_id"],),
+        ).fetchall()
+        claims_by_run: dict[str, dict[str, Any]] = {}
+        task_usage_floor = {"model_loops_used": 0, "tool_calls_used": 0, "elapsed_seconds": 0.0}
+        target_report_run_floor: list[dict[str, Any]] = []
+        for report_row in report_rows:
+            _payload, generation, state = cls._generation_json(report_row)
+            prior_limits = state.get("limits", {})
+            if isinstance(prior_limits, dict):
+                for name, _current in (
+                    ("max_seconds", seconds_cap),
+                    ("model_loops", loops_cap),
+                    ("tool_calls", calls_cap),
+                    ("run_model_loops", run_loops_cap),
+                    ("run_tool_calls", run_calls_cap),
+                ):
+                    value = prior_limits.get(name)
+                    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                        if name == "max_seconds":
+                            seconds_cap = min(seconds_cap, value)
+                        elif name == "model_loops":
+                            loops_cap = min(loops_cap, value)
+                        elif name == "tool_calls":
+                            calls_cap = min(calls_cap, value)
+                        elif name == "run_model_loops":
+                            run_loops_cap = min(run_loops_cap, value)
+                        else:
+                            run_calls_cap = min(run_calls_cap, value)
+            budget = generation.get("budget")
+            if isinstance(budget, dict):
+                previous_totals = budget.get("task_totals")
+                if isinstance(previous_totals, dict):
+                    previous_seconds_cap = previous_totals.get("max_seconds")
+                    if isinstance(previous_seconds_cap, (int, float)) and not isinstance(previous_seconds_cap, bool) and previous_seconds_cap >= 0:
+                        seconds_cap = min(seconds_cap, int(previous_seconds_cap))
+                    for metric in task_usage_floor:
+                        previous_value = previous_totals.get(metric)
+                        if previous_value is not None:
+                            if (
+                                isinstance(previous_value, bool)
+                                or not isinstance(previous_value, (int, float))
+                                or previous_value < 0
+                            ):
+                                raise RuntimeError("persisted task usage total is invalid")
+                            task_usage_floor[metric] = max(task_usage_floor[metric], previous_value)
+                if int(report_row["report_version"]) == int(target_report_row["report_version"]):
+                    previous_runs = budget.get("runs", [])
+                    if not isinstance(previous_runs, list):
+                        raise RuntimeError("persisted report run usage is invalid")
+                    target_report_run_floor = previous_runs
+            raw_claims = state.get("claims", [])
+            if not isinstance(raw_claims, list):
+                raise RuntimeError("report generation usage claims are invalid")
+            for claim in raw_claims:
+                if not isinstance(claim, dict) or set(claim) - cls._REPORT_USAGE_CLAIM_KEYS:
+                    raise RuntimeError("report generation usage claim contains unknown fields")
+                run_id = claim.get("agent_run_id")
+                if not isinstance(run_id, str) or not run_id:
+                    raise RuntimeError("report generation usage claim has no AgentRun ID")
+                if run_id in claims_by_run:
+                    raise RuntimeError("AgentRun has multiple report usage claims")
+                claim["report_version"] = int(report_row["report_version"])
+                claim["report_id"] = report_row["report_id"]
+                claims_by_run[run_id] = claim
+
+        if now is None:
+            now = _utcnow()
+        if cls._report_generation_datetime_seconds(now) is None:
+            raise ValueError("now must be an ISO timestamp")
+        now_value = now
+
+        run_rows = connection.execute(
+            "SELECT * FROM research_agent_runs WHERE research_task_id=? ORDER BY agent_run_id",
+            (task_row["research_task_id"],),
+        ).fetchall()
+        task_used = {"model_loops_used": 0, "tool_calls_used": 0, "elapsed_seconds": 0.0}
+        task_reserved = {"model_loops": 0, "tool_calls": 0, "seconds": 0.0}
+        report_used = {"model_loops_used": 0, "tool_calls_used": 0, "elapsed_seconds": 0.0}
+        report_runs: dict[str, dict[str, Any]] = {}
+        known_run_ids: set[str] = set()
+        target_generation = cls._generation_json(target_report_row)[1]
+        target_work_item_id = target_generation.get("work_item_id")
+
+        def add_report_usage(
+            run_id: str,
+            loops: int,
+            calls: int,
+            seconds: float,
+            *,
+            model_loops_limit: int = 40,
+            tool_calls_limit: int = 160,
+        ) -> None:
+            report_runs[run_id] = {
+                "agent_run_id": run_id,
+                "model_loops_used": min(40, loops),
+                "model_loops_limit": model_loops_limit,
+                "tool_calls_used": min(160, calls),
+                "tool_calls_limit": tool_calls_limit,
+                "elapsed_seconds": round(max(0.0, seconds), 3),
+            }
+
+        terminal_statuses = {"completed", "failed", "cancelled", "interrupted", "limit_reached"}
+        for run_row in run_rows:
+            run_id = str(run_row["agent_run_id"])
+            known_run_ids.add(run_id)
+            loops = max(0, int(run_row["model_loop_count"] or 0))
+            calls = max(0, int(run_row["tool_call_count"] or 0))
+            status = str(run_row["status"])
+            claim = claims_by_run.get(run_id)
+            end_for_elapsed = run_row["ended_at"]
+            if status == "running" and not end_for_elapsed:
+                end_for_elapsed = now_value
+            duration = cls._report_generation_elapsed(run_row["started_at"], end_for_elapsed)
+            if claim is not None:
+                reserved_loops = int(claim["granted_model_loops"])
+                reserved_calls = int(claim["granted_tool_calls"])
+                reserved_seconds = float(claim["granted_seconds"])
+                if status in terminal_statuses:
+                    # A lost/corrupt end timestamp cannot free the reserved wall-clock allowance.
+                    elapsed_used = duration if duration is not None else reserved_seconds
+                else:
+                    elapsed_used = duration or 0.0
+                    task_reserved["model_loops"] += max(0, reserved_loops - loops)
+                    task_reserved["tool_calls"] += max(0, reserved_calls - calls)
+                    task_reserved["seconds"] += max(0.0, reserved_seconds - elapsed_used)
+                include_in_target = (
+                    int(claim["report_version"]) == int(target_report_row["report_version"])
+                    or run_row["work_item_id"] == target_work_item_id
+                )
+                run_loops_limit = int(claim.get("run_model_loops_limit", run_loops_cap))
+                run_calls_limit = int(claim.get("run_tool_calls_limit", run_calls_cap))
+            else:
+                if status == "running":
+                    elapsed_used = duration or 0.0
+                    # Legacy/unclaimed live work has no durable ceiling; hold the whole task remainder.
+                    task_reserved["model_loops"] += max(0, loops_cap - loops)
+                    task_reserved["tool_calls"] += max(0, calls_cap - calls)
+                    task_reserved["seconds"] += max(0.0, seconds_cap - elapsed_used)
+                elif status in terminal_statuses:
+                    elapsed_used = duration if duration is not None else float(seconds_cap)
+                else:
+                    elapsed_used = 0.0
+                include_in_target = run_row["work_item_id"] == target_work_item_id
+                run_loops_limit = 40
+                run_calls_limit = 160
+
+            task_used["model_loops_used"] += loops
+            task_used["tool_calls_used"] += calls
+            task_used["elapsed_seconds"] += max(0.0, elapsed_used)
+            if include_in_target:
+                add_report_usage(
+                    run_id,
+                    loops,
+                    calls,
+                    elapsed_used,
+                    model_loops_limit=run_loops_limit,
+                    tool_calls_limit=run_calls_limit,
+                )
+
+        for run_id, claim in claims_by_run.items():
+            if run_id in known_run_ids:
+                continue
+            # A claim may survive a crash between reservation, AgentRun creation, and a durable checkpoint.
+            task_reserved["model_loops"] += int(claim["granted_model_loops"])
+            task_reserved["tool_calls"] += int(claim["granted_tool_calls"])
+            task_reserved["seconds"] += float(claim["granted_seconds"])
+            if int(claim["report_version"]) == int(target_report_row["report_version"]):
+                add_report_usage(
+                    run_id,
+                    int(claim["granted_model_loops"]),
+                    int(claim["granted_tool_calls"]),
+                    float(claim["granted_seconds"]),
+                model_loops_limit=int(claim.get("run_model_loops_limit", run_loops_cap)),
+                tool_calls_limit=int(claim.get("run_tool_calls_limit", run_calls_cap)),
+                )
+
+        # Preserve persisted cumulative values if a later malformed clock sample is smaller.
+        for previous_run in target_report_run_floor:
+            if not isinstance(previous_run, dict):
+                raise RuntimeError("persisted report run usage entry is invalid")
+            run_id = previous_run.get("agent_run_id")
+            if not isinstance(run_id, str) or not run_id:
+                raise RuntimeError("persisted report run usage has no AgentRun ID")
+            current_run = report_runs.get(run_id)
+            if current_run is None:
+                report_runs[run_id] = dict(previous_run)
+                continue
+            for field in ("model_loops_used", "tool_calls_used", "elapsed_seconds"):
+                old_value = previous_run.get(field, 0)
+                if isinstance(old_value, bool) or not isinstance(old_value, (int, float)) or old_value < 0:
+                    raise RuntimeError("persisted report run counter is invalid")
+                current_run[field] = max(current_run[field], old_value)
+        report_used = {
+            "model_loops_used": sum(int(run["model_loops_used"]) for run in report_runs.values()),
+            "tool_calls_used": sum(int(run["tool_calls_used"]) for run in report_runs.values()),
+            "elapsed_seconds": round(sum(float(run["elapsed_seconds"]) for run in report_runs.values()), 3),
+        }
+        for metric in task_usage_floor:
+            task_used[metric] = max(task_used[metric], task_usage_floor[metric])
+        task_used["elapsed_seconds"] = round(task_used["elapsed_seconds"], 3)
+        task_reserved["seconds"] = round(task_reserved["seconds"], 3)
+        remaining = {
+            "model_loops": max(0, loops_cap - task_used["model_loops_used"] - task_reserved["model_loops"]),
+            "tool_calls": max(0, calls_cap - task_used["tool_calls_used"] - task_reserved["tool_calls"]),
+            "seconds": round(max(0.0, seconds_cap - task_used["elapsed_seconds"] - task_reserved["seconds"]), 3),
+        }
+        exhausted = [key for key, value in remaining.items() if value <= 0]
+        report_run_list = [report_runs[key] for key in sorted(report_runs)][:32]
+        return {
+            "report_totals": report_used,
+            "report_runs": report_run_list,
+            "task_totals": task_used,
+            "reserved": task_reserved,
+            "limits": {
+                "model_loops": loops_cap,
+                "tool_calls": calls_cap,
+                "max_seconds": seconds_cap,
+                "run_model_loops": run_loops_cap,
+                "run_tool_calls": run_calls_cap,
+            },
+            "remaining": remaining,
+            "exhausted": exhausted,
+        }
+
+    @staticmethod
+    def _write_report_generation_budget(generation: dict[str, Any], usage: Mapping[str, Any]) -> None:
+        budget = generation.get("budget")
+        if not isinstance(budget, dict):
+            budget = {}
+        budget["runs"] = list(usage["report_runs"])
+        budget["report_totals"] = dict(usage["report_totals"])
+        task_totals = dict(usage["task_totals"])
+        task_totals["model_loops_limit"] = int(usage["limits"]["model_loops"])
+        task_totals["tool_calls_limit"] = int(usage["limits"]["tool_calls"])
+        task_totals["max_seconds"] = int(usage["limits"]["max_seconds"])
+        budget["task_totals"] = task_totals
+        budget["tokens"] = None
+        budget["cost"] = None
+        generation["budget"] = budget
+
+    @staticmethod
+    def _report_generation_write_result(
+        report_row: sqlite3.Row,
+        generation: dict[str, Any],
+        state: dict[str, Any],
+        usage: Mapping[str, Any],
+        *,
+        claim: Mapping[str, Any] | None = None,
+        replayed: bool = False,
+    ) -> dict[str, Any]:
+        result = {
+            "report": ResearchReport.from_row(dict(report_row)),
+            "revision": int(state.get("revision", 0)),
+            "stage": state.get("stage"),
+            "rewrite_count": int(state.get("rewrite_count", 0)),
+            "report_totals": dict(usage["report_totals"]),
+            "task_totals": dict(usage["task_totals"]),
+            "reserved": dict(usage["reserved"]),
+            "limits": dict(usage["limits"]),
+            "remaining": dict(usage["remaining"]),
+            "exhausted": list(usage["exhausted"]),
+            "replayed": replayed,
+        }
+        if claim is not None:
+            result.update(
+                {
+                    "claim_id": claim["claim_id"],
+                    "agent_run_id": claim["agent_run_id"],
+                    "allowed": bool(claim.get("allowed", True)),
+                    "grant": {
+                        "model_loops": int(claim.get("granted_model_loops", 0)),
+                        "tool_calls": int(claim.get("granted_tool_calls", 0)),
+                        "seconds": int(claim.get("granted_seconds", 0)),
+                    },
+                    "settled": bool(claim.get("settled", False)),
+                }
+            )
+        return result
+
+    def get_report_generation_budget(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+        *,
+        approved_max_seconds: int | None = None,
+        approved_task_model_loops: int | None = None,
+        approved_task_tool_calls: int | None = None,
+        approved_run_model_loops: int | None = None,
+        approved_run_tool_calls: int | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Read persisted AgentRun usage and all report claims for this task."""
+        with self._connect() as conn:
+            task_row, report_row = self._report_generation_row(conn, research_task_id, owner_id, report_version)
+            _payload, generation, state = self._generation_json(report_row)
+            usage = self._collect_report_generation_usage(
+                conn,
+                task_row,
+                report_row,
+                approved_max_seconds=approved_max_seconds,
+                approved_task_model_loops=approved_task_model_loops,
+                approved_task_tool_calls=approved_task_tool_calls,
+                approved_run_model_loops=approved_run_model_loops,
+                approved_run_tool_calls=approved_run_tool_calls,
+                now=now,
+            )
+        result = self._report_generation_write_result(report_row, generation, state, usage)
+        result["limits"] = {
+            "model_loops": usage["limits"]["model_loops"],
+            "tool_calls": usage["limits"]["tool_calls"],
+            "max_seconds": usage["limits"]["max_seconds"],
+            "run_model_loops": usage["limits"]["run_model_loops"],
+            "run_tool_calls": usage["limits"]["run_tool_calls"],
+        }
+        return result
+
+    def update_report_generation_state(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+        *,
+        expected_revision: int,
+        stage: str,
+        rewrite_count: int,
+        status: str | None = None,
+        published: bool | None = None,
+    ) -> dict[str, Any]:
+        """CAS a server-owned stage/rewrite counter and optionally terminal status."""
+        if stage not in self._REPORT_GENERATION_STAGES:
+            raise ValueError("invalid report generation stage")
+        expected = self._nonnegative_int(expected_revision, "expected_revision")
+        rewrite = self._nonnegative_int(rewrite_count, "rewrite_count")
+        if rewrite > 2:
+            raise ValueError("rewrite_count exceeds the two-revision limit")
+        if status is not None and status not in {"generating", "completed", "partial", "draft", "failed"}:
+            raise ValueError("invalid report status")
+        if published is not None and not isinstance(published, bool):
+            raise ValueError("published must be a boolean")
+
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row, report_row = self._report_generation_row(conn, research_task_id, owner_id, report_version)
+                payload, generation, state = self._generation_json(report_row)
+                current_revision = int(state.get("revision", 0))
+                current_stage = state.get("stage")
+                current_rewrite = int(state.get("rewrite_count", 0))
+                target_status = status or str(report_row["status"])
+                target_published = generation.get("published", False) if published is None else published
+                same_state = (
+                    current_stage == stage
+                    and current_rewrite == rewrite
+                    and target_status == str(report_row["status"])
+                    and target_published == bool(generation.get("published", False))
+                )
+                if current_revision != expected:
+                    if same_state:
+                        usage = self._collect_report_generation_usage(conn, task_row, report_row)
+                        conn.commit()
+                        return self._report_generation_write_result(
+                            report_row, generation, state, usage, replayed=True
+                        )
+                    raise ResearchReportGenerationStateConflict("report generation revision is stale")
+
+                if report_row["status"] != "generating":
+                    if same_state:
+                        usage = self._collect_report_generation_usage(conn, task_row, report_row)
+                        conn.commit()
+                        return self._report_generation_write_result(
+                            report_row, generation, state, usage, replayed=True
+                        )
+                    raise ResearchReportGenerationStateConflict("terminal report generation is immutable")
+
+                allowed_next = self._REPORT_STAGE_TRANSITIONS.get(current_stage, frozenset())
+                if stage != current_stage and stage not in allowed_next:
+                    raise ValueError(f"invalid report generation stage transition: {current_stage!r} -> {stage!r}")
+                if rewrite < current_rewrite or rewrite > current_rewrite + 1:
+                    raise ValueError("rewrite_count must be monotonic and increase by at most one")
+                if rewrite == current_rewrite + 1 and stage != "targeted_revision":
+                    raise ValueError("rewrite_count may increase only when entering targeted_revision")
+                if stage == "targeted_revision" and rewrite != current_rewrite + 1 and current_stage != stage:
+                    raise ValueError("targeted_revision must consume exactly one rewrite")
+                if target_status == "completed":
+                    validation = payload.get("quality_validation")
+                    if (
+                        stage != "published"
+                        or target_published is not True
+                        or not isinstance(validation, dict)
+                        or validation.get("status") != "pass"
+                        or generation.get("path") != "agent_runner"
+                        or generation.get("output_disposition") != "accepted"
+                    ):
+                        raise ValueError("completed report requires published machine-validated generation")
+                elif target_status in {"partial", "draft", "failed"}:
+                    if target_published is not False or stage not in {"draft_saved", "failed"}:
+                        raise ValueError("noncompleted terminal reports must be unpublished and saved or failed")
+                    if target_status == "failed" and stage != "failed":
+                        raise ValueError("failed report must use failed generation stage")
+                    if target_status in {"draft", "partial"} and stage != "draft_saved":
+                        raise ValueError("draft/partial report must use draft_saved generation stage")
+                else:
+                    if target_published is not False:
+                        raise ValueError("generating report cannot be published")
+
+                state = {
+                    "revision": current_revision + 1,
+                    "stage": stage,
+                    "rewrite_count": rewrite,
+                    "claims": list(state.get("claims", [])),
+                    "limits": dict(state.get("limits", {})),
+                }
+                generation["store_state"] = state
+                if published is not None or status is not None:
+                    generation["published"] = target_published
+                payload["generation"] = generation
+                serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                updated = conn.execute(
+                    "UPDATE research_reports SET status=?, report_json=? WHERE research_task_id=? AND report_version=? AND status='generating'",
+                    (target_status, serialized, research_task_id, int(report_version)),
+                )
+                if updated.rowcount != 1:
+                    raise ResearchReportGenerationStateConflict("report generation state changed concurrently")
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
+                    (research_task_id, int(report_version)),
+                ).fetchone()
+                usage = self._collect_report_generation_usage(conn, task_row, report_row)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return self._report_generation_write_result(report_row, generation, state, usage)
+
+    @classmethod
+    def _canonical_report_generation_output_inputs(
+        cls,
+        report_content: Mapping[str, Any],
+        quality_validation: Mapping[str, Any],
+        generation_output: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Bound the application-validated canonical report envelope and trusted run metadata."""
+        if not isinstance(report_content, Mapping):
+            raise ValueError("report_content must be an object")
+        content = dict(report_content)
+        if set(content) != cls._REPORT_CONTENT_KEYS or content.get("schema_version") != "research-report-content-v1":
+            raise ValueError("report_content does not match the canonical report schema")
+        content_json = cls._canonical_report_request_json(content, max_bytes=512 * 1024)
+        content = json.loads(content_json)
+
+        if not isinstance(quality_validation, Mapping):
+            raise ValueError("quality_validation must be an object")
+        quality = dict(quality_validation)
+        if (
+            set(quality) != cls._REPORT_QUALITY_VALIDATION_KEYS
+            or quality.get("schema_version") != "report-quality-v1"
+            or quality.get("count_method") != "report-quality-v1"
+            or not isinstance(quality.get("status"), str)
+            or quality.get("status") not in {"pass", "fail"}
+        ):
+            raise ValueError("quality_validation does not match the canonical quality schema")
+        bounded_counts = {
+            "cjk_count": None,
+            "paper_count": 64,
+            "comparison_count": 16,
+            "supported_finding_count": 16,
+            "invalid_evidence_count": None,
+            "revision_count": 2,
+        }
+        for key, maximum in bounded_counts.items():
+            value = quality.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"quality_validation.{key} must be a nonnegative integer")
+            if maximum is not None and value > maximum:
+                raise ValueError(f"quality_validation.{key} exceeds its limit")
+        failure_codes = quality.get("failure_codes")
+        if (
+            not isinstance(failure_codes, list)
+            or len(failure_codes) > 32
+            or any(not isinstance(code, str) or not 1 <= len(code) <= 64 for code in failure_codes)
+            or len(set(failure_codes)) != len(failure_codes)
+        ):
+            raise ValueError("quality_validation.failure_codes is invalid")
+        quality_json = cls._canonical_report_request_json(quality, max_bytes=16 * 1024)
+        quality = json.loads(quality_json)
+
+        if not isinstance(generation_output, Mapping):
+            raise ValueError("generation_output must be an object")
+        output = dict(generation_output)
+        if set(output) - cls._REPORT_GENERATION_OUTPUT_KEYS:
+            raise ValueError("generation_output contains fields not owned by the report store")
+        if not isinstance(output.get("path"), str) or output.get("path") not in {
+            "agent_runner",
+            "deterministic_fallback",
+            "matrix_api",
+        }:
+            raise ValueError("generation_output.path is invalid")
+        if not isinstance(output.get("output_disposition"), str) or output.get("output_disposition") not in {
+            "accepted",
+            "rejected",
+            "not_run",
+        }:
+            raise ValueError("generation_output.output_disposition is invalid")
+        if "agent_run_ids" in output:
+            run_ids = output["agent_run_ids"]
+            if (
+                not isinstance(run_ids, list)
+                or len(run_ids) > 32
+                or any(not isinstance(run_id, str) or not 1 <= len(run_id) <= 200 for run_id in run_ids)
+                or len(set(run_ids)) != len(run_ids)
+            ):
+                raise ValueError("generation_output.agent_run_ids is invalid")
+        for key in ("provider", "model"):
+            if key in output and output[key] is not None and (
+                not isinstance(output[key], str) or not 1 <= len(output[key]) <= 128
+            ):
+                raise ValueError(f"generation_output.{key} is invalid")
+        if "fallback_reason_code" in output and output["fallback_reason_code"] is not None and (
+            not isinstance(output["fallback_reason_code"], str)
+            or not 1 <= len(output["fallback_reason_code"]) <= 64
+        ):
+            raise ValueError("generation_output.fallback_reason_code is invalid")
+        output_json = cls._canonical_report_request_json(output, max_bytes=16 * 1024)
+        output = json.loads(output_json)
+        return content, quality, output
+
+    def save_report_generation_output(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+        *,
+        plan_version: int,
+        expected_revision: int,
+        report_content: Mapping[str, Any],
+        quality_validation: Mapping[str, Any],
+        generation_output: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """CAS validated canonical report output into its pre-existing reservation row.
+
+        The application owns evidence and quality validation. This store boundary
+        limits the persisted envelope, verifies its reservation identity, and
+        preserves the store-owned generation budget and lifecycle ledger.
+        """
+        if isinstance(plan_version, bool) or not isinstance(plan_version, int) or plan_version < 1:
+            raise ValueError("plan_version must be a positive integer")
+        if isinstance(report_version, bool) or not isinstance(report_version, int) or report_version < 1:
+            raise ValueError("report_version must be a positive integer")
+        expected = self._nonnegative_int(expected_revision, "expected_revision")
+        content, quality, output = self._canonical_report_generation_output_inputs(
+            report_content, quality_validation, generation_output
+        )
+
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row, report_row = self._report_generation_row(
+                    conn, research_task_id, owner_id, report_version
+                )
+                if int(report_row["plan_version"]) != plan_version:
+                    raise ResearchReportGenerationStateConflict(
+                        "plan version does not match the report reservation"
+                    )
+                payload, generation, state = self._generation_json(report_row)
+                if (
+                    payload.get("report_id") != report_row["report_id"]
+                    or payload.get("report_version") != report_version
+                    or generation.get("report_version") != report_version
+                    or generation.get("plan_version") != plan_version
+                ):
+                    raise ResearchReportGenerationStateConflict(
+                        "canonical report identity does not match its reservation"
+                    )
+                self._report_reservation_work_item(conn, ResearchReport.from_row(dict(report_row)))
+
+                current_revision = int(state.get("revision", 0))
+                same_output = (
+                    payload.get("report_content") == content
+                    and payload.get("quality_validation") == quality
+                    and all(generation.get(key) == value for key, value in output.items())
+                )
+                if same_output:
+                    if expected > current_revision:
+                        raise ResearchReportGenerationStateConflict(
+                            "report generation revision is ahead of the reservation"
+                        )
+                    usage = self._collect_report_generation_usage(conn, task_row, report_row)
+                    conn.commit()
+                    return self._report_generation_write_result(
+                        report_row, generation, state, usage, replayed=True
+                    )
+                if expected != current_revision:
+                    raise ResearchReportGenerationStateConflict("report generation revision is stale")
+                if report_row["status"] != "generating":
+                    raise ResearchReportGenerationStateConflict("terminal report generation is immutable")
+
+                generation.update(output)
+                payload["report_content"] = content
+                payload["quality_validation"] = quality
+                payload["generation"] = generation
+                next_state = {
+                    "revision": current_revision + 1,
+                    "stage": state.get("stage"),
+                    "rewrite_count": int(state.get("rewrite_count", 0)),
+                    "claims": list(state.get("claims", [])),
+                    "limits": dict(state.get("limits", {})),
+                }
+                generation["store_state"] = next_state
+                serialized = json.dumps(
+                    payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+                )
+                updated = conn.execute(
+                    "UPDATE research_reports SET report_json=? "
+                    "WHERE report_id=? AND research_task_id=? AND plan_version=? AND report_version=? "
+                    "AND status='generating' AND report_json=?",
+                    (
+                        serialized,
+                        report_row["report_id"],
+                        research_task_id,
+                        plan_version,
+                        report_version,
+                        report_row["report_json"],
+                    ),
+                )
+                if updated.rowcount != 1:
+                    raise ResearchReportGenerationStateConflict(
+                        "canonical report reservation changed concurrently"
+                    )
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE report_id=?", (report_row["report_id"],)
+                ).fetchone()
+                usage = self._collect_report_generation_usage(conn, task_row, report_row)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return self._report_generation_write_result(report_row, generation, next_state, usage)
+
+    def claim_report_generation_budget(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+        *,
+        claim_id: str,
+        agent_run_id: str,
+        requested_model_loops: int,
+        requested_tool_calls: int,
+        requested_seconds: int,
+        approved_max_seconds: int | None = None,
+        approved_task_model_loops: int | None = None,
+        approved_task_tool_calls: int | None = None,
+        approved_run_model_loops: int | None = None,
+        approved_run_tool_calls: int | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Atomically hold one run's effective budget on the existing reservation row."""
+        canonical_claim_id = self._canonical_report_request_key(claim_id)
+        run_id = str(agent_run_id)
+        if not run_id or len(run_id) > 200:
+            raise ValueError("agent_run_id must be a nonempty ID no longer than 200 characters")
+        requested = {
+            "model_loops": self._nonnegative_int(requested_model_loops, "requested_model_loops"),
+            "tool_calls": self._nonnegative_int(requested_tool_calls, "requested_tool_calls"),
+            "seconds": self._nonnegative_int(requested_seconds, "requested_seconds"),
+        }
+        if not any(requested.values()):
+            raise ValueError("at least one run budget must be requested")
+        if requested["seconds"] == 0:
+            raise ValueError("requested_seconds must be positive")
+        normalized_limits = {
+            "approved_max_seconds": None if approved_max_seconds is None else self._nonnegative_int(approved_max_seconds, "approved_max_seconds"),
+            "approved_task_model_loops": None if approved_task_model_loops is None else self._nonnegative_int(approved_task_model_loops, "approved_task_model_loops"),
+            "approved_task_tool_calls": None if approved_task_tool_calls is None else self._nonnegative_int(approved_task_tool_calls, "approved_task_tool_calls"),
+            "approved_run_model_loops": None if approved_run_model_loops is None else self._nonnegative_int(approved_run_model_loops, "approved_run_model_loops"),
+            "approved_run_tool_calls": None if approved_run_tool_calls is None else self._nonnegative_int(approved_run_tool_calls, "approved_run_tool_calls"),
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {"agent_run_id": run_id, "requested": requested, "limits": normalized_limits},
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row, report_row = self._report_generation_row(conn, research_task_id, owner_id, report_version)
+                payload, generation, state = self._generation_json(report_row)
+                claims = list(state.get("claims", []))
+                existing = next((item for item in claims if item.get("claim_id") == canonical_claim_id), None)
+                if existing is not None:
+                    if existing.get("fingerprint") != fingerprint or existing.get("agent_run_id") != run_id:
+                        raise ResearchReportGenerationStateConflict("usage claim key was reused with different limits")
+                    usage = self._collect_report_generation_usage(
+                        conn,
+                        task_row,
+                        report_row,
+                        approved_max_seconds=normalized_limits["approved_max_seconds"],
+                        approved_task_model_loops=normalized_limits["approved_task_model_loops"],
+                        approved_task_tool_calls=normalized_limits["approved_task_tool_calls"],
+                        approved_run_model_loops=normalized_limits["approved_run_model_loops"],
+                        approved_run_tool_calls=normalized_limits["approved_run_tool_calls"],
+                        now=now,
+                    )
+                    conn.commit()
+                    return self._report_generation_write_result(
+                        report_row, generation, state, usage, claim=existing, replayed=True
+                    )
+                if report_row["status"] != "generating":
+                    raise ResearchReportGenerationStateConflict("terminal report cannot acquire usage")
+                if len(claims) >= 32:
+                    raise ResearchReportGenerationStateConflict("report run limit reached")
+                if any(item.get("agent_run_id") == run_id for item in claims):
+                    raise ResearchReportGenerationStateConflict("AgentRun already has a usage claim")
+
+                usage = self._collect_report_generation_usage(
+                    conn,
+                    task_row,
+                    report_row,
+                    approved_max_seconds=normalized_limits["approved_max_seconds"],
+                    approved_task_model_loops=normalized_limits["approved_task_model_loops"],
+                    approved_task_tool_calls=normalized_limits["approved_task_tool_calls"],
+                    approved_run_model_loops=normalized_limits["approved_run_model_loops"],
+                    approved_run_tool_calls=normalized_limits["approved_run_tool_calls"],
+                    now=now,
+                )
+                if usage["exhausted"]:
+                    conn.commit()
+                    result = self._report_generation_write_result(report_row, generation, state, usage)
+                    result.update(
+                        {
+                            "claim_id": canonical_claim_id,
+                            "agent_run_id": run_id,
+                            "allowed": False,
+                            "grant": {"model_loops": 0, "tool_calls": 0, "seconds": 0},
+                            "settled": False,
+                        }
+                    )
+                    return result
+                grant = {
+                    "model_loops": min(requested["model_loops"], usage["remaining"]["model_loops"], usage["limits"]["run_model_loops"]),
+                    "tool_calls": min(requested["tool_calls"], usage["remaining"]["tool_calls"], usage["limits"]["run_tool_calls"]),
+                    "seconds": min(requested["seconds"], int(usage["remaining"]["seconds"]), usage["limits"]["max_seconds"]),
+                }
+                if any(grant[key] <= 0 for key in grant if requested[key] > 0):
+                    exhausted = list(usage["exhausted"])
+                    for key, value in grant.items():
+                        if value <= 0 and key not in exhausted:
+                            exhausted.append(key)
+                    usage["exhausted"] = exhausted
+                    conn.commit()
+                    result = self._report_generation_write_result(report_row, generation, state, usage)
+                    result.update(
+                        {
+                            "claim_id": canonical_claim_id,
+                            "agent_run_id": run_id,
+                            "allowed": False,
+                            "grant": {"model_loops": 0, "tool_calls": 0, "seconds": 0},
+                            "settled": False,
+                        }
+                    )
+                    return result
+                existing_run_ids = generation.get("agent_run_ids", [])
+                if not isinstance(existing_run_ids, list) or any(not isinstance(value, str) for value in existing_run_ids):
+                    raise RuntimeError("report generation AgentRun IDs are invalid")
+                generation["agent_run_ids"] = list(dict.fromkeys([*existing_run_ids, run_id]))[-32:]
+                claim = {
+                    "claim_id": canonical_claim_id,
+                    "agent_run_id": run_id,
+                    "work_item_id": generation.get("work_item_id"),
+                    "fingerprint": fingerprint,
+                    "requested_model_loops": requested["model_loops"],
+                    "requested_tool_calls": requested["tool_calls"],
+                    "requested_seconds": requested["seconds"],
+                    "granted_model_loops": grant["model_loops"],
+                    "granted_tool_calls": grant["tool_calls"],
+                    "granted_seconds": grant["seconds"],
+                    "run_model_loops_limit": usage["limits"]["run_model_loops"],
+                    "run_tool_calls_limit": usage["limits"]["run_tool_calls"],
+                    "created_at": now or _utcnow(),
+                    "settled": False,
+                }
+                claims.append(claim)
+                revision = int(state.get("revision", 0)) + 1
+                state = {
+                    "revision": revision,
+                    "stage": state.get("stage"),
+                    "rewrite_count": int(state.get("rewrite_count", 0)),
+                    "claims": claims,
+                    "limits": {
+                        "model_loops": usage["limits"]["model_loops"],
+                        "tool_calls": usage["limits"]["tool_calls"],
+                        "max_seconds": usage["limits"]["max_seconds"],
+                        "run_model_loops": usage["limits"]["run_model_loops"],
+                        "run_tool_calls": usage["limits"]["run_tool_calls"],
+                    },
+                }
+                generation["store_state"] = state
+                self._write_report_generation_budget(generation, usage)
+                payload["generation"] = generation
+                serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                updated = conn.execute(
+                    "UPDATE research_reports SET report_json=? WHERE research_task_id=? AND report_version=? AND status='generating'",
+                    (serialized, research_task_id, int(report_version)),
+                )
+                if updated.rowcount != 1:
+                    raise ResearchReportGenerationStateConflict("report generation reservation changed concurrently")
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
+                    (research_task_id, int(report_version)),
+                ).fetchone()
+                usage = self._collect_report_generation_usage(
+                    conn,
+                    task_row,
+                    report_row,
+                    approved_max_seconds=normalized_limits["approved_max_seconds"],
+                    approved_task_model_loops=normalized_limits["approved_task_model_loops"],
+                    approved_task_tool_calls=normalized_limits["approved_task_tool_calls"],
+                    approved_run_model_loops=normalized_limits["approved_run_model_loops"],
+                    approved_run_tool_calls=normalized_limits["approved_run_tool_calls"],
+                    now=now,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return self._report_generation_write_result(report_row, generation, state, usage, claim=claim)
+
+    def settle_report_generation_budget(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        report_version: int,
+        *,
+        claim_id: str,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Reconcile a claim from the persisted AgentRun row; never accept model counters."""
+        canonical_claim_id = self._canonical_report_request_key(claim_id)
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                task_row, report_row = self._report_generation_row(conn, research_task_id, owner_id, report_version)
+                _payload, generation, state = self._generation_json(report_row)
+                claims = list(state.get("claims", []))
+                claim = next((item for item in claims if item.get("claim_id") == canonical_claim_id), None)
+                if claim is None:
+                    raise ResearchReportGenerationStateConflict("usage claim not found")
+                run_row = conn.execute(
+                    "SELECT * FROM research_agent_runs WHERE agent_run_id=? AND research_task_id=?",
+                    (claim["agent_run_id"], research_task_id),
+                ).fetchone()
+                if run_row is None:
+                    usage = self._collect_report_generation_usage(conn, task_row, report_row, now=now)
+                    conn.commit()
+                    return self._report_generation_write_result(report_row, generation, state, usage, claim=claim)
+                if run_row["work_item_id"] != claim.get("work_item_id"):
+                    raise ResearchReportGenerationStateConflict("AgentRun is bound to a different WorkItem")
+                terminal = run_row["status"] in {"completed", "failed", "cancelled", "interrupted", "limit_reached"}
+                if not terminal:
+                    usage = self._collect_report_generation_usage(conn, task_row, report_row, now=now)
+                    conn.commit()
+                    return self._report_generation_write_result(report_row, generation, state, usage, claim=claim)
+                if report_row["status"] != "generating":
+                    usage = self._collect_report_generation_usage(conn, task_row, report_row, now=now)
+                    conn.commit()
+                    return self._report_generation_write_result(
+                        report_row, generation, state, usage, claim=claim, replayed=bool(claim.get("settled"))
+                    )
+                was_settled = bool(claim.get("settled"))
+                if not was_settled:
+                    claim["settled"] = True
+                    state = {
+                        "revision": int(state.get("revision", 0)) + 1,
+                        "stage": state.get("stage"),
+                        "rewrite_count": int(state.get("rewrite_count", 0)),
+                        "claims": claims,
+                        "limits": dict(state.get("limits", {})),
+                    }
+                    generation["store_state"] = state
+                    payload, _generation, _state = self._generation_json(report_row)
+                    payload["generation"] = generation
+                    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                    updated = conn.execute(
+                        "UPDATE research_reports SET report_json=? WHERE research_task_id=? AND report_version=? AND status='generating'",
+                        (serialized, research_task_id, int(report_version)),
+                    )
+                    if updated.rowcount != 1:
+                        raise ResearchReportGenerationStateConflict("report generation reservation changed concurrently")
+                    report_row = conn.execute(
+                        "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
+                        (research_task_id, int(report_version)),
+                    ).fetchone()
+                usage = self._collect_report_generation_usage(conn, task_row, report_row, now=now)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return self._report_generation_write_result(
+            report_row, generation, state, usage, claim=claim, replayed=was_settled
+        )
 
     def next_report_version(self, research_task_id: str, owner_id: str) -> int:
         """Return the next immutable Spec030 version for an owner-bound task."""
