@@ -6632,6 +6632,7 @@ class ResearchStore:
         "draft_saved": frozenset(),
         "failed": frozenset(),
     }
+    _REPORT_REASON_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
     _REPORT_CONTENT_KEYS = frozenset(
         {
             "schema_version",
@@ -7017,8 +7018,54 @@ class ResearchStore:
         budget["cost"] = None
         generation["budget"] = budget
 
-    @staticmethod
+    @classmethod
+    def _canonical_report_reason_codes(
+        cls, reason_codes: list[str] | tuple[str, ...] | None
+    ) -> list[str] | None:
+        if reason_codes is None:
+            return None
+        if not isinstance(reason_codes, (list, tuple)):
+            raise ValueError("reason_codes must be a list of stable code strings")
+        if len(reason_codes) > 32:
+            raise ValueError("reason_codes exceeds the 32-code limit")
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for code in reason_codes:
+            if not isinstance(code, str) or cls._REPORT_REASON_CODE_PATTERN.fullmatch(code) is None:
+                raise ValueError("reason_codes may contain only stable uppercase code values")
+            if code not in seen:
+                seen.add(code)
+                normalized.append(code)
+        return normalized
+
+    @classmethod
+    def _report_generation_reason_codes(cls, report_row: sqlite3.Row) -> list[str]:
+        try:
+            payload = json.loads(report_row["report_json"] or "{}")
+        except (TypeError, ValueError, KeyError):
+            return []
+        if not isinstance(payload, dict):
+            return []
+        generation = payload.get("generation")
+        quality_validation = payload.get("quality_validation")
+        candidates: list[Any] = []
+        if isinstance(quality_validation, dict) and isinstance(quality_validation.get("failure_codes"), list):
+            candidates.extend(quality_validation["failure_codes"])
+        if isinstance(payload.get("reason_codes"), list):
+            candidates.extend(payload["reason_codes"])
+        if isinstance(generation, dict):
+            candidates.append(generation.get("fallback_reason_code"))
+        return list(
+            dict.fromkeys(
+                code
+                for code in candidates
+                if isinstance(code, str) and cls._REPORT_REASON_CODE_PATTERN.fullmatch(code) is not None
+            )
+        )
+
+    @classmethod
     def _report_generation_write_result(
+        cls,
         report_row: sqlite3.Row,
         generation: dict[str, Any],
         state: dict[str, Any],
@@ -7039,6 +7086,7 @@ class ResearchStore:
             "remaining": dict(usage["remaining"]),
             "exhausted": list(usage["exhausted"]),
             "replayed": replayed,
+            "reason_codes": cls._report_generation_reason_codes(report_row),
         }
         if claim is not None:
             result.update(
@@ -7105,12 +7153,14 @@ class ResearchStore:
         rewrite_count: int,
         status: str | None = None,
         published: bool | None = None,
+        reason_codes: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
-        """CAS a server-owned stage/rewrite counter and optionally terminal status."""
+        """CAS stage/status and bounded diagnostic codes into the canonical report row."""
         if stage not in self._REPORT_GENERATION_STAGES:
             raise ValueError("invalid report generation stage")
         expected = self._nonnegative_int(expected_revision, "expected_revision")
         rewrite = self._nonnegative_int(rewrite_count, "rewrite_count")
+        normalized_reason_codes = self._canonical_report_reason_codes(reason_codes)
         if rewrite > 2:
             raise ValueError("rewrite_count exceeds the two-revision limit")
         if status is not None and status not in {"generating", "completed", "partial", "draft", "failed"}:
@@ -7128,11 +7178,16 @@ class ResearchStore:
                 current_rewrite = int(state.get("rewrite_count", 0))
                 target_status = status or str(report_row["status"])
                 target_published = generation.get("published", False) if published is None else published
+                current_reason_codes = self._canonical_report_reason_codes(payload.get("reason_codes", [])) or []
+                target_reason_codes = (
+                    current_reason_codes if normalized_reason_codes is None else normalized_reason_codes
+                )
                 same_state = (
                     current_stage == stage
                     and current_rewrite == rewrite
                     and target_status == str(report_row["status"])
                     and target_published == bool(generation.get("published", False))
+                    and target_reason_codes == current_reason_codes
                 )
                 if current_revision != expected:
                     if same_state:
@@ -7193,6 +7248,8 @@ class ResearchStore:
                 generation["store_state"] = state
                 if published is not None or status is not None:
                     generation["published"] = target_published
+                if normalized_reason_codes is not None:
+                    payload["reason_codes"] = normalized_reason_codes
                 payload["generation"] = generation
                 serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
                 updated = conn.execute(

@@ -546,6 +546,7 @@ def test_generation_state_uses_cas_and_rewrite_count_is_monotonic_and_bounded(tm
     )
     assert first["revision"] == duplicate["revision"] == 1
     assert duplicate["replayed"] is True
+    assert first["reason_codes"] == duplicate["reason_codes"] == []
 
     with pytest.raises(ResearchReportGenerationStateConflict):
         store.update_report_generation_state(
@@ -625,6 +626,189 @@ def test_generation_state_uses_cas_and_rewrite_count_is_monotonic_and_bounded(tm
             stage="drafting",
             rewrite_count=0,
         )
+
+
+def test_failed_report_persists_safe_reason_codes_and_preserves_budget_ledger(tmp_path):
+    store, reservation = _setup(tmp_path)
+    claim = _claim(store, reservation, loops=12, calls=20, seconds=60)
+    before = json.loads(claim["report"].report_json)
+
+    failed = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=claim["revision"],
+        stage="failed",
+        rewrite_count=0,
+        status="failed",
+        published=False,
+        reason_codes=["INSUFFICIENT_TRUSTED_EVIDENCE"],
+    )
+
+    saved = json.loads(failed["report"].report_json)
+    assert failed["reason_codes"] == ["INSUFFICIENT_TRUSTED_EVIDENCE"]
+    assert saved["reason_codes"] == ["INSUFFICIENT_TRUSTED_EVIDENCE"]
+    assert saved["generation"]["budget"] == before["generation"]["budget"]
+    assert saved["generation"]["store_state"]["claims"] == before["generation"]["store_state"]["claims"]
+    assert saved["generation"]["store_state"]["limits"] == before["generation"]["store_state"]["limits"]
+    assert store.get_report_generation_budget(TASK_ID, OWNER_ID, 1)["reason_codes"] == [
+        "INSUFFICIENT_TRUSTED_EVIDENCE"
+    ]
+
+
+def test_report_reason_codes_dedupe_and_participate_in_cas_replay(tmp_path):
+    store, reservation = _setup(tmp_path)
+    repeated = ["INSUFFICIENT_TRUSTED_EVIDENCE", "INSUFFICIENT_TRUSTED_EVIDENCE"]
+    first = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=0,
+        stage="failed",
+        rewrite_count=0,
+        status="failed",
+        published=False,
+        reason_codes=repeated,
+    )
+
+    replay = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=0,
+        stage="failed",
+        rewrite_count=0,
+        status="failed",
+        published=False,
+        reason_codes=repeated,
+    )
+
+    assert first["reason_codes"] == ["INSUFFICIENT_TRUSTED_EVIDENCE"]
+    assert replay["reason_codes"] == first["reason_codes"]
+    assert replay["revision"] == first["revision"] == 1
+    assert replay["replayed"] is True
+    with pytest.raises(ResearchReportGenerationStateConflict):
+        store.update_report_generation_state(
+            TASK_ID,
+            OWNER_ID,
+            reservation.report.report_version,
+            expected_revision=0,
+            stage="failed",
+            rewrite_count=0,
+            status="failed",
+            published=False,
+            reason_codes=["BUDGET_EXHAUSTED"],
+        )
+    with pytest.raises(ResearchReportGenerationStateConflict):
+        store.update_report_generation_state(
+            TASK_ID,
+            OWNER_ID,
+            reservation.report.report_version,
+            expected_revision=first["revision"],
+            stage="failed",
+            rewrite_count=0,
+            status="failed",
+            published=False,
+            reason_codes=["BUDGET_EXHAUSTED"],
+        )
+
+
+def test_legacy_state_updates_preserve_reason_codes_and_explicit_empty_clears_them(tmp_path):
+    store, reservation = _setup(tmp_path)
+    first = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=0,
+        stage="evidence_review",
+        rewrite_count=0,
+        reason_codes=["INSUFFICIENT_TRUSTED_EVIDENCE"],
+    )
+
+    legacy_update = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=first["revision"],
+        stage="comparison",
+        rewrite_count=0,
+    )
+    cleared = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=legacy_update["revision"],
+        stage="drafting",
+        rewrite_count=0,
+        reason_codes=[],
+    )
+
+    assert legacy_update["reason_codes"] == ["INSUFFICIENT_TRUSTED_EVIDENCE"]
+    assert cleared["reason_codes"] == []
+    assert json.loads(cleared["report"].report_json)["reason_codes"] == []
+
+
+@pytest.mark.parametrize(
+    "reason_codes",
+    [
+        "INSUFFICIENT_TRUSTED_EVIDENCE",
+        [1],
+        ["x" * 65],
+        ["ignore-instructions"],
+        [f"REASON_{number}" for number in range(33)],
+    ],
+)
+def test_report_reason_codes_reject_untrusted_types_and_unbounded_values(tmp_path, reason_codes):
+    store, reservation = _setup(tmp_path)
+
+    with pytest.raises(ValueError):
+        store.update_report_generation_state(
+            TASK_ID,
+            OWNER_ID,
+            reservation.report.report_version,
+            expected_revision=0,
+            stage="failed",
+            rewrite_count=0,
+            status="failed",
+            published=False,
+            reason_codes=reason_codes,
+        )
+
+    current = store.get_report_generation_budget(TASK_ID, OWNER_ID, 1)
+    assert current["revision"] == 0
+    assert current["report"].status == "generating"
+    assert current["reason_codes"] == []
+
+
+def test_report_reason_projection_deduplicates_quality_fallback_and_saved_codes(tmp_path):
+    store, reservation = _setup(tmp_path)
+    report_json = json.loads(reservation.report.report_json)
+    report_json["quality_validation"] = {"failure_codes": ["CJK_COUNT_BELOW_MINIMUM"]}
+    report_json["generation"]["fallback_reason_code"] = "BUDGET_EXHAUSTED"
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE research_reports SET report_json=? WHERE report_id=?",
+            (json.dumps(report_json), reservation.report.report_id),
+        )
+        connection.commit()
+
+    failed = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=0,
+        stage="failed",
+        rewrite_count=0,
+        status="failed",
+        published=False,
+        reason_codes=["INSUFFICIENT_TRUSTED_EVIDENCE", "BUDGET_EXHAUSTED"],
+    )
+
+    assert failed["reason_codes"] == [
+        "CJK_COUNT_BELOW_MINIMUM",
+        "INSUFFICIENT_TRUSTED_EVIDENCE",
+        "BUDGET_EXHAUSTED",
+    ]
 
 
 def test_generation_stage_and_revision_survive_store_reopen(tmp_path):

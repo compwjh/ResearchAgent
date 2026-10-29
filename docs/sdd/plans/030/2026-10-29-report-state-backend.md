@@ -41,7 +41,7 @@ get_report_generation_budget(
 update_report_generation_state(
     research_task_id, owner_id, report_version, *,
     expected_revision, stage, rewrite_count,
-    status=None, published=None,
+    status=None, published=None, reason_codes=None,
 ) -> dict
 
 claim_report_generation_budget(
@@ -108,3 +108,20 @@ New regression cases cover a terminal claimed AgentRun with missing `ended_at`, 
 ## Remaining boundary
 
 No whole-suite, live API, model/provider, runtime restoration, final artifact/message, or deployment validation was run; these belong to later Task 08 integration and acceptance. Store-owned `generation.store_state` must be reconciled with the strict public generation projection during that integration. The shared worktree also contains other agents' active changes; this handoff covers only the two code files named above and does not commit or alter the other work.
+
+## Follow-up — failed report diagnostic persistence
+
+The context handoff identified a no-body failure path (`INSUFFICIENT_TRUSTED_EVIDENCE`) that correctly terminalized the reserved report as `failed`, but the state CAS could not persist its safe reason code. `update_report_generation_state` now accepts optional `reason_codes: list[str] | tuple[str, ...] | None` and stores supplied codes in the existing report JSON top-level `reason_codes` field. `None` preserves legacy call behavior and existing codes; an explicit empty list clears them.
+
+Input is limited to 32 stable ASCII uppercase codes matching `[A-Z][A-Z0-9_]{0,63}`. Duplicate codes are deduplicated in order; natural-language text, prompt/body strings, malformed types, overlong codes, and oversized lists are rejected before entering the transaction. The CAS treats reason codes as part of the requested state: exact terminal replay returns without writing, while changing terminal reasons conflicts. The update retains `generation.store_state` and the budget ledger unchanged except for the normal revision increment.
+
+State and budget result projections expose a deduplicated `reason_codes` list from safe persisted codes, `quality_validation.failure_codes`, and `generation.fallback_reason_code`. Old reservations with no reason field project an empty list when no other code source exists. This is JSON persistence/projection only; no SQL column, API, or queue was added. The application remains responsible for choosing the appropriate stable diagnosis, such as `INSUFFICIENT_TRUSTED_EVIDENCE`.
+
+### Follow-up verification
+
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_generation_state.py` — exit 0, **31 passed**.
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/infrastructure/research_store.py tests/research/test_report_generation_state.py` — exit 0.
+- `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/infrastructure/research_store.py tests/research/test_report_generation_state.py` — exit 0, all checks passed.
+- `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` and `scripts/check_test_naming.py` — exit 0.
+
+No full suite, service startup, API integration, model, deployment, or Git operation was run.

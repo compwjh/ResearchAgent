@@ -51,3 +51,15 @@ I reproduced both cases with temporary SQLite databases and the test fixture hel
 - `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_generation_state.py` — exit 0, **22 passed**.
 
 **Current narrow re-review verdict: PASS — the terminal timestamp budget defect is closed. This does not validate runner/app integration or publication behavior.**
+
+## Reason-code state update re-review (2026-10-29)
+
+**Narrow re-review result: PASS.** The `update_report_generation_state(reason_codes=...)` addition safely validates, deduplicates, CAS-persists, and projects report reason codes while preserving the existing budget ledger.
+
+- `_canonical_report_reason_codes` accepts only a list/tuple of at most 32 strings matching the stable uppercase code pattern; each code is 1–64 characters. Duplicate input codes are collapsed in first-seen order. The read projection unions quality failure codes, persisted reason codes, and fallback reason code, filtering malformed values and deduplicating them.
+- The state transaction writes `reason_codes`, generation state, and report status together. Exact replay compares the normalized reason set; stale updates that change it conflict. Terminal reports allow only exact same-state replay.
+- A state update without `reason_codes` preserves existing values for legacy callers; `reason_codes=[]` explicitly clears them while the report remains generating. The state JSON rewrite preserves `generation.budget` and the `store_state` claims/limits arrays.
+- Independent temporary-store probe: a 64-character uppercase code was accepted and deduplicated; budget, claims, and limits matched byte-for-byte before/after the terminal transition; exact terminal replay returned `replayed=True` with unchanged revision. A 65-character code, newline/prompt-like value, lowercase/hyphenated value, empty string, and non-ASCII value were rejected without changing revision or report status.
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_generation_state.py` — exit 0, **31 passed**.
+
+**Current narrow re-review verdict: PASS — the reason-code state update, safe projection, CAS replay, terminal immutability, and ledger preservation meet the reviewed contract.** The earlier terminal-time accounting re-review remains PASS; this does not validate caller/UI integration.
