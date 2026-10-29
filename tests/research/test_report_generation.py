@@ -158,7 +158,9 @@ def test_report_generation_downgrades_stale_fulltext_after_revalidation(tmp_path
 
     result = ReportGenerationService(store).generate("task-fulltext-report", "owner-1")
 
-    assert result["report"]["status"] == "partial"
+    assert result["report"]["status"] == "draft"
+    assert result["report"]["quality_validation"]["status"] == "unvalidated"
+    assert result["report"]["published"] is False
     assert result["report"]["evidence"][0]["status"] == "revalidation_required"
     assert result["report"]["citation_manifest"]["citations"] == []
     assert result["report"]["cells"][0]["relation"] == "missing"

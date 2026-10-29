@@ -82,6 +82,11 @@ _INFLIGHT: set[str] = set()
 _REPORT_RECOVERY_LOCK = threading.Lock()
 _REPORT_RECOVERY_INFLIGHT: set[tuple[str, int]] = set()
 
+# Fresh report-only HTTP submissions share the existing executor and are
+# independently deduplicated from whole-task and startup-recovery work.
+_REPORT_SUBMISSION_LOCK = _REPORT_RECOVERY_LOCK
+_REPORT_SUBMISSION_INFLIGHT = _REPORT_RECOVERY_INFLIGHT
+
 
 class ResearchServiceError(Exception):
     """服务层稳定错误：code 必须来自 ``contracts.ERROR_CODES``。"""
@@ -712,16 +717,176 @@ class ResearchService:
                     payload={"report_version": task.current_plan_version, "error_code": "STARTUP_AUDIT_INTERRUPTED"},
                     idempotency_key=f"research-report:{task.research_task_id}:{task.current_plan_version}:interrupted",
                 )
-        for task in self._store.list_tasks_for_status("interrupted"):
-            self._schedule_interrupted_report_recovery(task)
+        for status in TASK_TERMINAL:
+            for task in self._store.list_tasks_for_status(status):
+                self._schedule_interrupted_report_recovery(task)
         return count
+
+    def submit_report_only_generation(self, *, owner_id: str, session, reservation) -> bool:
+        """Submit one durable report reservation to the existing executor.
+
+        The linked ResearchTask is already terminal and is never reopened.
+        Replays of queued/running work share the same reservation; a process
+        local guard prevents one worker from being submitted twice.
+        """
+        report = getattr(reservation, "report", None)
+        item = getattr(reservation, "work_item", None)
+        if report is None or item is None or getattr(report, "status", None) != "generating":
+            return False
+        if (
+            getattr(item, "research_task_id", None) != report.research_task_id
+            or getattr(item, "plan_version", None) != report.plan_version
+            or getattr(item, "task_type", None) != "synthesize_preliminary_report"
+            or getattr(item, "role", None) != "synthesizer"
+            or getattr(item, "status", None) not in {"queued", "running", "interrupted", "completed"}
+            or getattr(session, "owner_id", None) != owner_id
+            or getattr(session, "research_task_id", None) != report.research_task_id
+        ):
+            return False
+        payload = self._report_payload(report)
+        generation = payload.get("generation") if isinstance(payload, dict) else None
+        request_key = generation.get("request_key") if isinstance(generation, dict) else None
+        if (
+            not isinstance(generation, dict)
+            or payload.get("report_id") != report.report_id
+            or payload.get("report_version") != report.report_version
+            or generation.get("report_version") != report.report_version
+            or generation.get("plan_version") != report.plan_version
+            or generation.get("work_item_id") != item.work_item_id
+            or not isinstance(request_key, str)
+        ):
+            return False
+        task_id = report.research_task_id
+        key = (task_id, int(report.report_version))
+        with _REPORT_SUBMISSION_LOCK:
+            if key in _REPORT_SUBMISSION_INFLIGHT:
+                return False
+            _REPORT_SUBMISSION_INFLIGHT.add(key)
+        try:
+            if item.status in {"interrupted", "completed"}:
+                # A canonical row can remain generating if the prior runtime
+                # completed/was interrupted before the Orchestrator saved its
+                # output. Rebind the same report reservation and preserve its
+                # budget/revision ledger; never reopen the predecessor row.
+                from uuid import NAMESPACE_URL, uuid5
+
+                successor_id = uuid5(
+                    NAMESPACE_URL,
+                    f"research-report-successor:{task_id}:{report.report_version}:{item.work_item_id}",
+                ).hex
+                reservation = self._store.rebind_report_generation_successor(
+                    task_id,
+                    owner_id,
+                    int(report.report_version),
+                    expected_work_item_id=item.work_item_id,
+                    successor_work_item_id=successor_id,
+                    request_key=request_key,
+                    plan_version=int(report.plan_version),
+                )
+                item = reservation.work_item
+            if item.status != "queued":
+                with _REPORT_SUBMISSION_LOCK:
+                    _REPORT_SUBMISSION_INFLIGHT.discard(key)
+                return False
+            self._executor.submit(
+                self._run_report_only_generation,
+                task_id,
+                owner_id,
+                session.research_session_id,
+                int(report.report_version),
+                request_key,
+                item.work_item_id,
+            )
+        except Exception:
+            with _REPORT_SUBMISSION_LOCK:
+                _REPORT_SUBMISSION_INFLIGHT.discard(key)
+            raise
+        return True
+
+    @staticmethod
+    def _report_payload(report) -> dict:
+        try:
+            payload = json.loads(getattr(report, "report_json", "{}") or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _run_report_only_generation(
+        self,
+        task_id: str,
+        owner_id: str,
+        session_id: str,
+        report_version: int,
+        request_key: str,
+        work_item_id: str,
+    ) -> None:
+        """CAS a queued synthesis item to running and invoke the report-only wrapper."""
+        key = (task_id, report_version)
+        try:
+            task = self._store.get_task(task_id, owner_id)
+            session = self._store.get_session_by_task(task_id, owner_id)
+            reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+            reservation = (
+                reservation_reader(task_id, owner_id, request_key=request_key)
+                if callable(reservation_reader) else None
+            )
+            report = getattr(reservation, "report", None)
+            item = getattr(reservation, "work_item", None)
+            if (
+                task is None
+                or task.status not in TASK_TERMINAL
+                or session is None
+                or session.research_session_id != session_id
+                or report is None
+                or report.status != "generating"
+                or report.research_task_id != task_id
+                or report.report_version != report_version
+                or report.plan_version != task.current_plan_version
+                or reservation is None
+                or item is None
+                or item.work_item_id != work_item_id
+                or item.status != "queued"
+                or item.task_type != "synthesize_preliminary_report"
+                or item.role != "synthesizer"
+                or item.plan_version != report.plan_version
+            ):
+                return
+            orchestrator = self._orchestrator()
+            report_only = getattr(orchestrator, "run_report_only_generation", None)
+            if not callable(report_only):
+                logger.error("report-only Orchestrator wrapper is unavailable: task=%s version=%s", task_id, report_version)
+                return
+            running_item = self._store.update_work_item_status(
+                work_item_id, "running", attempt=max(1, int(item.attempt)),
+            )
+            reservation = reservation_reader(task_id, owner_id, request_key=request_key)
+            if (
+                reservation is None
+                or reservation.report.report_id != report.report_id
+                or reservation.work_item.work_item_id != work_item_id
+                or reservation.work_item.status != "running"
+            ):
+                return
+            report_only(
+                task=task,
+                owner_id=owner_id,
+                session=session,
+                report=reservation.report,
+                work_item=running_item,
+                reservation=reservation,
+            )
+        except Exception:
+            logger.exception("report-only generation worker failed: task=%s report_version=%s", task_id, report_version)
+        finally:
+            with _REPORT_SUBMISSION_LOCK:
+                _REPORT_SUBMISSION_INFLIGHT.discard(key)
 
     def _schedule_interrupted_report_recovery(self, task) -> None:
         """Resume a generating report on a report-only successor WorkItem.
 
-        The ResearchTask stays terminal.  This is a narrow restart seam for a
-        durable canonical report reservation, not a retry of whole-task
-        orchestration or a reopening of its interrupted WorkItem.
+        The ResearchTask stays in its existing terminal status. This is a
+        narrow restart seam for a durable canonical reservation, not a retry
+        of whole-task orchestration or a reopening of its terminal WorkItem.
         """
         task_id = getattr(task, "research_task_id", None)
         owner_id = getattr(task, "owner_id", None)
@@ -729,7 +894,7 @@ class ResearchService:
             return
         try:
             current_task = self._store.get_task(task_id, owner_id)
-            if current_task is None or current_task.status != "interrupted":
+            if current_task is None or current_task.status not in TASK_TERMINAL:
                 return
             session = self._store.get_session_by_task(task_id, owner_id)
             if session is None:
@@ -784,13 +949,15 @@ class ResearchService:
                     or getattr(work_item, "role", None) != "synthesizer"
                 ):
                     continue
+                recovery_key = (task_id, report_version)
+                with _REPORT_RECOVERY_LOCK:
+                    if recovery_key in _REPORT_RECOVERY_INFLIGHT:
+                        continue
                 if report.status == "completed":
                     if work_item.status == "running":
                         # A report-only worker can publish the canonical CAS
-                        # while the Task is already interrupted, then crash
-                        # before its final delivery step.  Keep the bound row
-                        # terminal and finalize directly; no successor/model
-                        # run is needed for an already-published canonical.
+                        # then crash before its final delivery step. Keep the
+                        # ResearchTask terminal and finalize without a model run.
                         work_item = self._store.update_work_item_status(
                             work_item.work_item_id, "interrupted",
                         )
@@ -826,8 +993,8 @@ class ResearchService:
                     return
                 if work_item.status == "running":
                     # A prior report-only worker may have died while the Task
-                    # was already terminal.  Startup owns this interrupted
-                    # Task, so close its stale live item before rebinding.
+                    # was terminal. Close the stale live item before rebinding;
+                    # the in-flight guard above protects active executor work.
                     work_item = self._store.update_work_item_status(
                         work_item.work_item_id, "interrupted",
                     )
@@ -904,7 +1071,7 @@ class ResearchService:
             work_item = getattr(reservation, "work_item", None)
             if (
                 task is None
-                or task.status != "interrupted"
+                or task.status not in TASK_TERMINAL
                 or session is None
                 or session.research_session_id != session_id
                 or report is None
@@ -918,11 +1085,19 @@ class ResearchService:
             running_item = self._store.update_work_item_status(
                 work_item_id, "running", attempt=max(1, int(work_item.attempt)),
             )
-            self._orchestrator().resume_report_quality_generation(
+            reservation = reservation_reader(task_id, owner_id, request_key=request_key)
+            if (
+                reservation is None
+                or reservation.report.report_id != report.report_id
+                or reservation.work_item.work_item_id != work_item_id
+                or reservation.work_item.status != "running"
+            ):
+                return
+            self._orchestrator().run_report_only_generation(
                 task=task,
                 owner_id=owner_id,
                 session=session,
-                report=report,
+                report=reservation.report,
                 work_item=running_item,
                 reservation=reservation,
             )
@@ -964,7 +1139,7 @@ class ResearchService:
             work_item = getattr(reservation, "work_item", None)
             if (
                 task is None
-                or task.status != "interrupted"
+                or task.status not in TASK_TERMINAL
                 or session is None
                 or session.research_session_id != session_id
                 or report is None

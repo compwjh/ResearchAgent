@@ -371,6 +371,17 @@ def _selected_candidates(candidates):
     } for item in candidates]
 
 
+def _report_work_item_input(candidates):
+    selected = _selected_candidates(candidates)
+    return {
+        "validated_candidates": selected,
+        "citation_allowlist": [
+            {"citation_ref": ref, "candidate_id": item["candidate_id"]}
+            for item in selected for ref in item["evidence_refs"]
+        ],
+    }
+
+
 def test_report_quality_context_allows_password_and_token_security_topics(tmp_path):
     store, catalog_store, task, work_item, candidates = _seed_report_context(
         tmp_path,
@@ -627,6 +638,48 @@ def test_report_quality_body_fails_when_fewer_than_five_papers_have_trusted_evid
     )
     assert json.loads(persisted.report_json)["reason_codes"] == ["INSUFFICIENT_TRUSTED_EVIDENCE"]
     assert store.get_work_item(running.work_item_id).status == "running"
+
+
+def test_report_quality_body_persists_safe_matrix_persistence_diagnostic(tmp_path):
+    store, catalog_store, task, _work_item, candidates = _seed_report_context(
+        tmp_path, persist_matrix=False,
+    )
+    reservation, running = _reserve_running_report(
+        store, task, request_key="c5b06cd7-7e8e-40ec-88d2-21c066d6bd7f",
+        request_payload={"plan_version": 1, "purpose": "matrix-persistence-diagnostic"},
+    )
+    matrix_diagnostic = {
+        "matrix_error_code": "MATRIX_ID_CONFLICT",
+        "rule_id": "matrix.persistence.claim_id_conflict",
+        "field_paths": ["claims[].claim_id"],
+        "raw_model_text": "do not persist this field",
+    }
+    orchestrator = _orchestrator_with_frozen_candidates(store, catalog_store)
+
+    result = orchestrator._generate_report_quality_body(
+        task=task,
+        owner_id="owner",
+        work_item=running,
+        selected_candidates=_selected_candidates(candidates),
+        reservation=reservation,
+        session_id="unused-matrix-persistence-diagnostic",
+        matrix_diagnostic=matrix_diagnostic,
+    )
+
+    safe_diagnostic = {
+        "matrix_error_code": "MATRIX_ID_CONFLICT",
+        "rule_id": "matrix.persistence.claim_id_conflict",
+        "field_paths": ["claims[].claim_id"],
+    }
+    assert result["status"] == "failed"
+    assert result["diagnostic"]["code"] == "MATRIX_NOT_READY"
+    assert result["diagnostic"]["matrix_diagnostic"] == safe_diagnostic
+    assert "raw_model_text" not in json.dumps(result)
+    persisted = store.get_research_report(
+        task.research_task_id, "owner", report_version=reservation.report.report_version,
+    )
+    payload = json.loads(persisted.report_json)
+    assert payload["reason_codes"] == ["MATRIX_NOT_READY", "MATRIX_ID_CONFLICT"]
 
 
 def test_report_quality_body_reports_recoverable_state_when_progress_cannot_be_read(tmp_path):
@@ -945,7 +998,7 @@ def test_agent_work_item_resumes_saved_canonical_delivery_without_model_rerun(tm
             "plan_version": 1, "selected_paper_ids": [item["paper_id"] for item in candidates],
             "schema_version": "report-quality-v1",
         },
-        work_item_input={"validated_candidates": _selected_candidates(candidates)},
+        work_item_input=_report_work_item_input(candidates),
     )
     running = store.update_work_item_status(
         reservation.work_item.work_item_id, "running", attempt=1,
@@ -1022,7 +1075,7 @@ def test_startup_recovery_uses_successor_without_reopening_task(
             "plan_version": 1, "selected_paper_ids": [item["paper_id"] for item in candidates],
             "schema_version": "report-quality-v1",
         },
-        work_item_input={"validated_candidates": _selected_candidates(candidates)},
+        work_item_input=_report_work_item_input(candidates),
     )
     original = store.update_work_item_status(
         reservation.work_item.work_item_id, "running", attempt=1,
@@ -1121,7 +1174,7 @@ def test_startup_recovery_reuses_historical_runtime_checkpoint(
             "plan_version": 1, "selected_paper_ids": [item["paper_id"] for item in candidates],
             "schema_version": "report-quality-v1",
         },
-        work_item_input={"validated_candidates": _selected_candidates(candidates)},
+        work_item_input=_report_work_item_input(candidates),
     )
     original = store.update_work_item_status(
         reservation.work_item.work_item_id, "running", attempt=1,
@@ -1187,7 +1240,8 @@ def test_startup_recovery_reuses_historical_runtime_checkpoint(
     )} == {"markdown", "html", "citation_manifest"}
 
 
-def test_startup_recovery_finalizes_published_canonical_from_terminal_work_item(tmp_path):
+@pytest.mark.parametrize("terminal_status", ["completed", "partial", "failed", "cancelled", "interrupted"])
+def test_startup_recovery_finalizes_published_canonical_from_terminal_work_item(tmp_path, terminal_status):
     store, catalog_store, task, _unused_item, candidates = _seed_report_context(tmp_path)
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     memory.create_conversation("owner", conversation_id="conversation")
@@ -1209,7 +1263,7 @@ def test_startup_recovery_finalizes_published_canonical_from_terminal_work_item(
             "plan_version": 1, "selected_paper_ids": [item["paper_id"] for item in candidates],
             "schema_version": "report-quality-v1",
         },
-        work_item_input={"validated_candidates": _selected_candidates(candidates)},
+        work_item_input=_report_work_item_input(candidates),
     )
     original = store.update_work_item_status(
         reservation.work_item.work_item_id, "running", attempt=1,
@@ -1263,8 +1317,8 @@ def test_startup_recovery_finalizes_published_canonical_from_terminal_work_item(
         reason_codes=[],
     )
     assert store.update_task_status(
-        task.research_task_id, "owner", "interrupted",
-    ).status == "interrupted"
+        task.research_task_id, "owner", terminal_status,
+    ).status == terminal_status
     assert store.get_work_item(original.work_item_id).status == "running"
 
     class _InlineExecutor:
@@ -1280,7 +1334,17 @@ def test_startup_recovery_finalizes_published_canonical_from_terminal_work_item(
     current_reservation = store.get_report_generation_reservation(
         task.research_task_id, "owner", request_key="c5b06cd7-7e8e-40ec-88d2-21c066d6d697",
     )
-    assert store.get_task(task.research_task_id, "owner").status == "interrupted"
+    current_task = store.get_task(task.research_task_id, "owner")
+    finalized = orchestrator.finalize_interrupted_canonical_report(
+        task=current_task,
+        owner_id="owner",
+        session=session,
+        report=current_report,
+        reservation=current_reservation,
+    )
+    assert finalized.status == terminal_status
+    assert finalized.error_code is None
+    assert current_task.status == terminal_status
     assert current_reservation.work_item.work_item_id == original.work_item_id
     assert current_reservation.work_item.status == "interrupted"
     assert current_report.status == "completed"
@@ -1426,6 +1490,299 @@ def test_report_quality_body_claims_budget_revises_and_saves_with_reserved_repor
     assert all(run_input.budget_snapshot["tool_calls"] == 0 for run_input in run_inputs)
     if keep_failing:
         assert canonical_json["reason_codes"] == ["CJK_COUNT_BELOW_MINIMUM"]
+
+
+@pytest.mark.parametrize(
+    "terminal_status", ["completed", "partial", "failed", "cancelled", "interrupted"],
+)
+def test_report_only_generation_preserves_terminal_task_and_closes_only_successor(
+    tmp_path, monkeypatch, terminal_status,
+):
+    store, catalog_store, task, _unused_item, candidates = _seed_report_context(tmp_path)
+    task = store.update_task_status(task.research_task_id, "owner", terminal_status)
+    session_id = f"session-report-only-{terminal_status}"
+    _create_runtime_session(store, task, session_id)
+    selected = [
+        {
+            "candidate_id": item["paper_id"],
+            "evidence_refs": [item["abstract_ref"]],
+            "title": item["title"],
+            "abstract": item["abstract"],
+            "verified": True,
+        }
+        for item in candidates
+    ]
+    request_key = str(uuid5(NAMESPACE_URL, f"report-only-{terminal_status}"))
+    reservation = store.reserve_report_generation(
+        task.research_task_id,
+        "owner",
+        plan_version=1,
+        request_key=request_key,
+        request_payload={"plan_version": 1, "purpose": "report-only-generation"},
+        work_item_input={
+            "validated_candidates": selected,
+            "citation_allowlist": [
+                {"citation_ref": ref, "candidate_id": item["candidate_id"]}
+                for item in selected for ref in item["evidence_refs"]
+            ],
+        },
+    )
+    store.update_work_item_status(reservation.work_item.work_item_id, "running", attempt=1)
+    reservation = store.get_report_generation_reservation(
+        task.research_task_id, "owner", request_key=request_key,
+    )
+    session = store.get_session_by_task(task.research_task_id, "owner")
+    assert reservation is not None and reservation.work_item.status == "running"
+    assert session is not None
+
+    papers = [item["paper_id"] for item in candidates]
+    low_quality = _quality_report_content(papers, cjk_repetitions=10)
+    passing = _quality_report_content(papers)
+    run_stages = []
+
+    def fake_runner(run_input):
+        marker = run_input.work_item_input["report_quality_context"]
+        run_stages.append(marker["stage"])
+        content = low_quality if marker["stage"] == "comparison" else passing
+        store.create_agent_run(AgentRun(
+            run_input.agent_run_id, session_id, run_input.attempt,
+            "synthesizer", "research-report-synthesis", "1", "probe-hash", "probe-model",
+            "off", "[]", provider="test", status="completed",
+            research_task_id=task.research_task_id,
+            work_item_id=reservation.work_item.work_item_id,
+            started_at="2026-10-29T00:00:00Z", ended_at="2026-10-29T00:00:01Z",
+            owner_id="owner",
+        ), owner_id="owner")
+        return SimpleNamespace(
+            status="completed",
+            output_json={
+                "schema_version": "runtime-v1",
+                "report_version": run_input.work_item_input["report_version"],
+                "report_content": content,
+            },
+            model_metadata={"provider": "test", "model": "probe-model"},
+            agent_run_id=run_input.agent_run_id,
+        )
+
+    orchestrator = Orchestrator(
+        store=store,
+        search_adapter=SimpleNamespace(_store=catalog_store),
+        probe=object(),
+        agent_runner=SimpleNamespace(run=fake_runner),
+    )
+
+    def publish_same_canonical(*, task, owner_id, reservation, rendered, **_kwargs):
+        assert task.research_task_id == task_id
+        assert owner_id == "owner"
+        assert rendered["report"]["report_content"] == passing
+        report_version = reservation.report.report_version
+        progress = store.get_report_generation_budget(task_id, owner_id, report_version)
+        store.update_report_generation_state(
+            task_id, owner_id, report_version,
+            expected_revision=progress["revision"], stage="published",
+            rewrite_count=progress["rewrite_count"], status="completed",
+            published=True, reason_codes=[],
+        )
+        return {"status": "completed", "delivery": {"artifact_ids": ["report-markdown"]}}
+
+    task_id = task.research_task_id
+    monkeypatch.setattr(orchestrator, "_publish_report_quality_canonical", publish_same_canonical)
+    monkeypatch.setattr(
+        EvidenceMatrixService,
+        "build_matrix",
+        lambda *_args, **_kwargs: pytest.fail("report-only generation must reuse the persisted matrix"),
+    )
+
+    result = orchestrator.run_report_only_generation(
+        task=task,
+        owner_id="owner",
+        session=session,
+        report=reservation.report,
+        work_item=reservation.work_item,
+        reservation=reservation,
+    )
+
+    current_task = store.get_task(task_id, "owner")
+    current_item = store.get_work_item(reservation.work_item.work_item_id)
+    current_report = store.get_research_report(
+        task_id, "owner", report_version=reservation.report.report_version,
+    )
+    assert result.status == terminal_status
+    assert result.error_code is None
+    assert current_task.status == terminal_status
+    assert current_item.status == "completed"
+    assert current_item.error_code is None
+    assert current_report.status == "completed"
+    assert run_stages == ["comparison", "drafting"]
+    assert result.report_id == reservation.report.report_id
+
+
+def test_report_only_generation_keeps_task_terminal_and_interrupts_pending_delivery(tmp_path, monkeypatch):
+    store, catalog_store, task, _unused_item, candidates = _seed_report_context(tmp_path)
+    task = store.update_task_status(task.research_task_id, "owner", "partial")
+    session_id = "session-report-only-pending"
+    _create_runtime_session(store, task, session_id)
+    selected = [
+        {
+            "candidate_id": item["paper_id"],
+            "evidence_refs": [item["abstract_ref"]],
+            "title": item["title"],
+            "abstract": item["abstract"],
+            "verified": True,
+        }
+        for item in candidates
+    ]
+    request_key = str(uuid5(NAMESPACE_URL, "report-only-pending"))
+    reservation = store.reserve_report_generation(
+        task.research_task_id,
+        "owner",
+        plan_version=1,
+        request_key=request_key,
+        request_payload={"plan_version": 1, "purpose": "pending-delivery"},
+        work_item_input={
+            "validated_candidates": selected,
+            "citation_allowlist": [
+                {"citation_ref": ref, "candidate_id": item["candidate_id"]}
+                for item in selected for ref in item["evidence_refs"]
+            ],
+        },
+    )
+    store.update_work_item_status(reservation.work_item.work_item_id, "running", attempt=1)
+    reservation = store.get_report_generation_reservation(
+        task.research_task_id, "owner", request_key=request_key,
+    )
+    session = store.get_session_by_task(task.research_task_id, "owner")
+    assert reservation is not None and session is not None
+    papers = [item["paper_id"] for item in candidates]
+    passing = _quality_report_content(papers)
+
+    def fake_runner(run_input):
+        store.create_agent_run(AgentRun(
+            run_input.agent_run_id, session_id, run_input.attempt,
+            "synthesizer", "research-report-synthesis", "1", "probe-hash", "probe-model",
+            "off", "[]", provider="test", status="completed",
+            research_task_id=task.research_task_id,
+            work_item_id=reservation.work_item.work_item_id,
+            started_at="2026-10-29T00:00:00Z", ended_at="2026-10-29T00:00:01Z",
+            owner_id="owner",
+        ), owner_id="owner")
+        return SimpleNamespace(
+            status="completed",
+            output_json={
+                "schema_version": "runtime-v1",
+                "report_version": run_input.work_item_input["report_version"],
+                "report_content": passing,
+            },
+            model_metadata={"provider": "test", "model": "probe-model"},
+            agent_run_id=run_input.agent_run_id,
+        )
+
+    orchestrator = Orchestrator(
+        store=store,
+        search_adapter=SimpleNamespace(_store=catalog_store),
+        probe=object(),
+        agent_runner=SimpleNamespace(run=fake_runner),
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_publish_report_quality_canonical",
+        lambda **_kwargs: {
+            "status": "generating",
+            "diagnostic": {"code": "REPORT_DELIVERY_PENDING", "reason_code": "ARTIFACT_NOT_READY"},
+        },
+    )
+
+    result = orchestrator.run_report_only_generation(
+        task=task,
+        owner_id="owner",
+        session=session,
+        report=reservation.report,
+        work_item=reservation.work_item,
+        reservation=reservation,
+    )
+
+    current_task = store.get_task(task.research_task_id, "owner")
+    current_item = store.get_work_item(reservation.work_item.work_item_id)
+    current_report = store.get_research_report(
+        task.research_task_id, "owner", report_version=reservation.report.report_version,
+    )
+    assert result.status == "partial"
+    assert result.error_code == "ARTIFACT_NOT_READY"
+    assert current_task.status == "partial"
+    assert current_item.status == "interrupted"
+    assert current_item.error_code == "ARTIFACT_NOT_READY"
+    assert current_report.status == "generating"
+
+
+def test_report_only_generation_fails_bound_report_when_five_trusted_evidence_are_unavailable(tmp_path):
+    store, catalog_store, task, _unused_item, candidates = _seed_report_context(
+        tmp_path, trusted_paper_count=4,
+    )
+    task = store.update_task_status(task.research_task_id, "owner", "completed")
+    session_id = "session-report-only-insufficient-evidence"
+    _create_runtime_session(store, task, session_id)
+    selected = [
+        {
+            "candidate_id": item["paper_id"],
+            "evidence_refs": [item["abstract_ref"]],
+            "title": item["title"],
+            "abstract": item["abstract"],
+            "verified": True,
+        }
+        for item in candidates
+    ]
+    request_key = str(uuid5(NAMESPACE_URL, "report-only-insufficient-evidence"))
+    reservation = store.reserve_report_generation(
+        task.research_task_id,
+        "owner",
+        plan_version=1,
+        request_key=request_key,
+        request_payload={"plan_version": 1, "purpose": "insufficient-trusted-evidence"},
+        work_item_input={
+            "validated_candidates": selected,
+            "citation_allowlist": [
+                {"citation_ref": ref, "candidate_id": item["candidate_id"]}
+                for item in selected for ref in item["evidence_refs"]
+            ],
+        },
+    )
+    store.update_work_item_status(reservation.work_item.work_item_id, "running", attempt=1)
+    reservation = store.get_report_generation_reservation(
+        task.research_task_id, "owner", request_key=request_key,
+    )
+    session = store.get_session_by_task(task.research_task_id, "owner")
+    assert reservation is not None and session is not None
+
+    def unexpected_model_call(_run_input):
+        pytest.fail("report generation must fail before calling a model without five trusted Evidence items")
+
+    orchestrator = Orchestrator(
+        store=store,
+        search_adapter=SimpleNamespace(_store=catalog_store),
+        probe=object(),
+        agent_runner=SimpleNamespace(run=unexpected_model_call),
+    )
+
+    result = orchestrator.run_report_only_generation(
+        task=task,
+        owner_id="owner",
+        session=session,
+        report=reservation.report,
+        work_item=reservation.work_item,
+        reservation=reservation,
+    )
+
+    current_task = store.get_task(task.research_task_id, "owner")
+    current_item = store.get_work_item(reservation.work_item.work_item_id)
+    current_report = store.get_research_report(
+        task.research_task_id, "owner", report_version=reservation.report.report_version,
+    )
+    assert result.status == "completed"
+    assert result.error_code == "INSUFFICIENT_TRUSTED_EVIDENCE"
+    assert current_task.status == "completed"
+    assert current_item.status == "failed"
+    assert current_item.error_code == "INSUFFICIENT_TRUSTED_EVIDENCE"
+    assert current_report.status == "failed"
 
 
 def test_synthesis_dispatch_uses_run_local_budget_after_prior_matrix_run(tmp_path, monkeypatch):

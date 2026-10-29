@@ -501,6 +501,21 @@ def test_interrupted_report_reservation_rebinds_same_version_and_preserves_ledge
     assert json.loads(next_rebound.report.report_json)["generation"]["store_state"] == before_payload["generation"]["store_state"]
 
 
+@pytest.mark.parametrize("task_status", ["partial", "completed", "failed", "cancelled"])
+def test_report_successor_rebind_preserves_any_terminal_task_status(tmp_path, task_status):
+    store, reservation = _setup(tmp_path)
+    store.update_task_status(TASK_ID, OWNER_ID, task_status)
+    _interrupt_reservation_work_item(store, reservation)
+
+    rebound = _rebind_report_successor(store, reservation, f"successor-{task_status}")
+
+    assert rebound.report.report_id == reservation.report.report_id
+    assert rebound.report.report_version == reservation.report.report_version == 1
+    assert rebound.work_item.work_item_id == f"successor-{task_status}"
+    assert rebound.work_item.status == "queued"
+    assert store.get_task(TASK_ID, OWNER_ID).status == task_status
+
+
 def test_completed_runtime_work_item_rebinds_without_reopening_its_checkpoint_owner(tmp_path):
     store, reservation = _setup(tmp_path)
     claim = store.claim_report_generation_budget(

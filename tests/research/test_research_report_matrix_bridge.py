@@ -17,6 +17,7 @@ from backend.app.research.application.agent_runtime import AgentRunOutput
 from backend.app.research.application.evidence_matrix import EvidenceMatrixService
 from backend.app.research.application.orchestrator import (
     Orchestrator,
+    _matrix_persistence_diagnostic,
     _separate_synthesis_matrix,
     _validate_synthesis_matrix_payload,
 )
@@ -119,8 +120,8 @@ def _payload(paper_ids: list[str] | None = None) -> dict:
     }
 
 
-def _quality_report_content(paper_ids: list[str]) -> dict:
-    evidence_ids = [f"evidence-{index}" for index in range(1, 6)]
+def _quality_report_content(paper_ids: list[str], *, evidence_ids: list[str] | None = None) -> dict:
+    evidence_ids = evidence_ids or [f"evidence-{index}" for index in range(1, 6)]
     paper_analyses = []
     for index, paper_id in enumerate(paper_ids):
         paper_analyses.append({
@@ -244,12 +245,132 @@ def test_separate_synthesis_matrix_strips_runtime_work_item_binding() -> None:
     payload["evidence_matrix"] = _payload()
     payload["output_hash"] = report_output_hash(payload)
 
-    artifact, matrix, error = _separate_synthesis_matrix(payload, _context(), plan_version=1)
+    artifact, matrix, error, diagnostic = _separate_synthesis_matrix(
+        payload, _context(), research_task_id="task-syn", plan_version=1,
+    )
 
     assert error is None
+    assert diagnostic is None
     assert matrix is not None
+    assert matrix["claims"][0]["claim_id"] != "claim-1"
+    assert matrix["evidence"][0]["evidence_id"] != "evidence-1"
     assert artifact.get("work_item_id") is None
     assert artifact["output_hash"] == report_output_hash(artifact)
+
+
+def _synthesis_envelope_with_matrix(matrix: dict) -> dict:
+    result = ReportSynthesizer().synthesize(
+        report_version=1,
+        validated_candidates=[{
+            "candidate_id": "paper-a", "verified": True,
+            "evidence_refs": ["catalog:paper-a"], "title": "A",
+        }],
+        citation_manifest=[{"citation_ref": "catalog:paper-a", "candidate_id": "paper-a"}],
+    )
+    payload = result.output.model_dump(mode="json")
+    payload["evidence_matrix"] = matrix
+    payload["work_item_id"] = "task:syn"
+    payload["output_hash"] = report_output_hash(payload)
+    return payload
+
+
+def test_matrix_ids_are_task_plan_scoped_and_replay_idempotently(tmp_path) -> None:
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    task_ids = ["task-matrix-alpha", "task-matrix-beta"]
+    for task_id in task_ids:
+        store.create_task(ResearchTask(
+            task_id, "owner", "conversation", "goal", "en", "balanced", False,
+            1, 60, "running", 1, "", "",
+        ))
+        store.replace_selections(
+            task_id,
+            [ResearchPaperSelection(task_id, "paper-a", 1.0, "[]", "abstract", "")],
+        )
+
+    bound_matrices = {}
+    for task_id in task_ids:
+        _, matrix, error, diagnostic = _separate_synthesis_matrix(
+            _synthesis_envelope_with_matrix(_payload()),
+            _context(),
+            research_task_id=task_id,
+            plan_version=1,
+        )
+        assert error is None
+        assert diagnostic is None
+        assert matrix is not None
+        bound_matrices[task_id] = matrix
+        EvidenceMatrixService(store).build_matrix(
+            task_id,
+            "owner",
+            plan_version=1,
+            dimensions=matrix["dimensions"],
+            claims=matrix["claims"],
+            evidence=matrix["evidence"],
+            cells=matrix["cells"],
+        )
+
+    alpha_claim_id = bound_matrices[task_ids[0]]["claims"][0]["claim_id"]
+    beta_claim_id = bound_matrices[task_ids[1]]["claims"][0]["claim_id"]
+    alpha_evidence_id = bound_matrices[task_ids[0]]["evidence"][0]["evidence_id"]
+    beta_evidence_id = bound_matrices[task_ids[1]]["evidence"][0]["evidence_id"]
+    assert alpha_claim_id != beta_claim_id
+    assert alpha_evidence_id != beta_evidence_id
+    assert bound_matrices[task_ids[0]]["claims"][0]["statement"] == _payload()["claims"][0]["statement"]
+    assert bound_matrices[task_ids[0]]["claims"][0]["evidence_ids"] == [alpha_evidence_id]
+    assert bound_matrices[task_ids[0]]["evidence"][0]["claim_id"] == alpha_claim_id
+    assert bound_matrices[task_ids[0]]["cells"][0]["evidence_ids"] == [alpha_evidence_id]
+
+    replayed_output, replayed, error, diagnostic = _separate_synthesis_matrix(
+        _synthesis_envelope_with_matrix(_payload()),
+        _context(),
+        research_task_id=task_ids[0],
+        plan_version=1,
+    )
+    assert error is None
+    assert diagnostic is None
+    assert replayed == bound_matrices[task_ids[0]]
+    EvidenceMatrixService(store).build_matrix(
+        task_ids[0], "owner", plan_version=1,
+        dimensions=replayed["dimensions"], claims=replayed["claims"],
+        evidence=replayed["evidence"], cells=replayed["cells"],
+    )
+    assert EvidenceMatrixService(store).read_matrix(task_ids[0], "owner", plan_version=1)["claims"][0]["claim_id"] == alpha_claim_id
+    assert EvidenceMatrixService(store).read_matrix(task_ids[1], "owner", plan_version=1)["claims"][0]["claim_id"] == beta_claim_id
+
+
+def test_unknown_model_evidence_reference_is_rejected_before_namespacing() -> None:
+    payload = _payload()
+    payload["claims"][0]["evidence_ids"] = ["evidence-does-not-exist"]
+    envelope = _synthesis_envelope_with_matrix(payload)
+
+    artifact, matrix, error, diagnostic = _separate_synthesis_matrix(
+        envelope,
+        _context(),
+        research_task_id="task-unknown-reference",
+        plan_version=1,
+    )
+
+    assert error == "REPORT_SCHEMA_INVALID"
+    assert matrix is None
+    assert diagnostic == {
+        "matrix_error_code": "REPORT_SCHEMA_INVALID",
+        "rule_id": "matrix.claim.evidence_ownership",
+        "field_paths": ["evidence_matrix.claims[].evidence_ids"],
+    }
+    assert artifact["output_hash"] == report_output_hash(artifact)
+
+
+def test_matrix_persistence_conflict_has_bounded_claim_id_diagnostic() -> None:
+    diagnostic = _matrix_persistence_diagnostic(
+        ValueError("claim_id already exists with different content"),
+    )
+
+    assert diagnostic == {
+        "matrix_error_code": "MATRIX_ID_CONFLICT",
+        "rule_id": "matrix.persistence.claim_id_conflict",
+        "field_paths": ["claims[].claim_id"],
+    }
+    assert "already exists" not in json.dumps(diagnostic)
 
 
 def test_validated_matrix_reuses_existing_matrix_service(tmp_path) -> None:
@@ -585,12 +706,19 @@ def _run_matrix_agent_scenario(
                 run_input.work_item_input.get("report_quality_context"), dict
             ):
                 marker = run_input.work_item_input["report_quality_context"]
+                evidence_id_by_paper = {
+                    item["paper_id"]: item["evidence_id"]
+                    for item in marker["evidence"]
+                }
                 output = {
                     "schema_version": "runtime-v1", "safe_summary": {}, "source_refs": [],
                     "work_item_id": run_input.work_item_id,
                     "report_version": marker["report_version"],
                     "sections": [], "citation_manifest": [], "artifact_ids": [],
-                    "report_content": _quality_report_content(paper_ids),
+                    "report_content": _quality_report_content(
+                        paper_ids,
+                        evidence_ids=[evidence_id_by_paper[paper_id] for paper_id in paper_ids],
+                    ),
                 }
             else:
                 output = synthesis
@@ -801,8 +929,13 @@ def test_natural_language_synthesis_runs_quality_body_before_single_work_item_te
         checkpoint = store.get_agent_checkpoint(persisted_run.checkpoint_ref, "owner")
         assert checkpoint is not None
         checkpoint_payload = json.loads(checkpoint.content)
+        paper_order = sorted({entry["paper_id"] for entry in marker["evidence"]})
+        evidence_id_by_paper = {
+            entry["paper_id"]: entry["evidence_id"] for entry in marker["evidence"]
+        }
         assert checkpoint_payload["output"]["report_content"] == _quality_report_content(
-            [entry["paper_id"] for entry in marker["evidence"]][:5]
+            paper_order[:5],
+            evidence_ids=[evidence_id_by_paper[paper_id] for paper_id in paper_order[:5]],
         )
     assert canonical["quality_validation"]["status"] == "pass"
     assert canonical["report_content"]["schema_version"] == "research-report-content-v1"

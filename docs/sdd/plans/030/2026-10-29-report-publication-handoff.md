@@ -140,3 +140,76 @@ legacy `ReportDeliveryService.deliver()` 保持原签名和一次性投递语义
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/report_synthesis.py tests/research/test_report_publication.py` | 0 | 通过，无输出 |
 
 修复只涉及 `report_synthesis.py`、`test_report_publication.py` 与本交接文档；没有改 Orchestrator、Store/schema、routes 或队列。本节不替代 Orchestrator 恢复入口集成测试或 route 可见性独立评审。
+
+## 同终态 Task 的 report-only 重生成接线核查（2026-10-30）
+
+本节只做源码核对；未请求真实 Task、未访问数据库、未调用内部生成函数或声称 API 已成功。
+
+### 当前公开入口状态
+
+现有 `POST /api/research-tasks/{research_task_id}/reports` 位于 `backend/app/api/routes_research.py::generate_research_report`，body schema 为 `ResearchReportRequest {plan_version?, report_version?, title}`。路由当前直接同步执行 `_report_generation_service().generate(...)`，只返回 `report_id/research_task_id/plan_version/report_version/status/limitations`。装饰器上的 HTTP 202 只是响应码，不表示已异步投递；当前路由也没有读取 `Idempotency-Key` header。
+
+`backend/app/research/application/report_generation.py::ReportGenerationService.generate` 读取 `EvidenceMatrixService.read_matrix`，用 `next_report_version()` 计算版本，调用 `ReportSynthesizer.synthesize_evidence_report` / 固定 renderer，再用 `save_research_report` 同步写入。这个路径没有调用 `reserve_report_generation`、创建/绑定 synthesis WorkItem、进入 `ResearchService._executor` 或运行 AgentRunner。矩阵 renderer 输出的是 legacy `evidence-report-v1`，按 limitations 生成 `partial`/`completed`；它不构成 session-backed `report-quality-v1` 质量通过或正式发布。因此同 task 重调该 endpoint 可能得到又一份矩阵草稿，但不会依合同做 report-only 模型正文生成。
+
+### 可复用的 report-only 核心与明确缺口
+
+- `ResearchStore.reserve_report_generation` 已能在单事务中原子分配新 report_version、写 `generating` canonical reservation、创建 queued 的同类型 `synthesize_preliminary_report` / `synthesizer` WorkItem，并将 reservation identity 绑定进 WorkItem input。相同 request key 可重放；活动版本冲突为 `REPORT_GENERATION_IN_PROGRESS`。该方法不拒绝 terminal Task，但应用层仍须 owner/task/current-plan/matrix gate。新用户发起的重生成应传**新 UUID request_key**并省略 `report_version`，不可在服务层用 `next_report_version` 先算版本。
+- `Orchestrator._resume_report_quality_delivery` 已包含 report-only 质量正文、canonical renderer、两阶段发布和通知；它不启动搜索或重新 build 矩阵。它会先用 `_build_report_quality_context` 校验当前 owner/task/plan、持久 EvidenceMatrix、选集与冻结搜索摘要快照，再进行 report `comparison` AgentRun 和 `drafting` AgentRun。因此它复用现有矩阵，但会为新 report version 重新调用报告模型；它不是模型零调用的 deterministic render。
+- `_build_synthesis_matrix_context` 必须从 `ResearchPaperSelection.source_search_id`（缺失时才回落任务 search_id）读取同一 candidate 的冻结 catalog snapshot，并要求 search job 为 completed/partial、尚未过期。新的请求不应重新 search/evaluate/build matrix；若已有冻结摘要快照已过期或缺失，现有质量上下文会 fail closed（`MATRIX_SNAPSHOT_UNAVAILABLE`），不能把客户端 matrix/body 作为替代可信来源。
+- `ResearchService._schedule_interrupted_report_recovery` 与 `_run_interrupted_report_recovery` 复用了现有 `_executor`，但入口只扫描 `Task.status=interrupted`，并调用 `Orchestrator.resume_report_quality_generation`；后者当前也要求 Task 为 interrupted。它们不能原样处理已 completed/partial 的 Task。`_resume_report_quality_delivery` 末尾会保留 completed Task，但 partial Task 当前会被 terminal guard 返回错误。需增加一个窄的 report-only API 调度 wrapper，允许已合同指定的 terminal 状态（至少 `completed`/`partial`）、只转移本 reservation WorkItem、绝不重开/改写 ResearchTask；partial 结果也须在 report-only 完成后保持原 status。
+
+### 最小接线
+
+1. **`backend/app/api/routes_research.py`**：保留现有 POST 路径/body；从 `Header(alias="Idempotency-Key")` 读取可选 UUID。session-backed task 分支调用报告应用服务的 reserve + ResearchService submit 接口；无 ResearchSession 的 legacy matrix-only 行为可保留原同步 renderer。新版本请求使用当前 `plan_version` 与 `title`，不传 `report_version`；同一网络重试复用同 key，用户新一轮重生成才换新 key。
+2. **`backend/app/research/application/report_generation.py`**：将当前 sync matrix renderer 保留给 legacy/no-session 分支；添加 session-backed reservation 准备接缝：读取 owner-scoped 当前 Task/Plan/Session、调用 `EvidenceMatrixService.read_matrix` 验证当前矩阵并获取 durable selections；优先复制同 task/plan 旧 synthesis WorkItem 已保存的 `input_params.validated_candidates`，否则仅从 `ResearchStore.list_selections` 生成 candidate ID 投影。由 `_build_synthesis_matrix_context` / `_build_report_quality_context` 再核对候选集合和未过期冻结摘要，所有输入都由服务器从现有 durable facts 组成。request payload 应绑定 `plan_version`、稳定选集 IDs、schema/title；调用 `reserve_report_generation(..., request_key, request_payload, work_item_input)`，禁止接收客户端候选、Evidence ID 或报告正文。
+3. **`backend/app/research/application/research_service.py`**：新增窄 `submit_report_only_generation(...)` 应用入口，使用已注入的 `_executor` 提交 `(task, session, reservation)` 专用 worker，不调用 `start()` / `_run_orchestration()`。worker 重读 owner/task/session/reservation/report/workitem，核对版本与绑定；同 key replays 检查 queued/running/terminal WorkItem 并去重；仅允许 queued→running，然后交给 report-only Orchestrator wrapper。它不改变 terminal ResearchTask 状态。运行中/重复 key 不重复投模型；若 submission 本身失败则保留 durable queued reservation 供同 key 重放。
+4. **`backend/app/research/application/orchestrator.py`**：增加面向已有 reservation 的明确 report-only wrapper，复用 `_resume_report_quality_delivery` 与 `_generate_report_quality_body`，但不要从 API 暴露或直接调用 private helper。允许 `completed`/`partial` terminal Task，要求 report=`generating`、WorkItem=`running` 且 reservation ID/key/version/plan/task 一致。完成时只关闭本 WorkItem，不变更 terminal Task status；给 `_resume_report_quality_delivery` 增加 partial Task 的成功保持分支。正文仍由现有质量门禁和 `ReportDeliveryService.prepare_canonical` → publish CAS → `finalize_canonical` 交付。
+5. **POST response / GET polling**：仍立即返回 202，新增合同字段 `quality_status`, `published`, `reason_codes`, `report_url`；刚受理版本为 `status=generating, quality_status=pending, published=false`。新版本由 Store reservation 原子分配。前端轮询既有 `GET /api/research-tasks/{id}/reports/{version}?format=json`；原 Artifact list/download 的 published filter 继续隐藏运行中版本。并发不同 key 时返回合同约定的 409 和当前 version URL。
+
+请求示例（计划版本应取该 task 当前已批准版本，幂等 key 每次主动重生成新建 UUID）：
+
+```http
+POST /api/research-tasks/<task_id>/reports
+Idempotency-Key: <uuid>
+Content-Type: application/json
+```
+
+```json
+{"plan_version": 1, "title": "深度研究报告"}
+```
+
+调用同一 key 的网络重试应返回同 reservation/work item；用户主动重试一个已终态失败报告时使用新 key，获得 N+1 report version。不要传旧 failed version 伪装新 version。新生成继续消耗该 ResearchTask 已有累计预算，不清空旧 AgentRun/用量；若累计任务 cap 已耗尽，API 仍可受理后立即按预算门禁持久化失败原因，不绕过额度。
+
+以上是接线方案，不是已实现/已验证行为。对应合同依据为 `2026-10-29-report-quality-contract.md`「状态、发布与版本身份」及「进度、预算与恢复」；应由后续实现 Task 修改 routes + report/application scheduling + ResearchService + Orchestrator，并用 route/service/executor 定向测试证明真实 HTTP 受理与 same-terminal report-only 执行，不以直接调用内部 helper 代替 API 验收。
+
+## Session-backed report-only POST 与 terminal recovery 接线（2026-10-30）
+
+实现已落在 `routes_research.py`、`report_generation.py`、`research_service.py`、`research_store.py`，能力测试见 `test_report_only_submission.py`；并更新旧矩阵生成测试与 reservation successor 测试。本节取代前面“当前公开入口状态/最小接线”作为实现现状说明；前段保留为实施前审计记录。
+
+### 公开接缝
+
+`POST /api/research-tasks/{research_task_id}/reports` 保留原 body/path/HTTP 202。路由先检查 owner-scoped ResearchSession：
+
+- 有 session：调用 `ReportGenerationService.reserve_session_generation(...)` 做 server-side preflight 与 Store 原子 reservation，然后调用 `ResearchService.submit_report_only_generation(...)` 提交现有 executor。响应立即从 durable reservation 投影 `report_id/research_task_id/plan_version/report_version/status/limitations/quality_status/published/reason_codes/report_url`；初始状态是 `generating/pending/false`。`Idempotency-Key` 可选但若提供必须为 UUID；request fingerprint 绑定当前 `plan_version` 与报告标题。无 header 的相同标题活动版本加入现有 reservation，包含同标题竞态下回读胜出的处理。不同 key 命中活动版本时先返回带当前 `report_url` 的 409，再读取矩阵；新的主动请求省略 `report_version`，由 Store 同事务分配下一版本。
+- 无 session：保留原同步 matrix renderer，但落盘及响应明确为 `draft`、`quality_status=unvalidated`、`published=false`，`generation.path=matrix_api`。此旧兼容路径不进入 AgentRunner/正式 Artifact 发布。
+
+Reservation 前只读取当前 owner Task、当前 plan、当前矩阵和 Store 持久的 selection/synthesis WorkItem。复制的 `validated_candidates` 必须与 durable selections ID 集完全相等；`citation_allowlist` 仅从这些已验证候选的 `evidence_refs` 重建，标题作为 WorkItem 输入一起保留。没有可信候选/矩阵时拒绝 reservation；客户端不能提交矩阵、候选、证据或正文。
+
+Service 将 queued WorkItem 通过同一个 executor 运行，先 CAS 到 running，再重读 reservation 并调用公开 `Orchestrator.run_report_only_generation(...)`。wrapper 保持 ResearchTask 原终态，只结束对应 synthesis WorkItem。同 key 请求若命中仍在 `generating` 的 reservation 且绑定 WorkItem 已 `interrupted` 或 Runtime 已 `completed`，Service 用现有 `rebind_report_generation_successor(...)` 绑定同 report_version successor 并再次提交；旧 WorkItem 不重开，canonical budget/revision ledger 保留。已终态报告只读返回，不重跑。Store rebind 当前只接受 running 或 `TASK_TERMINAL` Task，且仍要求报告 `generating`、owner/task/plan/version/request-key/expected item 均匹配；旧 predecessor 仍严格只允许 `interrupted|completed`。
+
+`ResearchService.recover_interrupted()` 在原有 startup audit 后扫描所有 `TASK_TERMINAL` Task 的 generating/published reservation，恢复 interrupted/completed predecessor 或完成已 published canonical 的投递收尾。HTTP submission 与 startup recovery 共用 `(task_id, report_version)` process-local in-flight 集合；CAS/reread 阻止重复执行时把已有 running WorkItem 再启动。恢复不更改 Task 状态。
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| RED：新增 `test_report_only_submission.py` 首次运行 | 1 | 12 failed，确认旧路由仍走同步 matrix render、没有 reservation/replay/terminal gate/executor 提交 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_only_submission.py tests/research/test_report_generation.py tests/research/test_report_canonical_persistence.py tests/research/test_report_version_reservation.py` | 0 | 84 passed |
+| RED：`/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_only_submission.py -k same_idempotency_key_replays_one_report` | 1 | 1 failed，26 deselected：canonical durable `reason_codes` 未投影 |
+| 同一幂等重放 projection 用例（修复后） | 0 | 1 passed，26 deselected |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_quality_context.py -k 'startup_recovery'` | 0 | 9 passed，32 deselected |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check --ignore SIM105 backend/app/research/application/report_generation.py backend/app/research/application/research_service.py backend/app/api/routes_research.py backend/app/research/infrastructure/research_store.py tests/research/test_report_only_submission.py tests/research/test_report_generation.py tests/research/test_report_canonical_persistence.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/report_generation.py backend/app/research/application/research_service.py backend/app/api/routes_research.py backend/app/research/infrastructure/research_store.py tests/research/test_report_only_submission.py tests/research/test_report_generation.py tests/research/test_report_canonical_persistence.py` | 0 | 通过，无输出 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+
+`reason_codes` response projection合并 canonical row 顶层的稳定 codes、quality failure codes和generation fallback code并去重。无 ignore 的定向 Ruff 命令只剩 `routes_research.py:620` 既有 `SIM105`（与本次报告路由无关）；因此记录的全文件检查使用 `--ignore SIM105`，其他规则均通过。没有启动服务、请求真实部署 API、访问生产数据库、调用模型或运行全量测试。真实旧 Task 的 HTTP report-only 重生成仍需由集成方在其真实 API/E2E 阶段验证。

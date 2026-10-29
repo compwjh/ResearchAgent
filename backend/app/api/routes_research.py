@@ -51,12 +51,12 @@ from backend.app.platform.bootstrap import get_provider
 from backend.app.platform.config import BASE_DIR, KB_DIR
 from backend.app.research.application.approval_service import PlanApprovalService, ResearchCommandError
 from backend.app.research.application.entry import (
-    EvidenceReportError,
-    ReportGenerationService,
     EvidenceMatrixError,
     EvidenceMatrixService,
+    EvidenceReportError,
     EvidenceUpgradeError,
     EvidenceUpgradeService,
+    ReportGenerationService,
     ResearchAcquisitionError,
     ResearchAcquisitionService,
     ResearchServiceError,
@@ -542,10 +542,14 @@ def _report_error(exc: EvidenceReportError, *, not_ready_status: int | None = No
     status = 406 if exc.code == "FORMAT_SEMANTIC_MISMATCH" else exc.http_status
     if not_ready_status is not None and exc.code == "REPORT_NOT_READY":
         status = not_ready_status
-    return JSONResponse(
-        status_code=status,
-        content={"error": {"code": exc.code, "message": str(exc)}},
-    )
+    error_body = {"code": exc.code, "message": str(exc)}
+    existing_report = getattr(exc, "existing_report", None)
+    if existing_report is not None:
+        error_body["report_url"] = (
+            f"/api/research-tasks/{existing_report.research_task_id}/reports/"
+            f"{existing_report.report_version}?format=json"
+        )
+    return JSONResponse(status_code=status, content={"error": error_body})
 
 
 def _api_error(code: str, status_code: int, message: str) -> JSONResponse:
@@ -1719,18 +1723,55 @@ def get_research_evidence_matrix(research_task_id: str, plan_version: Optional[i
 
 
 @router.post("/{research_task_id}/reports", status_code=202)
-def generate_research_report(research_task_id: str, payload: ResearchReportRequest):
-    """Generate one immutable report version from the validated matrix."""
+def generate_research_report(research_task_id: str, payload: ResearchReportRequest, request: Request):
+    """Submit a session-backed report-only run, or preserve the legacy matrix draft path."""
     try:
-        built = _report_generation_service().generate(
+        report_service = _report_generation_service()
+        store = getattr(report_service, "store", None)
+        session_reader = getattr(store, "get_session_by_task", None)
+        session = session_reader(research_task_id, OWNER_ID) if callable(session_reader) else None
+        if session is not None:
+            reservation = report_service.reserve_session_generation(
+                research_task_id,
+                OWNER_ID,
+                plan_version=payload.plan_version,
+                report_version=payload.report_version,
+                title=payload.title,
+                request_key=request.headers.get("Idempotency-Key"),
+            )
+            _service().submit_report_only_generation(
+                owner_id=OWNER_ID, session=session, reservation=reservation,
+            )
+            try:
+                generation = json.loads(reservation.report.report_json or "{}").get("generation", {})
+            except (TypeError, ValueError, AttributeError):
+                generation = {}
+            request_key = generation.get("request_key") if isinstance(generation, dict) else None
+            reservation_reader = getattr(store, "get_report_generation_reservation", None)
+            if isinstance(request_key, str) and callable(reservation_reader):
+                refreshed = reservation_reader(
+                    research_task_id, OWNER_ID, request_key=request_key,
+                )
+                if refreshed is not None:
+                    reservation = refreshed
+            return report_service.submission_projection(reservation)
+
+        built = report_service.generate(
             research_task_id, OWNER_ID, plan_version=payload.plan_version,
             report_version=payload.report_version, title=payload.title,
         )
         report = built["report"]
+        quality_validation = report.get("quality_validation") if isinstance(report, dict) else None
+        generation = report.get("generation") if isinstance(report, dict) else None
+        limitations = report.get("limitations", []) if isinstance(report, dict) else []
         return {
             "report_id": report["report_id"], "research_task_id": research_task_id,
             "plan_version": report["plan_version"], "report_version": report["report_version"],
-            "status": report["status"], "limitations": report["limitations"],
+            "status": report["status"], "limitations": limitations,
+            "quality_status": quality_validation.get("status", "unvalidated") if isinstance(quality_validation, dict) else "unvalidated",
+            "published": generation.get("published") is True if isinstance(generation, dict) else False,
+            "reason_codes": quality_validation.get("failure_codes", []) if isinstance(quality_validation, dict) else [],
+            "report_url": f"/api/research-tasks/{research_task_id}/reports/{report['report_version']}?format=json",
         }
     except EvidenceReportError as exc:
         return _report_error(exc)

@@ -191,3 +191,55 @@ Verdict: **BLOCK** — 原预算/阶段恢复/质量状态/改写与同版发布
 | 独立 opaque Bearer marker probe | 0 | 专用 builder 接受，Runtime marker 以稳定码拒绝，provider 未调用 |
 
 本轮只审查上下文文本安全、marker 与 report_content 输出兼容；未修改业务代码/测试，未运行全量测试、模型或部署。
+
+## Claim/Evidence ID namespace collision follow-up review（2026-10-30）
+
+**当前窄审结论：PASS。** 本节仅复核模型局部矩阵 ID 的 task/plan namespacing、引用重写、持久化隔离和正文上下文读取。前文已经解决的 startup recovery BLOCK 保留为历史修复记录；本轮没有生产代码或测试修改。
+
+### 独立核对
+
+- [orchestrator.py:772](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:772) 对模型给出的原始矩阵先调用共享 `validate_synthesis_matrix_payload`，再以 `research_task_id + plan_version + ID kind + 原模型 ID` 的 SHA-256 生成确定性 Claim/Evidence ID，并再次执行同一 schema/context 验证（[orchestrator.py:914](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:914)）。计划版本、task ID、ID 格式和数量/重复项都先经既有校验；unknown Evidence refs 在映射前失败关闭。
+- 改写覆盖 claim ID、claim 的 Evidence refs、Evidence ID/owner Claim ID、cell Claim ID 和 cell Evidence refs；计划维度 ID 保持服务端批准值，研究陈述/摘要/定位信息原样保留。后置验证再次确认重写后的 ownership 和 paper/snapshot/digest 绑定。hash ID 仍在既有 200 字符矩阵 ID 上限内。
+- 新增矩阵测试验证两个 task 使用相同模型局部 `claim-1`/`evidence-1` 可并存、同 task/plan 重放得到相同映射且不覆盖另一 task；同一测试核对 claim/evidence/cell 关联及 statement 原样保留。unknown ref 用例要求固定 `REPORT_SCHEMA_INVALID`/field path 且不泄漏原始值；claim/evidence 持久化碰撞诊断仅落固定 reason/rule/path。
+- 独立临时 SQLite 反例先保存旧 task 的未命名空间 `claim-1`/`evidence-1`，再让新 task 提交相同模型局部 IDs；旧行内容与引用未变，新 task 读回 task 专属 IDs。另一独立探针确认同一 task 的 plan 1 与 plan 2 生成不同 namespace。
+- 独立上下文探针从 `persist_matrix=False` 的真实五篇已选论文/已验证摘要 fixture 出发，构建并持久化 5 条 namespaced Evidence；`read_matrix` 返回 5 条，`_build_report_quality_context` 也读回相同 5 个 namespaced IDs 和对应冻结摘要 excerpt。
+- 另按上一轮补充要求，model JSON envelope 中的研究问题、逐篇 findings、comparison 和 synthesis finding 使用正常学术短语 `password authentication` / `token-based login`；`validate_report_synthesis_output` 和真实 `ResearchAgentRunner` 的 `evidence_review` report_content schema 路径均通过并保留文本。该探针仅覆盖 `report_content` 字段；标题/legacy section summary 的通用 `_safe_text_input` 保护保持原样。
+
+### 定向验证
+
+| 命令 / 探针 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_research_report_matrix_bridge.py tests/research/test_report_quality_context.py -q` | 0 | `57 passed in 5.29s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_report_content_runtime.py -q` | 0 | `19 passed in 0.61s` |
+| 独立临时 SQLite 跨 task/legacy ID 碰撞探针 | 0 | 旧 task 行不变；新 task 使用不同 IDs |
+| 独立 task/plan namespace 与五 Evidence context 探针 | 0 | plan 改变时 IDs 改变；builder 读回 5 条 namespaced Evidence/excerpt |
+| 独立 academic password/token → synthesis schema → Runtime report_content probe | 0 | 正常学术文本通过并完整保留 |
+
+**当前 ID namespacing 与 report_content 字段兼容窄审：PASS。** 未运行全量测试、部署、模型或 Git 操作。
+
+
+## Report-only wrapper 与 terminal startup recovery follow-up（2026-10-30）
+
+**当前窄审结论：PASS。** 本节复核 `run_report_only_generation`、session POST 的幂等提交、启动恢复和同版本 successor Store CAS；不重审前文已 PASS 的矩阵 ID namespace、Runtime/content schema、预算或 canonical publisher 实现。
+
+### 复核结论
+
+- `run_report_only_generation` 对 task owner/status、session owner/task/conversation、report id/version/plan、当前 synthesis WorkItem、reservation 的 report/version/work_item_id/request_key/fingerprint 做重复读取与绑定核验；候选必须是 5..64 个唯一项，citation allowlist 必须与每个候选的冻结 Evidence refs 完全相等。非法候选或 citation 在可信 reservation 绑定后通过状态 CAS 记为 failed；失败 CAS 未持久时只把 successor 收束到 interrupted 并返回稳定码，不声称失败已保存。入口只调用 report quality body helper 和同一 canonical publisher，不调用 Search/Evaluator，也不调用 `EvidenceMatrixService.build_matrix`。报告上下文从持久化选集与 matrix 读取；`comparison`、`drafting` 和最多两轮 targeted revision 仍走原 Runtime/checkpoint/budget claim 与 settle。[Orchestrator report-only wrapper](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:4815)
+- wrapper 从不改 ResearchTask 状态。WorkItem 收束前重新读取并且只允许当前行仍为 `running` 时执行一次状态更新：质量失败按 report 状态映射为 failed；canonical 发布完成才 completed；投递待恢复保留 generating report 并将当前 WorkItem 标为 interrupted。参数化测试覆盖五种 terminal Task，另以 `EvidenceMatrixService.build_matrix` 必须失败的 monkeypatch 验证不重建矩阵，并断言只跑 comparison/drafting、报告走同一发布接点。[report-only wrapper tests](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_quality_context.py:1498)
+- POST 同一 Idempotency-Key 先读回原 reservation，同一个 report_version/WorkItem 继续提交；若前一 WorkItem 已是 interrupted/completed 且报告仍 generating，则以 Store CAS 创建同版本 queued successor。不同 key 遇到 active generating report 时，在 matrix preflight 前返回 `409 REPORT_GENERATION_IN_PROGRESS` 与现有 report URL；该路径的回归测试将 matrix read 替换为抛错函数，确认不触发 preflight。same-key projection 也包含已持久化的 stable reason_codes，并与 quality failure/fallback codes 去重。[same-key reservation replay](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_generation.py:563) [durable reason-code projection](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_generation.py:692) [different-key conflict test](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_only_submission.py:261)
+- 启动审计扫描所有 `TASK_TERMINAL` 状态；提交与恢复共享 `(task_id, report_version)` in-flight guard。只有 report 仍为 generating 且 reservation 身份、当前 plan、同 task synthesis WorkItem 均匹配时才恢复。Store 仅允许 task running/terminal、当前 active/completed plan、generating report，以及 predecessor 为 interrupted/completed 时绑定 successor；旧 WorkItem 不改写，report version、generation store_state/budget ledger 和历史 claim WorkItem IDs 不重置。[ResearchService startup selector](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/research_service.py:699) [shared recovery/submission guard](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/research_service.py:82) [Store successor CAS](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/infrastructure/research_store.py:6612)
+- 我在合并快照中发现一个高置信 P1：Service 已让任意 terminal Task 的 `completed/published` canonical 进入 finalize，但 finalizer 原先只接收 `task.status == "interrupted"`。独立临时 SQLite 反例以 Task=`completed`、report=`completed/published`、Artifact/message 已准备但 completed notification 未落库为起点；startup audit 后 notification 仍 `0→0`，WorkItem 留在 interrupted，Runtime 模型调用保持 `2→2`。该问题已修复：finalizer 现在接受 `TASK_TERMINAL` 并在所有返回分支保留传入 Task 的实际状态。冻结测试覆盖 completed/partial/failed/cancelled/interrupted 五种状态。[terminal canonical finalizer](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:5285) [published canonical recovery test](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_quality_context.py:1244)
+- 修复后的独立 completed-Task 探针两次执行 startup recovery：Task 保持 completed，report 保持 completed/published，completed notification 数量为 `0→1→1`，Runtime 模型调用为 `2→2`，reservation 仍绑定原 terminal WorkItem ID，没有新 successor。published canonical 直接做确定性验据复核与幂等 finalize，不重跑 Runtime。
+
+### 定向验证
+
+| 命令 / 探针 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_only_submission.py tests/research/test_report_generation.py tests/research/test_report_canonical_persistence.py tests/research/test_report_version_reservation.py` | 0 | `84 passed in 2.59s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_quality_context.py -k 'startup_recovery_finalizes_published_canonical_from_terminal_work_item'` | 0 | `5 passed, 36 deselected in 2.31s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_only_submission.py -k 'different_key_conflicts_with_active_generation_and_returns_existing_url or startup_recovery_rebinds_pending_report_for_any_terminal_task or same_key_replay_rebinds_pending_terminal_work_item_without_new_report_version'` | 0 | `13 passed, 14 deselected in 1.54s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_only_submission.py -k 'same_idempotency_key_replays_one_report_and_does_not_duplicate_executor_submission or different_key_conflicts_with_active_generation_and_returns_existing_url'` | 0 | `2 passed, 25 deselected in 1.04s`（durable reason-code projection 与 active 409 冻结后的复验） |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_canonical_persistence.py -k terminal_task_status` | 0 | `4 passed, 26 deselected in 0.28s` |
+| 独立 terminal published canonical → 两次 startup recovery 探针 | 0 | Task 状态不变；notification `0→1→1`；Runtime calls `2→2`；原 WorkItem ID 保持、无 successor |
+
+**当前 report-only wrapper 与终态恢复窄审：PASS。** 原先发现的 finalizer P1 已修复；没有剩余 P0/P1。未运行全量测试、部署、真实模型或 Git 操作。此前 helper review 的 startup successor、budget/checkpoint、evidence、quality 和 publisher 结论均保留为历史记录。

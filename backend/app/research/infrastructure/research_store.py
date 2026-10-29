@@ -6650,9 +6650,9 @@ class ResearchStore:
                 ).fetchone()
                 if task_row is None:
                     raise ResearchTaskNotFound(research_task_id)
-                if task_row["status"] not in {"running", "interrupted"}:
+                if task_row["status"] != "running" and task_row["status"] not in TASK_TERMINAL:
                     raise ResearchReportGenerationStateConflict(
-                        "report reservation task is not recoverable"
+                        "report reservation task is not running or terminal"
                     )
                 if int(task_row["current_plan_version"]) != plan_version:
                     raise ResearchReportReservationConflict(

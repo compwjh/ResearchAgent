@@ -34,6 +34,9 @@ from typing import Any, Callable, Iterable, Mapping
 from backend.app.research.application.evidence_matrix import EvidenceMatrixError, EvidenceMatrixService
 from backend.app.research.application.matrix_contract import MATRIX_ID_RE
 from backend.app.research.application.matrix_contract import (
+    matrix_validation_diagnostic as _matrix_validation_diagnostic,
+)
+from backend.app.research.application.matrix_contract import (
     validate_synthesis_matrix_payload as _validate_synthesis_matrix_payload,
 )
 from backend.app.research.application.planner import Planner
@@ -768,12 +771,129 @@ def _bind_synthesis_report_version(output: Mapping[str, Any], expected_version: 
     return normalized
 
 
+def _namespace_synthesis_matrix_ids(
+    matrix: Mapping[str, Any], *, research_task_id: str, plan_version: int,
+) -> dict[str, Any]:
+    """Bind model-local Claim/Evidence IDs to one durable task-plan identity."""
+    if (
+        not isinstance(research_task_id, str)
+        or not research_task_id.strip()
+        or isinstance(plan_version, bool)
+        or not isinstance(plan_version, int)
+        or plan_version < 1
+    ):
+        raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix task identity invalid")
+
+    claims = matrix.get("claims")
+    evidence = matrix.get("evidence")
+    cells = matrix.get("cells")
+    if not isinstance(claims, list) or not isinstance(evidence, list) or not isinstance(cells, list):
+        raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix collections invalid")
+
+    def bind_id(kind: str, model_id: Any) -> str:
+        if not isinstance(model_id, str) or MATRIX_ID_RE.fullmatch(model_id) is None:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix identity invalid")
+        digest = hashlib.sha256(
+            f"{research_task_id}\0{plan_version}\0{kind}\0{model_id}".encode("utf-8")
+        ).hexdigest()
+        return f"{kind}-{digest}"
+
+    claim_ids = {item["claim_id"]: bind_id("claim", item["claim_id"]) for item in claims}
+    evidence_ids = {item["evidence_id"]: bind_id("evidence", item["evidence_id"]) for item in evidence}
+
+    def map_refs(values: Any) -> list[str]:
+        if not isinstance(values, list):
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix evidence references invalid")
+        try:
+            return [evidence_ids[value] for value in values]
+        except (KeyError, TypeError) as error:
+            raise EvidenceMatrixError(
+                "REPORT_SCHEMA_INVALID", "matrix evidence reference is unknown",
+            ) from error
+
+    bound = dict(matrix)
+    bound["claims"] = []
+    for item in claims:
+        claim_id = item.get("claim_id") if isinstance(item, Mapping) else None
+        if claim_id not in claim_ids:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix claim reference is unknown")
+        bound["claims"].append({
+            **dict(item),
+            "claim_id": claim_ids[claim_id],
+            "evidence_ids": map_refs(item.get("evidence_ids")),
+        })
+    bound["evidence"] = []
+    for item in evidence:
+        claim_id = item.get("claim_id") if isinstance(item, Mapping) else None
+        evidence_id = item.get("evidence_id") if isinstance(item, Mapping) else None
+        if claim_id not in claim_ids or evidence_id not in evidence_ids:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix evidence ownership is unknown")
+        bound["evidence"].append({
+            **dict(item),
+            "evidence_id": evidence_ids[evidence_id],
+            "claim_id": claim_ids[claim_id],
+        })
+    bound["cells"] = []
+    for item in cells:
+        claim_id = item.get("claim_id") if isinstance(item, Mapping) else None
+        if claim_id not in claim_ids:
+            raise EvidenceMatrixError("REPORT_SCHEMA_INVALID", "matrix cell claim is unknown")
+        bound["cells"].append({
+            **dict(item),
+            "claim_id": claim_ids[claim_id],
+            "evidence_ids": map_refs(item.get("evidence_ids")),
+        })
+    return bound
+
+
+def _matrix_persistence_diagnostic(error: Exception) -> dict[str, Any]:
+    """Return stable non-content matrix failure metadata for report state."""
+    if str(error) == "claim_id already exists with different content":
+        return {
+            "matrix_error_code": "MATRIX_ID_CONFLICT",
+            "rule_id": "matrix.persistence.claim_id_conflict",
+            "field_paths": ["claims[].claim_id"],
+        }
+    if str(error) == "evidence_id already exists with different identity":
+        return {
+            "matrix_error_code": "MATRIX_ID_CONFLICT",
+            "rule_id": "matrix.persistence.evidence_id_conflict",
+            "field_paths": ["evidence[].evidence_id"],
+        }
+    return {
+        "matrix_error_code": "MATRIX_PERSISTENCE_FAILED",
+        "rule_id": "matrix.persistence.transaction",
+        "field_paths": ["evidence_matrix"],
+    }
+
+
+def _safe_matrix_diagnostic(value: Any) -> dict[str, Any] | None:
+    """Keep only fixed-format matrix diagnostic metadata, never exception text."""
+    if not isinstance(value, Mapping):
+        return None
+    code = value.get("matrix_error_code")
+    rule_id = value.get("rule_id")
+    paths = value.get("field_paths")
+    if (
+        not isinstance(code, str)
+        or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) is None
+        or not isinstance(rule_id, str)
+        or re.fullmatch(r"matrix\.[a-z0-9_.]+", rule_id) is None
+        or not isinstance(paths, list)
+        or not 1 <= len(paths) <= 8
+        or any(not isinstance(path, str) or re.fullmatch(r"[a-z0-9_.\[\]]+", path) is None for path in paths)
+    ):
+        return None
+    return {"matrix_error_code": code, "rule_id": rule_id, "field_paths": list(paths)}
+
+
 def _separate_synthesis_matrix(
     output: Mapping[str, Any],
     context: Mapping[str, Any] | None,
     *,
+    research_task_id: str,
     plan_version: int,
-) -> tuple[dict[str, Any], dict[str, Any] | None, str | None]:
+) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, dict[str, Any] | None]:
     """Detach the optional matrix without changing the candidate artifact contract."""
     artifact_output = dict(output)
     raw_hash = output.get("output_hash") if isinstance(output, Mapping) else None
@@ -787,22 +907,27 @@ def _separate_synthesis_matrix(
         artifact_output["output_hash"] = report_output_hash(
             {key: value for key, value in artifact_output.items() if key != "output_hash"}
         )
-        return artifact_output, None, None
+        return artifact_output, None, None, None
     if not isinstance(raw_hash, str) or raw_hash != report_output_hash(output):
-        return artifact_output, None, "AGENT_OUTPUT_INVALID"
+        return artifact_output, None, "AGENT_OUTPUT_INVALID", None
     try:
         if context is None:
             raise EvidenceMatrixError("MATRIX_NOT_READY", "matrix snapshot context unavailable")
         matrix = _validate_synthesis_matrix_payload(raw_matrix, context, plan_version=plan_version)
+        matrix = _namespace_synthesis_matrix_ids(
+            matrix, research_task_id=research_task_id, plan_version=plan_version,
+        )
+        matrix = _validate_synthesis_matrix_payload(matrix, context, plan_version=plan_version)
     except Exception as exc:  # noqa: BLE001 - invalid optional extension degrades only the matrix path
         artifact_output["output_hash"] = report_output_hash(
             {key: value for key, value in artifact_output.items() if key != "output_hash"}
         )
-        return artifact_output, None, getattr(exc, "code", "MATRIX_NOT_READY")
+        diagnostic = _matrix_validation_diagnostic(exc)
+        return artifact_output, None, getattr(exc, "code", "MATRIX_NOT_READY"), diagnostic
     artifact_output["output_hash"] = report_output_hash(
         {key: value for key, value in artifact_output.items() if key != "output_hash"}
     )
-    return artifact_output, matrix, None
+    return artifact_output, matrix, None, None
 
 
 def _validate_evaluator_scope(
@@ -1486,6 +1611,7 @@ class Orchestrator:
         synthesis_matrix_context: dict[str, Any] | None = None
         synthesis_matrix_payload: dict[str, Any] | None = None
         synthesis_matrix_error: str | None = None
+        synthesis_matrix_diagnostic: dict[str, Any] | None = None
         # Freeze the exact candidate set handed to the synthesizer.  The
         # report consumer must not independently re-run the evaluator floor
         # after the model has produced citations: a different bounded prefix
@@ -2410,15 +2536,22 @@ class Orchestrator:
                     else None
                 )
                 if isinstance(normalized_synthesis_output, dict):
-                    synthesis_output, synthesis_matrix_payload, synthesis_matrix_error = _separate_synthesis_matrix(
+                    (
+                        synthesis_output,
+                        synthesis_matrix_payload,
+                        synthesis_matrix_error,
+                        synthesis_matrix_diagnostic,
+                    ) = _separate_synthesis_matrix(
                         normalized_synthesis_output,
                         synthesis_matrix_context,
+                        research_task_id=task.research_task_id,
                         plan_version=plan_version,
                     )
                 else:
                     synthesis_output = None
                     synthesis_matrix_payload = None
                     synthesis_matrix_error = None
+                    synthesis_matrix_diagnostic = None
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
                 if synthesis_quality_enabled and synthesis_quality_reservation is not None:
                     if synthesis_matrix_payload is not None and synthesis_matrix_error is None:
@@ -2432,8 +2565,9 @@ class Orchestrator:
                                 evidence=synthesis_matrix_payload["evidence"],
                                 cells=synthesis_matrix_payload["cells"],
                             )
-                        except Exception:
+                        except Exception as error:
                             synthesis_matrix_error = "MATRIX_NOT_READY"
+                            synthesis_matrix_diagnostic = _matrix_persistence_diagnostic(error)
                     try:
                         synthesis_quality_result = self._generate_report_quality_body(
                             task=task,
@@ -2442,6 +2576,7 @@ class Orchestrator:
                             selected_candidates=synthesis_validated_candidates or (),
                             reservation=synthesis_quality_reservation,
                             session_id=session.research_session_id,
+                            matrix_diagnostic=synthesis_matrix_diagnostic,
                         )
                     except Exception:
                         fail_reserved_report(synthesis_quality_reservation, "REPORT_BODY_APPLICATION_FAILED")
@@ -2844,8 +2979,9 @@ class Orchestrator:
                                 cells=synthesis_matrix_payload["cells"],
                             )
                             matrix_built = True
-                        except Exception:  # noqa: BLE001 - preserve candidate artifact on optional failure
+                        except Exception as error:  # noqa: BLE001 - preserve candidate artifact on optional failure
                             matrix_failure = "MATRIX_NOT_READY"
+                            synthesis_matrix_diagnostic = _matrix_persistence_diagnostic(error)
                             logger.warning(
                                 "synthesizer matrix build degraded for task %s: %s",
                                 task.research_task_id,
@@ -4676,6 +4812,396 @@ class Orchestrator:
                 "rendered": dict(rendered),
             }
 
+    def run_report_only_generation(
+        self, *, task, owner_id: str, session, report, work_item, reservation,
+    ) -> OrchestratorResult:
+        """Generate and publish a new report for a terminal Task.
+
+        The caller owns the queued-to-running WorkItem transition. This
+        terminal-safe branch reuses its frozen candidate set and persisted
+        evidence matrix, writes only the report reservation and this WorkItem,
+        and never reopens or re-terminalizes the ResearchTask.
+        """
+        task_id = str(getattr(task, "research_task_id", "") or "").strip()
+        item_id = str(getattr(work_item, "work_item_id", "") or "").strip()
+        report_id = getattr(report, "report_id", None)
+        report_version = getattr(report, "report_version", None)
+        plan_version = getattr(report, "plan_version", None)
+        task_status = getattr(task, "status", "failed")
+        selected_count = 0
+        report_only_task_statuses = TASK_TERMINAL
+
+        def result(error_code: str | None = None) -> OrchestratorResult:
+            current_task = None
+            if task_id:
+                with suppress(Exception):
+                    current_task = self._store.get_task(task_id, owner_id)
+            durable_status = getattr(current_task, "status", task_status)
+            durable_plan = getattr(current_task, "current_plan_version", getattr(task, "current_plan_version", 0))
+            return self._result(
+                task_id, durable_status, durable_plan, selected_count, report_id, (), False, error_code,
+            )
+
+        def close_item(next_status: str, *, code: str | None, payload: Mapping[str, Any]) -> bool:
+            """Close only the current running report WorkItem, at most once."""
+            output_json = None
+            updated = None
+            try:
+                current_item = self._store.get_work_item(item_id)
+                if (
+                    current_item is None
+                    or getattr(current_item, "research_task_id", None) != task_id
+                    or getattr(current_item, "status", None) != "running"
+                ):
+                    return False
+                output_json = json.dumps(
+                    dict(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                )
+                updated = self._store.update_work_item_status(
+                    item_id, next_status, error_code=code, output_json=output_json,
+                )
+            except Exception:
+                # A store adapter may report an error after its transaction
+                # committed. Re-read and trust only the requested durable state.
+                with suppress(Exception):
+                    observed = self._store.get_work_item(item_id)
+                    if (
+                        output_json is not None
+                        and observed is not None
+                        and getattr(observed, "research_task_id", None) == task_id
+                        and getattr(observed, "status", None) == next_status
+                        and getattr(observed, "output_json", None) == output_json
+                        and getattr(observed, "error_code", None) == code
+                    ):
+                        updated = observed
+                    else:
+                        return False
+                if updated is None:
+                    return False
+            self._owner_by_task[task_id] = owner_id
+            with suppress(Exception):
+                self._emit(task_id, "worker", self._worker_event_payload(
+                    updated, next_status, report_id=report_id, report_version=report_version,
+                ))
+            return True
+
+        if (
+            not task_id
+            or not item_id
+            or not isinstance(owner_id, str)
+            or not owner_id
+            or getattr(task, "owner_id", None) != owner_id
+            or getattr(session, "owner_id", None) != owner_id
+            or getattr(session, "research_task_id", None) != task_id
+            or getattr(session, "conversation_id", None) != getattr(task, "conversation_id", None)
+            or getattr(work_item, "research_task_id", None) != task_id
+            or getattr(work_item, "task_type", None) != "synthesize_preliminary_report"
+            or getattr(work_item, "role", None) != "synthesizer"
+            or getattr(work_item, "status", None) != "running"
+            or not isinstance(report_id, str)
+            or not report_id
+            or isinstance(report_version, bool)
+            or not isinstance(report_version, int)
+            or report_version < 1
+            or isinstance(plan_version, bool)
+            or not isinstance(plan_version, int)
+            or plan_version < 1
+            or getattr(report, "research_task_id", None) != task_id
+            or getattr(report, "status", None) != "generating"
+            or getattr(reservation, "report", None) is None
+            or getattr(reservation, "work_item", None) is None
+            or getattr(getattr(reservation, "work_item", None), "status", None) != "running"
+            or getattr(getattr(reservation, "report", None), "report_id", None) != report_id
+            or getattr(getattr(reservation, "report", None), "report_version", None) != report_version
+            or getattr(getattr(reservation, "report", None), "plan_version", None) != plan_version
+            or getattr(getattr(reservation, "work_item", None), "work_item_id", None) != item_id
+        ):
+            return result("REPORT_DELIVERY_BINDING_INVALID")
+
+        try:
+            current_task = self._store.get_task(task_id, owner_id)
+            current_session = self._store.get_session(session.research_session_id, owner_id)
+            current_item = self._store.get_work_item(item_id)
+            current_report = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+        except Exception:
+            return result("REPORT_DELIVERY_STATE_UNAVAILABLE")
+        if (
+            current_task is None
+            or getattr(current_task, "owner_id", None) != owner_id
+        ):
+            return result("REPORT_DELIVERY_BINDING_INVALID")
+        task_status = current_task.status
+        if (
+            current_item is None
+            or current_item.work_item_id != item_id
+            or current_item.research_task_id != task_id
+            or current_item.plan_version != plan_version
+            or current_item.task_type != "synthesize_preliminary_report"
+            or current_item.role != "synthesizer"
+            or current_item.status != "running"
+            or current_session is None
+            or current_session.research_session_id != session.research_session_id
+            or current_session.research_task_id != task_id
+            or current_session.owner_id != owner_id
+            or current_session.conversation_id != current_task.conversation_id
+            or current_report is None
+            or current_report.report_id != report_id
+            or current_report.plan_version != plan_version
+            or current_report.status != "generating"
+            or current_task.current_plan_version != plan_version
+        ):
+            return result("REPORT_DELIVERY_BINDING_INVALID")
+
+        item_input = getattr(current_item, "input_params", {})
+        binding = item_input.get("report_generation") if isinstance(item_input, Mapping) else None
+        request_key = binding.get("request_key") if isinstance(binding, Mapping) else None
+        request_fingerprint = binding.get("request_fingerprint") if isinstance(binding, Mapping) else None
+        reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+        durable_reservation = (
+            reservation_reader(task_id, owner_id, request_key=request_key)
+            if callable(reservation_reader) and isinstance(request_key, str)
+            else None
+        )
+        durable_item = getattr(durable_reservation, "work_item", None)
+        durable_report = getattr(durable_reservation, "report", None)
+        if (
+            not isinstance(binding, Mapping)
+            or not isinstance(request_key, str)
+            or not request_key
+            or not isinstance(request_fingerprint, str)
+            or not request_fingerprint
+            or item_input.get("report_id") != report_id
+            or item_input.get("report_version") != report_version
+            or item_input.get("plan_version") != plan_version
+            or item_input.get("request_key") != request_key
+            or item_input.get("request_fingerprint") != request_fingerprint
+            or binding.get("report_id") != report_id
+            or binding.get("report_version") != report_version
+            or binding.get("plan_version") != plan_version
+            or durable_report is None
+            or getattr(durable_report, "report_id", None) != report_id
+            or getattr(durable_report, "report_version", None) != report_version
+            or getattr(durable_report, "plan_version", None) != plan_version
+            or getattr(durable_report, "status", None) != "generating"
+            or durable_item is None
+            or getattr(durable_item, "work_item_id", None) != item_id
+            or getattr(durable_item, "status", None) != "running"
+            or not isinstance(getattr(getattr(reservation, "work_item", None), "input_params", None), Mapping)
+            or reservation.work_item.input_params.get("request_fingerprint") != request_fingerprint
+        ):
+            return result("REPORT_RESERVATION_BINDING_INVALID")
+
+        def fail_bound_report(code: str) -> OrchestratorResult:
+            """Persist a safe failure only after the exact reservation was bound."""
+            latest = None
+            try:
+                progress = self._store.get_report_generation_budget(task_id, owner_id, report_version)
+                if getattr(progress.get("report"), "status", None) == "generating":
+                    self._store.update_report_generation_state(
+                        task_id,
+                        owner_id,
+                        report_version,
+                        expected_revision=progress["revision"],
+                        stage="failed",
+                        rewrite_count=progress["rewrite_count"],
+                        status="failed",
+                        published=False,
+                        reason_codes=[code],
+                    )
+                latest = self._store.get_research_report(
+                    task_id, owner_id, report_version=report_version,
+                )
+            except Exception:
+                with suppress(Exception):
+                    latest = self._store.get_research_report(
+                        task_id, owner_id, report_version=report_version,
+                    )
+            if latest is not None and getattr(latest, "status", None) == "failed":
+                persisted_code = code
+                with suppress(Exception):
+                    progress = self._store.get_report_generation_budget(task_id, owner_id, report_version)
+                    persisted_codes = progress.get("reason_codes", [])
+                    if (
+                        isinstance(persisted_codes, list)
+                        and persisted_codes
+                        and isinstance(persisted_codes[0], str)
+                        and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", persisted_codes[0])
+                    ):
+                        persisted_code = persisted_codes[0]
+                closed = close_item("failed", code=persisted_code, payload={
+                    "status": "failed",
+                    "report_id": report_id,
+                    "report_version": report_version,
+                    "reason_codes": [persisted_code],
+                })
+                return result(persisted_code if closed else "REPORT_WORK_ITEM_SETTLEMENT_FAILED")
+            close_item("interrupted", code="REPORT_FAILURE_STATE_NOT_PERSISTED", payload={
+                "status": getattr(latest, "status", "generating"),
+                "report_id": report_id,
+                "report_version": report_version,
+                "reason_code": code,
+            })
+            return result("REPORT_FAILURE_STATE_NOT_PERSISTED")
+
+        if getattr(current_task, "status", None) not in report_only_task_statuses:
+            return fail_bound_report("REPORT_ONLY_TASK_NOT_TERMINAL")
+
+        raw_candidates = item_input.get("validated_candidates")
+        raw_allowlist = item_input.get("citation_allowlist")
+        if not isinstance(raw_candidates, list) or not 5 <= len(raw_candidates) <= 64:
+            return fail_bound_report("REPORT_CANDIDATE_SNAPSHOT_INVALID")
+        candidates: list[dict[str, Any]] = []
+        candidate_ids: set[str] = set()
+        expected_allowlist: set[tuple[str, str]] = set()
+        for candidate in raw_candidates:
+            if not isinstance(candidate, Mapping):
+                return fail_bound_report("REPORT_CANDIDATE_SNAPSHOT_INVALID")
+            candidate_id = candidate.get("candidate_id", candidate.get("catalog_paper_id"))
+            refs = candidate.get("evidence_refs")
+            if (
+                not isinstance(candidate_id, str)
+                or not candidate_id.strip()
+                or candidate_id != candidate_id.strip()
+                or len(candidate_id) > 200
+                or candidate_id in candidate_ids
+                or not isinstance(refs, list)
+                or not refs
+                or len(refs) > 64
+                or any(not isinstance(ref, str) or not ref.strip() or len(ref) > 500 for ref in refs)
+                or len(set(refs)) != len(refs)
+            ):
+                return fail_bound_report("REPORT_CANDIDATE_SNAPSHOT_INVALID")
+            normalized_id = candidate_id.strip()
+            candidate_ids.add(normalized_id)
+            expected_allowlist.update((ref, normalized_id) for ref in refs)
+            # Only IDs and the frozen citation references are forwarded. The
+            # context builder resolves title, abstract and Evidence from the
+            # persisted search snapshot and plan-bound matrix.
+            candidates.append({"candidate_id": normalized_id, "evidence_refs": list(refs)})
+        if (
+            len(candidate_ids) != len(raw_candidates)
+            or not isinstance(raw_allowlist, list)
+            or len(raw_allowlist) > 4096
+        ):
+            return fail_bound_report("REPORT_CITATION_ALLOWLIST_INVALID")
+        actual_allowlist: list[tuple[str, str]] = []
+        for entry in raw_allowlist:
+            if not isinstance(entry, Mapping):
+                return fail_bound_report("REPORT_CITATION_ALLOWLIST_INVALID")
+            citation_ref = entry.get("citation_ref")
+            candidate_id = entry.get("candidate_id")
+            if (
+                not isinstance(citation_ref, str)
+                or not isinstance(candidate_id, str)
+                or candidate_id != candidate_id.strip()
+                or len(citation_ref) > 500
+                or len(candidate_id) > 200
+            ):
+                return fail_bound_report("REPORT_CITATION_ALLOWLIST_INVALID")
+            actual_allowlist.append((citation_ref, candidate_id))
+        if len(actual_allowlist) != len(set(actual_allowlist)) or set(actual_allowlist) != expected_allowlist:
+            return fail_bound_report("REPORT_CITATION_ALLOWLIST_INVALID")
+        selected_count = len(candidates)
+
+        try:
+            quality_result = self._generate_report_quality_body(
+                task=current_task,
+                owner_id=owner_id,
+                work_item=current_item,
+                selected_candidates=candidates,
+                reservation=durable_reservation,
+                session_id=session.research_session_id,
+            )
+            delivered = None
+            rendered = quality_result.get("rendered") if isinstance(quality_result, Mapping) else None
+            if (
+                isinstance(quality_result, Mapping)
+                and quality_result.get("status") in {"generating", "completed"}
+                and isinstance(rendered, Mapping)
+            ):
+                delivered = self._publish_report_quality_canonical(
+                    task=current_task,
+                    session=session,
+                    owner_id=owner_id,
+                    reservation=durable_reservation,
+                    rendered=rendered,
+                )
+        except Exception:
+            logger.exception(
+                "report-only generation failed: task=%s report_version=%s",
+                task_id,
+                report_version,
+            )
+            quality_result = {
+                "status": "generating",
+                "diagnostic": {"code": "REPORT_DELIVERY_RECOVERY_PENDING"},
+            }
+            delivered = None
+
+        try:
+            latest_report = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+            progress = self._store.get_report_generation_budget(task_id, owner_id, report_version)
+            reason_codes = progress.get("reason_codes", [])
+        except Exception:
+            latest_report = None
+            reason_codes = []
+        latest_status = getattr(latest_report, "status", None)
+
+        diagnostic = quality_result.get("diagnostic") if isinstance(quality_result, Mapping) else None
+        delivery_diagnostic = delivered.get("diagnostic") if isinstance(delivered, Mapping) else None
+        error_code = None
+        if latest_status in {"failed", "draft", "partial"}:
+            code = reason_codes[0] if isinstance(reason_codes, list) and reason_codes else None
+            if not isinstance(code, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) is None:
+                code = diagnostic.get("code") if isinstance(diagnostic, Mapping) else None
+            if not isinstance(code, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) is None:
+                code = "REPORT_QUALITY_CHECK_FAILED"
+            payload = {
+                "status": latest_status,
+                "report_id": report_id,
+                "report_version": report_version,
+                "reason_codes": [
+                    item for item in reason_codes
+                    if isinstance(item, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", item)
+                ][:32],
+            }
+            if not close_item("failed", code=code, payload=payload):
+                error_code = "REPORT_WORK_ITEM_SETTLEMENT_FAILED"
+            else:
+                error_code = code
+        elif latest_status == "completed" and isinstance(delivered, Mapping) and delivered.get("status") == "completed":
+            payload = {
+                "status": "completed",
+                "report_id": report_id,
+                "report_version": report_version,
+                "published": True,
+            }
+            if not close_item("completed", code=None, payload=payload):
+                error_code = "REPORT_WORK_ITEM_SETTLEMENT_FAILED"
+        else:
+            if isinstance(delivery_diagnostic, Mapping):
+                candidate_code = delivery_diagnostic.get("reason_code") or delivery_diagnostic.get("code")
+            else:
+                candidate_code = diagnostic.get("code") if isinstance(diagnostic, Mapping) else None
+            if not isinstance(candidate_code, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", candidate_code) is None:
+                candidate_code = "REPORT_DELIVERY_PENDING"
+            payload = {
+                "status": latest_status if isinstance(latest_status, str) else "generating",
+                "report_id": report_id,
+                "report_version": report_version,
+                "reason_code": candidate_code,
+            }
+            if not close_item("interrupted", code=candidate_code, payload=payload):
+                error_code = "REPORT_WORK_ITEM_SETTLEMENT_FAILED"
+            else:
+                error_code = candidate_code
+
+        return result(error_code)
+
     def resume_report_quality_generation(
         self, *, task, owner_id: str, session, report, work_item, reservation,
     ) -> OrchestratorResult:
@@ -4771,9 +5297,10 @@ class Orchestrator:
         selected_candidates = (
             item_input.get("validated_candidates") if isinstance(item_input, Mapping) else None
         )
+        task_status = getattr(task, "status", "interrupted")
         if (
             not task_id
-            or getattr(task, "status", None) != "interrupted"
+            or task_status not in TASK_TERMINAL
             or getattr(task, "owner_id", None) != owner_id
             or getattr(session, "research_task_id", None) != task_id
             or getattr(session, "owner_id", None) != owner_id
@@ -4789,7 +5316,7 @@ class Orchestrator:
             or not isinstance(selected_candidates, list)
         ):
             return self._result(
-                task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                task_id, task_status, getattr(task, "current_plan_version", 0),
                 0, getattr(report, "report_id", None), (), False,
                 "REPORT_DELIVERY_RECOVERY_PENDING",
             )
@@ -4876,7 +5403,7 @@ class Orchestrator:
             delivery = delivered.get("delivery")
             artifact_ids = delivery.get("artifact_ids") if isinstance(delivery, Mapping) else None
             return self._result(
-                task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                task_id, task_status, getattr(task, "current_plan_version", 0),
                 len(selected_candidates),
                 artifact_ids[0] if isinstance(artifact_ids, list) and artifact_ids else report.report_id,
                 (), False, None,
@@ -4888,7 +5415,7 @@ class Orchestrator:
                 report_version,
             )
             return self._result(
-                task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                task_id, task_status, getattr(task, "current_plan_version", 0),
                 len(selected_candidates), getattr(report, "report_id", None), (), False,
                 "REPORT_DELIVERY_RECOVERY_PENDING",
             )
@@ -5071,6 +5598,7 @@ class Orchestrator:
         selected_candidates: Iterable[Mapping[str, Any]],
         reservation,
         session_id: str,
+        matrix_diagnostic: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run the structured report body against one live reservation.
 
@@ -5157,10 +5685,19 @@ class Orchestrator:
         def read_progress() -> dict[str, Any]:
             return self._store.get_report_generation_budget(task_id, owner_id, report_version)
 
+        safe_matrix_diagnostic = _safe_matrix_diagnostic(matrix_diagnostic)
+
         def fail_report(code: str, *, details: Mapping[str, Any] | None = None) -> dict[str, Any]:
             import re
 
             reason_code = code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) else "REPORT_GENERATION_FAILED"
+            failure_details = dict(details or {})
+            failure_reason_codes = [reason_code]
+            if safe_matrix_diagnostic is not None:
+                failure_details["matrix_diagnostic"] = safe_matrix_diagnostic
+                matrix_code = safe_matrix_diagnostic["matrix_error_code"]
+                if matrix_code not in failure_reason_codes:
+                    failure_reason_codes.append(matrix_code)
             try:
                 progress = read_progress()
             except Exception:
@@ -5176,7 +5713,7 @@ class Orchestrator:
             if current_status != "generating":
                 return {
                     "status": current_status or "generating", "report_version": report_version,
-                    "diagnostic": {"code": reason_code, "state": "already_terminal", **dict(details or {})},
+                    "diagnostic": {"code": reason_code, "state": "already_terminal", **failure_details},
                 }
             try:
                 self._store.update_report_generation_state(
@@ -5188,7 +5725,7 @@ class Orchestrator:
                         rewrite_count=progress["rewrite_count"],
                         status="failed",
                         published=False,
-                        reason_codes=[reason_code],
+                        reason_codes=failure_reason_codes,
                     )
             except Exception:
                 # Re-read in case the write committed before its adapter raised.
@@ -5198,17 +5735,20 @@ class Orchestrator:
                     observed = None
                 observed_status = getattr(getattr(observed, "get", lambda *_: None)("report"), "status", None)
                 if observed_status != "failed":
+                    recoverable_diagnostic = {
+                        "code": "REPORT_FAILURE_STATE_NOT_PERSISTED",
+                        "failure_code": reason_code,
+                        "state": observed_status or "unknown",
+                    }
+                    if safe_matrix_diagnostic is not None:
+                        recoverable_diagnostic.update(failure_details)
                     return {
                         "status": observed_status or "generating", "report_version": report_version,
-                        "diagnostic": {
-                            "code": "REPORT_FAILURE_STATE_NOT_PERSISTED",
-                            "failure_code": reason_code,
-                            "state": observed_status or "unknown",
-                        },
+                        "diagnostic": recoverable_diagnostic,
                     }
             return {
                 "status": "failed", "report_version": report_version,
-                "diagnostic": {"code": reason_code, **dict(details or {})},
+                "diagnostic": {"code": reason_code, **failure_details},
             }
 
         try:

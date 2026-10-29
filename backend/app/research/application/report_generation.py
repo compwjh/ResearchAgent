@@ -12,19 +12,20 @@ import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Iterable
+from uuid import UUID, uuid4
 
 from backend.app.research.application.evidence_matrix import EvidenceMatrixService
 from backend.app.research.application.evidence_upgrade import EvidenceUpgradeService
+from backend.app.research.application.report_quality import (
+    ReportQualityContext,
+    ReportQualityError,
+    validate_report_content,
+)
 from backend.app.research.application.report_synthesis import (
     ReportSynthesisError,
     ReportSynthesizer,
     _safe_text_input,
     render_markdown_html,
-)
-from backend.app.research.application.report_quality import (
-    ReportQualityContext,
-    ReportQualityError,
-    validate_report_content,
 )
 from backend.app.research.domain.models import ResearchReport
 
@@ -41,9 +42,12 @@ class EvidenceReportError(ReportSynthesisError):
         "REPORT_VERSION_CONFLICT": 409,
     }
 
-    def __init__(self, message: str = "", *, code: str = "REPORT_SCHEMA_INVALID") -> None:
+    def __init__(
+        self, message: str = "", *, code: str = "REPORT_SCHEMA_INVALID", existing_report: Any = None,
+    ) -> None:
         super().__init__(message or code, code=code)
         self.http_status = self._STATUS.get(code, 409)
+        self.existing_report = existing_report
 
 
 def _utcnow() -> str:
@@ -415,6 +419,307 @@ class ReportGenerationService:
     def __init__(self, store: Any):
         self.store = store
 
+    @staticmethod
+    def _report_request_key(value: Any) -> str:
+        try:
+            return str(UUID(value))
+        except (ValueError, TypeError, AttributeError) as error:
+            raise EvidenceReportError("Idempotency-Key must be a UUID") from error
+
+    @staticmethod
+    def _report_generation_payload(report: Any) -> dict[str, Any]:
+        try:
+            payload = json.loads(report.report_json or "{}")
+        except (TypeError, ValueError, AttributeError):
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _validated_report_candidates(self, research_task_id: str, plan_version: int) -> list[dict[str, Any]]:
+        """Reuse only the frozen synthesizer selection matching durable selections."""
+        list_selections = getattr(self.store, "list_selections", None)
+        list_work_items = getattr(self.store, "list_work_items", None)
+        if not callable(list_selections) or not callable(list_work_items):
+            raise EvidenceReportError("validated matrix candidates are unavailable", code="REPORT_NOT_READY")
+        try:
+            selected_ids = {
+                str(item.catalog_paper_id).strip()
+                for item in list_selections(research_task_id)
+                if isinstance(getattr(item, "catalog_paper_id", None), str)
+                and item.catalog_paper_id.strip()
+            }
+            work_items = list(list_work_items(research_task_id, plan_version=plan_version))
+        except Exception as error:
+            raise EvidenceReportError("validated matrix candidates are unavailable", code="REPORT_NOT_READY") from error
+        if not selected_ids or len(selected_ids) > 20:
+            raise EvidenceReportError("validated matrix candidates are unavailable", code="REPORT_NOT_READY")
+
+        for item in reversed(work_items):
+            if (
+                getattr(item, "task_type", None) != "synthesize_preliminary_report"
+                or getattr(item, "role", None) != "synthesizer"
+                or getattr(item, "research_task_id", None) != research_task_id
+                or getattr(item, "plan_version", None) != plan_version
+            ):
+                continue
+            candidates = getattr(item, "input_params", {}).get("validated_candidates")
+            if not isinstance(candidates, list) or not candidates or len(candidates) > 20:
+                continue
+            copied: list[dict[str, Any]] = []
+            candidate_ids: list[str] = []
+            valid = True
+            for raw in candidates:
+                if not isinstance(raw, Mapping):
+                    valid = False
+                    break
+                candidate_id = raw.get("candidate_id", raw.get("catalog_paper_id"))
+                evidence_refs = raw.get("evidence_refs")
+                if (
+                    not isinstance(candidate_id, str)
+                    or not candidate_id.strip()
+                    or not isinstance(evidence_refs, list)
+                    or len(evidence_refs) > 80
+                    or any(not isinstance(ref, str) or not ref.strip() or len(ref) > 240 for ref in evidence_refs)
+                ):
+                    valid = False
+                    break
+                candidate = dict(raw)
+                candidate["candidate_id"] = candidate_id.strip()
+                candidate["evidence_refs"] = list(dict.fromkeys(ref.strip() for ref in evidence_refs))
+                copied.append(candidate)
+                candidate_ids.append(candidate_id.strip())
+            if valid and len(set(candidate_ids)) == len(candidate_ids) and set(candidate_ids) == selected_ids:
+                return copied
+        raise EvidenceReportError("validated matrix candidates are unavailable", code="REPORT_NOT_READY")
+
+    def _same_title_active_reservation(
+        self, research_task_id: str, owner_id: str, *, plan_version: int, title: str,
+    ) -> Any | None:
+        reports_reader = getattr(self.store, "list_research_reports", None)
+        reservation_reader = getattr(self.store, "get_report_generation_reservation", None)
+        if not callable(reports_reader) or not callable(reservation_reader):
+            return None
+        for report in reversed(reports_reader(research_task_id, owner_id)):
+            if getattr(report, "status", None) != "generating" or getattr(report, "plan_version", None) != plan_version:
+                continue
+            payload = self._report_generation_payload(report)
+            generation = payload.get("generation") if isinstance(payload, dict) else None
+            request_key = generation.get("request_key") if isinstance(generation, dict) else None
+            if not isinstance(request_key, str):
+                continue
+            reservation = reservation_reader(research_task_id, owner_id, request_key=request_key)
+            if reservation is not None and reservation.work_item.input_params.get("report_title") == title:
+                return reservation
+        return None
+
+    def _active_report_generation(self, research_task_id: str, owner_id: str, *, plan_version: int) -> Any | None:
+        reports_reader = getattr(self.store, "list_research_reports", None)
+        if not callable(reports_reader):
+            return None
+        return next((
+            report for report in reversed(reports_reader(research_task_id, owner_id))
+            if getattr(report, "status", None) == "generating"
+            and getattr(report, "plan_version", None) == plan_version
+        ), None)
+
+    def reserve_session_generation(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        *,
+        plan_version: int | None = None,
+        report_version: int | None = None,
+        title: str = "深度研究报告",
+        request_key: str | None = None,
+    ) -> Any:
+        """Atomically reserve an async report-only run for an existing Session Task."""
+        key_was_omitted = request_key is None
+        title = title.strip() if isinstance(title, str) else ""
+        if not title or len(title) > 200:
+            raise EvidenceReportError("report title is invalid")
+        task = self.store.get_task(research_task_id, owner_id)
+        if task is None:
+            raise EvidenceReportError("research task not found", code="TASK_NOT_FOUND")
+        if task.status not in {"completed", "partial", "failed", "interrupted", "cancelled"}:
+            raise EvidenceReportError("report-only generation requires a terminal research task", code="REPORT_NOT_READY")
+        session_reader = getattr(self.store, "get_session_by_task", None)
+        session = session_reader(research_task_id, owner_id) if callable(session_reader) else None
+        if session is None or session.owner_id != owner_id:
+            raise EvidenceReportError("report-only generation requires an owned research session", code="REPORT_NOT_READY")
+
+        version = int(plan_version or task.current_plan_version)
+        if version < 1 or version != int(task.current_plan_version):
+            raise EvidenceReportError("report generation requires the current plan version", code="REPORT_VERSION_CONFLICT")
+        plan_reader = getattr(self.store, "get_plan", None)
+        plan = plan_reader(research_task_id, version) if callable(plan_reader) else None
+        if plan is None or plan.status not in {"active", "completed"}:
+            raise EvidenceReportError("report generation plan is unavailable", code="REPORT_VERSION_CONFLICT")
+
+        request_payload = {
+            "plan_version": version,
+            "title": title,
+            "schema_version": "report-quality-v1",
+        }
+        key: str | None = None
+        if request_key is not None:
+            key = self._report_request_key(request_key)
+            reservation_reader = getattr(self.store, "get_report_generation_reservation", None)
+            existing = reservation_reader(research_task_id, owner_id, request_key=key) if callable(reservation_reader) else None
+            if existing is not None:
+                return self._reserve_from_store(
+                    research_task_id, owner_id, plan_version=version, request_key=key,
+                    request_payload=request_payload, report_version=report_version,
+                )
+        else:
+            joined = self._same_title_active_reservation(
+                research_task_id, owner_id, plan_version=version, title=title,
+            )
+            if joined is not None:
+                payload = self._report_generation_payload(joined.report)
+                generation = payload.get("generation") if isinstance(payload, dict) else None
+                active_key = generation.get("request_key") if isinstance(generation, dict) else None
+                if isinstance(active_key, str):
+                    return self._reserve_from_store(
+                        research_task_id, owner_id, plan_version=version, request_key=active_key,
+                        request_payload=request_payload, report_version=report_version,
+                    )
+            key = str(uuid4())
+
+        active_report = self._active_report_generation(
+            research_task_id, owner_id, plan_version=version,
+        )
+        if active_report is not None:
+            raise EvidenceReportError(
+                "a report version is already generating",
+                code="REPORT_GENERATION_IN_PROGRESS",
+                existing_report=active_report,
+            )
+
+        try:
+            matrix = EvidenceMatrixService(self.store).read_matrix(
+                research_task_id, owner_id, plan_version=version,
+            )
+        except EvidenceReportError:
+            raise
+        except Exception as error:
+            code = "REPORT_NOT_READY" if getattr(error, "code", None) == "MATRIX_NOT_READY" else "REPORT_NOT_READY"
+            raise EvidenceReportError("report matrix is not ready", code=code) from error
+        if (
+            not isinstance(matrix, Mapping)
+            or matrix.get("task_id", matrix.get("research_task_id")) != research_task_id
+            or matrix.get("plan_version") != version
+        ):
+            raise EvidenceReportError("report matrix context is unavailable", code="REPORT_NOT_READY")
+        candidates = self._validated_report_candidates(research_task_id, version)
+        allowlist = [
+            {"citation_ref": ref, "candidate_id": candidate["candidate_id"]}
+            for candidate in candidates for ref in candidate["evidence_refs"]
+        ]
+        try:
+            return self._reserve_from_store(
+                research_task_id,
+                owner_id,
+                plan_version=version,
+                request_key=key,
+                request_payload=request_payload,
+                work_item_input={
+                    "validated_candidates": candidates,
+                    "citation_allowlist": allowlist,
+                    "report_title": title,
+                },
+                report_version=report_version,
+            )
+        except EvidenceReportError as error:
+            # If two no-header requests race before either can observe the
+            # other's active row, join the winner only when its stored title
+            # and current plan match this request.
+            if not key_was_omitted or error.code != "REPORT_GENERATION_IN_PROGRESS":
+                raise
+            joined = self._same_title_active_reservation(
+                research_task_id, owner_id, plan_version=version, title=title,
+            )
+            if joined is None:
+                raise
+            payload = self._report_generation_payload(joined.report)
+            generation = payload.get("generation") if isinstance(payload, dict) else None
+            active_key = generation.get("request_key") if isinstance(generation, dict) else None
+            if not isinstance(active_key, str):
+                raise
+            return self._reserve_from_store(
+                research_task_id, owner_id, plan_version=version, request_key=active_key,
+                request_payload=request_payload, report_version=report_version,
+            )
+
+    def _reserve_from_store(
+        self,
+        research_task_id: str,
+        owner_id: str,
+        *,
+        plan_version: int,
+        request_key: str,
+        request_payload: Mapping[str, Any],
+        work_item_input: Mapping[str, Any] | None = None,
+        report_version: int | None = None,
+    ) -> Any:
+        try:
+            return self.store.reserve_report_generation(
+                research_task_id,
+                owner_id,
+                plan_version=plan_version,
+                request_key=request_key,
+                request_payload=request_payload,
+                work_item_input=work_item_input,
+                report_version=report_version,
+            )
+        except Exception as error:
+            code = getattr(error, "code", None)
+            if code in {"REPORT_GENERATION_IN_PROGRESS", "REPORT_IDEMPOTENCY_KEY_REUSED", "REPORT_VERSION_CONFLICT"}:
+                raise EvidenceReportError(
+                    str(error), code=code, existing_report=getattr(error, "existing_report", None),
+                ) from error
+            if isinstance(error, ValueError):
+                raise EvidenceReportError("report reservation input is invalid") from error
+            raise
+
+    @staticmethod
+    def submission_projection(reservation: Any) -> dict[str, Any]:
+        report = reservation.report
+        payload = ReportGenerationService._report_generation_payload(report)
+        generation = payload.get("generation") if isinstance(payload.get("generation"), dict) else {}
+        quality = payload.get("quality_validation") if isinstance(payload.get("quality_validation"), dict) else {}
+        failure_codes = quality.get("failure_codes", [])
+        if not isinstance(failure_codes, list):
+            failure_codes = []
+        state_codes = payload.get("reason_codes", [])
+        if not isinstance(state_codes, list):
+            state_codes = []
+        fallback_code = generation.get("fallback_reason_code")
+        reason_codes = list(dict.fromkeys(
+            [code for code in failure_codes if isinstance(code, str) and code.isascii() and len(code) <= 80]
+            + [code for code in state_codes if isinstance(code, str) and code.isascii() and len(code) <= 80]
+            + ([fallback_code] if isinstance(fallback_code, str) and fallback_code.isascii() and len(fallback_code) <= 80 else [])
+        ))
+        quality_status = quality.get("status")
+        if quality_status not in {"pending", "pass", "fail", "unvalidated"}:
+            quality_status = "pending" if report.status == "generating" else "unvalidated"
+        limitations = []
+        try:
+            decoded = json.loads(report.limitations_json or "[]")
+            limitations = decoded if isinstance(decoded, list) else []
+        except (TypeError, ValueError):
+            pass
+        return {
+            "report_id": report.report_id,
+            "research_task_id": report.research_task_id,
+            "plan_version": report.plan_version,
+            "report_version": report.report_version,
+            "status": report.status,
+            "limitations": limitations,
+            "quality_status": quality_status,
+            "published": generation.get("published") is True,
+            "reason_codes": reason_codes,
+            "report_url": f"/api/research-tasks/{report.research_task_id}/reports/{report.report_version}?format=json",
+        }
+
     def generate(
         self, research_task_id: str, owner_id: str, *, plan_version: int | None = None,
         report_version: int | None = None, title: str = "深度研究报告",
@@ -453,6 +758,21 @@ class ReportGenerationService:
         built = ReportSynthesizer().synthesize_evidence_report(
             matrix, report_id=report_id, report_version=version, title=title,
         )
+        session_reader = getattr(self.store, "get_session_by_task", None)
+        session = session_reader(research_task_id, owner_id) if callable(session_reader) else None
+        if session is None:
+            legacy_report = dict(built["report"])
+            legacy_report["status"] = "draft"
+            legacy_report["published"] = False
+            legacy_report["quality_validation"] = {"status": "unvalidated", "failure_codes": []}
+            legacy_report["generation"] = {
+                "report_version": version,
+                "plan_version": int(matrix["plan_version"]),
+                "path": "matrix_api",
+                "output_disposition": "not_run",
+                "published": False,
+            }
+            built["report"] = legacy_report
         encoded = _json(built["report"])
         model = ResearchReport(
             report_id=report_id, research_task_id=research_task_id,
