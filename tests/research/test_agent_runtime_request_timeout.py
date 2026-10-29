@@ -96,10 +96,66 @@ def test_provider_timeout_uses_run_grant_and_reserves_existing_fallback_time():
 
     assert result.status == "completed"
     assert result.usage["model_loops"] == 2
-    assert models["local:qwen"].request_timeouts == [90]
-    assert models["deepseek:flash"].request_timeouts == [30]
-    assert clock.now == 98
+    assert models["local:qwen"].request_timeouts == [30]
+    assert models["deepseek:flash"].request_timeouts == [90]
+    assert sum(models["local:qwen"].request_timeouts + models["deepseek:flash"].request_timeouts) == 120
+    assert clock.now == 38
     assert result.model_metadata["fallback_attempted"] is True
+
+
+def test_shorter_remaining_grant_splits_proportionally_without_exceeding_cap():
+    clock = _Clock()
+    models = {}
+
+    def factory(name, _effort):
+        model = _TimeoutModel(
+            name,
+            clock,
+            timeout_after_set=name.startswith("local:"),
+            output=_output("planner"),
+        )
+        models[name] = model
+        return model
+
+    runner = ResearchAgentRunner(
+        model_router=_Router(),
+        model_factory=factory,
+        online_fallback_factory=factory,
+        online_fallback_enabled=True,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("planner")]),
+        clock=clock,
+    )
+
+    result = runner.run(
+        _run_input(budget={"max_seconds": 120, "elapsed_seconds": 40})
+    )
+
+    assert result.status == "completed"
+    assert models["local:qwen"].request_timeouts == [20]
+    assert models["deepseek:flash"].request_timeouts == [60]
+    assert sum(models["local:qwen"].request_timeouts + models["deepseek:flash"].request_timeouts) == 80
+    assert 40 + clock.now <= 120
+
+
+def test_disabled_fallback_gets_all_remaining_run_time():
+    clock = _Clock()
+    model = _TimeoutModel("local:qwen", clock, timeout_after_set=True, output=_output("planner"))
+    runner = ResearchAgentRunner(
+        model=model,
+        online_fallback_enabled=False,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("planner")]),
+        clock=clock,
+    )
+
+    result = runner.run(
+        _run_input(budget={"max_seconds": 120, "elapsed_seconds": 0})
+    )
+
+    assert result.status == "limit_reached"
+    assert result.error_code == "TASK_TIME_LIMIT_REACHED"
+    assert model.request_timeouts == [120]
+    assert result.usage["model_loops"] == 1
+    assert result.model_metadata.get("fallback_attempted") is None
 
 
 def test_primary_and_fallback_timeout_stop_at_the_same_run_grant():
@@ -132,8 +188,8 @@ def test_primary_and_fallback_timeout_stop_at_the_same_run_grant():
     assert result.status == "limit_reached"
     assert result.error_code == "TASK_TIME_LIMIT_REACHED"
     assert result.usage["model_loops"] == 2
-    assert models["local:qwen"].request_timeouts == [90]
-    assert models["deepseek:flash"].request_timeouts == [30]
+    assert models["local:qwen"].request_timeouts == [30]
+    assert models["deepseek:flash"].request_timeouts == [90]
     assert clock.now == 120
 
 
@@ -283,7 +339,7 @@ def test_provider_return_after_full_grant_does_not_construct_fallback():
     assert result.model_metadata["provider"] == "ollama"
     assert result.model_metadata["model"] == "local:qwen"
     assert result.model_metadata.get("fallback_attempted") is None
-    assert primary_models[0].request_timeouts == [90]
+    assert primary_models[0].request_timeouts == [30]
 
 
 def test_exhausted_run_budget_skips_provider_and_preserves_model_projection():

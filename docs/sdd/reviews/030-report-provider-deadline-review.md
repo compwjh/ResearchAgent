@@ -70,3 +70,22 @@ Runtime 在 provider 返回后识别到请求超时，会抛 `MODEL_TIMEOUT`。�
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_agent_runtime_request_timeout.py tests/research/test_online_model_dispatch.py tests/research/test_research_agent_approval_contract.py tests/research/test_agent_runtime_contract.py` | 0 | `108 passed in 2.54s` |
 
 本次只复核上述两个边界和受影响的定向测试；未运行全量测试、部署或真实报告生成。
+
+## Follow-up review — 2026-10-30 fallback reserve ratio
+
+**Current verdict: PASS.** The fallback reserve change preserves the run's existing total grant. It reserves up to 90 seconds or 75% of the *currently remaining* time only when fallback is configured and resolvable; without fallback, the local provider retains the full remaining allowance. The 120-second case now gets local 30s + online 90s, matching the requested priority.
+
+- [agent_runtime.py:57](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:57) and [agent_runtime.py:58](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:58) set the reserve maximum/ratio to 90s/75%. At [agent_runtime.py:2667](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:2667), request timeout starts as the full remaining run grant; only a viable fallback path subtracts the reserve at [agent_runtime.py:2676](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:2676).
+- Exact regressions verify 120s → local 30s + online 90s, an 80s remainder → local 20s + online 60s, and disabled/unconfigured fallback → local 120s. The primary+fallback timeout case sums to the same 120s cap. A separate 8s-grant probe produced local 2s + online 6s; the actual fake-clock runtime elapsed 3s and remained below its cap.
+- The full-cap late-return regression still verifies that a result arriving after the run grant is rejected before fallback construction; model output is not accepted and provider metadata remains the original local model.
+
+**Non-blocking scheduling precision limit:** the existing 1ms minimum request-timeout floor can exceed a remaining allowance below 4ms when the 75% reserve is active. A controlled 1s-run probe with 0.5ms remaining configured a 1ms local request and returned `limit_reached` at 1.0005s. This is a sub-millisecond wall-clock overrun; the late result was rejected, its elapsed time counted, and no fallback was constructed or invoked. Per root's acceptance, this is recorded as a scheduling-precision limitation and does not block the report-generation deployment.
+
+| Command | Exit code | Result |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_agent_runtime_request_timeout.py::test_provider_timeout_uses_run_grant_and_reserves_existing_fallback_time tests/research/test_agent_runtime_request_timeout.py::test_shorter_remaining_grant_splits_proportionally_without_exceeding_cap tests/research/test_agent_runtime_request_timeout.py::test_disabled_fallback_gets_all_remaining_run_time tests/research/test_agent_runtime_request_timeout.py::test_primary_and_fallback_timeout_stop_at_the_same_run_grant tests/research/test_agent_runtime_request_timeout.py::test_provider_return_after_full_grant_does_not_construct_fallback` | 0 | `5 passed in 0.55s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_agent_runtime_request_timeout.py tests/research/test_online_model_dispatch.py tests/research/test_research_agent_approval_contract.py tests/research/test_agent_runtime_contract.py` | 0 | `110 passed in 2.39s` |
+| Independent 8s-grant split probe | 0 | 2s local + 6s fallback; configured grants sum to 8s |
+| Independent sub-4ms remainder probe | 0 | 0.5ms remainder rounded to 1ms request; late output rejected at 1.0005s; no fallback |
+
+本次仅复核 reserve 比例、无 fallback 兼容、预算守恒和小 grant 行为；未重审其它已通过实现，也未运行全量测试、部署或真实报告生成。
