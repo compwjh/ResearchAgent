@@ -529,6 +529,9 @@ def test_html_artifact_supports_inline_read_but_other_types_stay_attachment(monk
     session = SimpleNamespace(research_task_id="t1")
     class Store:
         def get_session(self, _sid, _owner): return session
+        def get_task(self, _task_id, _owner):
+            return SimpleNamespace(research_task_id="t1", owner_id="owner-a")
+        def get_research_report(self, _task_id, _owner, *, report_version): return None
         def get_artifact(self, _aid, _owner): return artifact
     monkeypatch.setattr(routes_research, "_store", lambda: Store())
     inline = routes_research.download_research_artifact("s1", "a1", mode="inline")

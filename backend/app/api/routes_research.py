@@ -78,6 +78,7 @@ _SESSION_CREATE_LOCK = threading.RLock()
 # 终态集合：与 `research.domain.contracts.TASK_TERMINAL` 逐字一致。api 只经
 # application/entry 依赖 research（不 import domain），故在此显式列出。
 _TASK_TERMINAL = frozenset({"partial", "completed", "failed", "cancelled", "interrupted"})
+_PUBLIC_REPORT_ARTIFACT_TYPES = frozenset({"markdown", "html", "citation_manifest"})
 
 # 任务摘要里 goal 的截断长度（与 service 的 draft 事件摘要一致，不放大段原文）。
 _GOAL_EXCERPT_CHARS = 120
@@ -796,6 +797,49 @@ def _artifact_payload(artifact, research_session_id: str | None = None) -> dict:
     }
 
 
+def _canonical_report_is_published(report, *, research_task_id: str, report_version: int) -> bool:
+    """Only a completed canonical version with an explicit publish marker is public."""
+    if report is None:
+        return True
+    if (
+        getattr(report, "research_task_id", None) != research_task_id
+        or getattr(report, "report_version", None) != report_version
+        or getattr(report, "status", None) != "completed"
+    ):
+        return False
+    try:
+        payload = json.loads(getattr(report, "report_json", "") or "")
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    generation = payload.get("generation")
+    return isinstance(generation, dict) and generation.get("published") is True
+
+
+def _visible_session_artifacts(store, research_task_id: str, *, report_version: int | None = None):
+    """Filter unpublished canonical versions while preserving legacy artifacts."""
+    artifacts = store.list_artifacts_for_task(
+        research_task_id, OWNER_ID, report_version=report_version,
+    )
+    reports = store.list_research_reports(research_task_id, OWNER_ID)
+    report_by_version = {
+        item.report_version: item
+        for item in reports
+        if getattr(item, "research_task_id", None) == research_task_id
+    }
+    return [
+        artifact for artifact in artifacts
+        if getattr(artifact, "research_task_id", None) == research_task_id
+        and getattr(artifact, "artifact_type", None) in _PUBLIC_REPORT_ARTIFACT_TYPES
+        and _canonical_report_is_published(
+            report_by_version.get(getattr(artifact, "report_version", None)),
+            research_task_id=research_task_id,
+            report_version=artifact.report_version,
+        )
+    ]
+
+
 def _notification_payload(notification) -> dict:
     try:
         payload = json.loads(notification.payload_json or "{}")
@@ -1092,12 +1136,18 @@ def _create_legacy_task_compat(payload: ResearchTaskCreateRequest, goal: str, co
 def list_research_artifacts(research_session_id: str, report_version: Optional[int] = Query(None, ge=1)):
     """List immutable report artifacts through the owner/session/task seam."""
     try:
-        session = _store().get_session(research_session_id, OWNER_ID)
+        store = _store()
+        session = store.get_session(research_session_id, OWNER_ID)
         if session is None:
             return _api_error("RESEARCH_SESSION_NOT_FOUND", 404, "研究会话不存在")
         if not session.research_task_id:
             return _api_error("ARTIFACT_NOT_READY", 409, "报告尚未生成")
-        artifacts = _store().list_artifacts_for_task(session.research_task_id, OWNER_ID, report_version=report_version)
+        task = store.get_task(session.research_task_id, OWNER_ID)
+        if task is None or getattr(task, "research_task_id", None) != session.research_task_id:
+            return _api_error("RESEARCH_TASK_NOT_FOUND", 404, "研究任务不存在")
+        artifacts = _visible_session_artifacts(
+            store, task.research_task_id, report_version=report_version,
+        )
         return {"research_session_id": research_session_id, "artifacts": [_artifact_payload(item, research_session_id) for item in artifacts]}
     except Exception:
         logger.exception("research artifact list failed")
@@ -1110,13 +1160,26 @@ def download_research_artifact(
 ):
     """Download an owner-bound in-database artifact; arbitrary paths are rejected."""
     try:
-        session = _store().get_session(research_session_id, OWNER_ID)
+        store = _store()
+        session = store.get_session(research_session_id, OWNER_ID)
         if session is None or not session.research_task_id:
             return _api_error("RESEARCH_SESSION_NOT_FOUND", 404, "研究会话不存在")
-        artifact = _store().get_artifact(artifact_id, OWNER_ID)
+        task = store.get_task(session.research_task_id, OWNER_ID)
+        if task is None or getattr(task, "research_task_id", None) != session.research_task_id:
+            return _api_error("RESEARCH_TASK_NOT_FOUND", 404, "研究任务不存在")
+        artifact = store.get_artifact(artifact_id, OWNER_ID)
         if artifact is None or artifact.research_task_id != session.research_task_id:
             return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
-        if artifact.artifact_type not in {"markdown", "html", "citation_manifest"}:
+        canonical_report = store.get_research_report(
+            task.research_task_id, OWNER_ID, report_version=artifact.report_version,
+        )
+        if not _canonical_report_is_published(
+            canonical_report,
+            research_task_id=task.research_task_id,
+            report_version=artifact.report_version,
+        ):
+            return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
+        if artifact.artifact_type not in _PUBLIC_REPORT_ARTIFACT_TYPES:
             return _api_error("ARTIFACT_NOT_FOUND", 404, "报告产物不存在")
         if mode not in {"attachment", "inline"} or (mode == "inline" and artifact.artifact_type != "html"):
             return _api_error("INVALID_ARTIFACT_MODE", 400, "仅 HTML 支持 inline 阅读")
@@ -1207,6 +1270,12 @@ def get_research_session(research_session_id: str):
     try:
         service = _approval_service()
         session = service.get_session(research_session_id, OWNER_ID)
+        task_id = session.research_task_id
+        task = _store().get_task(task_id, OWNER_ID) if task_id else None
+        if task_id and (
+            task is None or getattr(task, "research_task_id", None) != task_id
+        ):
+            return _api_error("RESEARCH_TASK_NOT_FOUND", 404, "研究任务不存在")
         if session.research_task_id:
             # Repair stale Session projections after a worker finished between
             # the Task and Session commits (or after a process restart).
@@ -1214,9 +1283,9 @@ def get_research_session(research_session_id: str):
                 session.research_task_id, OWNER_ID
             ) or session
         plan = _store().get_session_plan(research_session_id, OWNER_ID)
-        task = (
-            _store().get_task(session.research_task_id, OWNER_ID)
-            if session.research_task_id else None
+        artifacts = (
+            _visible_session_artifacts(_store(), task.research_task_id)
+            if task is not None else []
         )
         return {
             **session.to_dict(),
@@ -1224,10 +1293,7 @@ def get_research_session(research_session_id: str):
             "plan": plan.to_dict() if plan else None,
             "plans": [item.to_dict() for item in _store().list_session_plans(research_session_id, OWNER_ID)],
             "approvals": [item.to_dict() for item in _store().list_approvals(research_session_id, OWNER_ID)],
-            "artifacts": (
-                [_artifact_payload(item, research_session_id) for item in _store().list_artifacts_for_task(session.research_task_id, OWNER_ID)]
-                if session.research_task_id else []
-            ),
+            "artifacts": [_artifact_payload(item, research_session_id) for item in artifacts],
             "notifications": [
                 _notification_payload(item)
                 for item in _store().list_notifications(OWNER_ID)
