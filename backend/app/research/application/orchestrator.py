@@ -37,12 +37,19 @@ from backend.app.research.application.matrix_contract import (
     validate_synthesis_matrix_payload as _validate_synthesis_matrix_payload,
 )
 from backend.app.research.application.planner import Planner
-from backend.app.research.application.report_generation import ReportGenerationService
+from backend.app.research.application.report_generation import ReportGenerationService, render_report_payload
+from backend.app.research.application.report_quality import (
+    ReportQualityContext,
+    ReportQualityError,
+    validate_report_content,
+)
 from backend.app.research.application.report_synthesis import (
     ReportDeliveryService,
     ReportSynthesisError,
     ReportSynthesizer,
     ResearchNotificationService,
+    _safe_catalog_metadata,
+    _safe_text_input,
     render_markdown_html,
     report_output_hash,
     validate_report_synthesis_output,
@@ -74,6 +81,16 @@ _REPORT_STATUS = "preliminary"
 # least five candidates.  This does not create candidates or download papers;
 # it only raises the deterministic selection cap within the existing pool.
 _MIN_REPORT_CANDIDATES = 5
+
+
+class ReportQualityContextUnavailable(ValueError):
+    """A stable, actionable dependency when trusted runtime context is absent."""
+
+    def __init__(self, dependency: str, *, source_code: str = "REPORT_QUALITY_CONTEXT_UNAVAILABLE") -> None:
+        self.code = "REPORT_QUALITY_CONTEXT_UNAVAILABLE"
+        self.dependency = dependency
+        self.source_code = source_code
+        super().__init__(self.code)
 
 def _utcnow() -> str:
     """当前 UTC 时间戳，格式与 research_store._utcnow 一致：`YYYY-MM-DDTHH:MM:SSZ`。"""
@@ -1357,6 +1374,8 @@ class Orchestrator:
 
     def _run_agent_work_items(self, *, task, owner_id: str, plan_version: int) -> OrchestratorResult:
         """Create and dispatch one complete AgentRunInput per WorkItem."""
+        from uuid import NAMESPACE_URL, uuid4, uuid5
+
         from backend.app.research.application.agent_runtime import (
             ROLE_SKILL_DEFAULTS,
             AgentRunInput,
@@ -1372,6 +1391,24 @@ class Orchestrator:
             with suppress(InvalidStateTransition):
                 self._store.update_task_status(task.research_task_id, owner_id, "failed")
             return self._result(task.research_task_id, "failed", plan_version, 0, None, (), False, "SESSION_NOT_FOUND")
+        latest_report_reader = getattr(self._store, "get_research_report", None)
+        latest_report = (
+            latest_report_reader(task.research_task_id, owner_id)
+            if callable(latest_report_reader) else None
+        )
+        if latest_report is not None and latest_report.status in {"generating", "completed"}:
+            try:
+                saved_report = json.loads(latest_report.report_json or "{}")
+            except (TypeError, ValueError):
+                saved_report = {}
+            if (
+                isinstance(saved_report, dict)
+                and isinstance(saved_report.get("report_content"), dict)
+                and isinstance(saved_report.get("quality_validation"), dict)
+            ):
+                return self._resume_report_quality_delivery(
+                    task=task, owner_id=owner_id, session=session, report=latest_report,
+                )
         approved_capabilities: dict[str, dict] = {}
         budget_snapshot: dict = {}
         session_plan = self._store.get_session_plan(session.research_session_id, owner_id, plan_version)
@@ -1399,6 +1436,9 @@ class Orchestrator:
         failure_error_code: str | None = None
         synthesis_run_id = None
         synthesis_output: dict | None = None
+        synthesis_quality_enabled = False
+        synthesis_quality_reservation = None
+        synthesis_quality_result: dict[str, Any] | None = None
         synthesis_matrix_context: dict[str, Any] | None = None
         synthesis_matrix_payload: dict[str, Any] | None = None
         synthesis_matrix_error: str | None = None
@@ -1459,6 +1499,29 @@ class Orchestrator:
             return task_id is None or task_id == task.research_task_id
 
         runtime_validator = ResearchAgentRunner(store=self._store)
+
+        def fail_reserved_report(reservation, code: str) -> None:
+            report = getattr(reservation, "report", None)
+            if report is None or getattr(report, "status", None) != "generating":
+                return
+            try:
+                progress = self._store.get_report_generation_budget(
+                    task.research_task_id, owner_id, report.report_version,
+                )
+                if progress["report"].status == "generating":
+                    self._store.update_report_generation_state(
+                        task.research_task_id,
+                        owner_id,
+                        report.report_version,
+                        expected_revision=progress["revision"],
+                        stage="failed",
+                        rewrite_count=progress["rewrite_count"],
+                        status="failed",
+                        published=False,
+                        reason_codes=[code],
+                    )
+            except Exception:
+                logger.warning("could not persist report failure code %s", code)
 
         def checkpoint_binds_envelope(
             envelope: Mapping[str, Any],
@@ -1956,6 +2019,57 @@ class Orchestrator:
                 )
                 if synthesis_matrix_context is not None:
                     work_item_input["matrix_context"] = synthesis_matrix_context
+                if len(validated) >= 5:
+                    synthesis_quality_enabled = True
+                    selected_ids = [candidate["candidate_id"] for candidate in validated]
+                    request_key = str(uuid5(
+                        NAMESPACE_URL,
+                        f"spec030-report-quality:{task.research_task_id}:{plan_version}:{item.work_item_id}",
+                    ))
+                    reservation_input = dict(work_item_input)
+                    for reserved_key in ("report_generation", "report_id", "request_key", "request_fingerprint"):
+                        reservation_input.pop(reserved_key, None)
+                    try:
+                        synthesis_quality_reservation = self._store.reserve_report_generation(
+                            task.research_task_id,
+                            owner_id,
+                            plan_version=plan_version,
+                            request_key=request_key,
+                            request_payload={
+                                "plan_version": plan_version,
+                                "selected_paper_ids": selected_ids,
+                                "schema_version": "report-quality-v1",
+                            },
+                            work_item_input=reservation_input,
+                        )
+                    except Exception:
+                        synthesis_quality_result = {
+                            "status": "failed",
+                            "diagnostic": {"code": "REPORT_RESERVATION_FAILED"},
+                        }
+                        synthesis_error = "REPORT_RESERVATION_FAILED"
+                        failures += 1
+                        failed_ids.add(item.work_item_id)
+                        self._fail_work_item(task.research_task_id, item, synthesis_error)
+                        continue
+                    if (
+                        synthesis_quality_reservation.work_item.work_item_id != item.work_item_id
+                        or synthesis_quality_reservation.work_item.status != "queued"
+                    ):
+                        fail_reserved_report(
+                            synthesis_quality_reservation,
+                            "REPORT_RESERVATION_WORK_ITEM_MISMATCH",
+                        )
+                        synthesis_quality_result = {
+                            "status": "failed",
+                            "diagnostic": {"code": "REPORT_RESERVATION_WORK_ITEM_MISMATCH"},
+                        }
+                        synthesis_error = "REPORT_RESERVATION_WORK_ITEM_MISMATCH"
+                        failures += 1
+                        failed_ids.add(item.work_item_id)
+                        self._fail_work_item(task.research_task_id, item, synthesis_error)
+                        continue
+                    work_item_input = dict(synthesis_quality_reservation.work_item.input_params)
             with suppress(Exception):
                 self._store.update_work_item_input(
                     item.work_item_id,
@@ -1972,6 +2086,95 @@ class Orchestrator:
                 ),
             )
             run_id = f"{item.work_item_id}:run-{max(1, running_item.attempt)}"
+            report_run_claim_id = None
+            dispatch_budget_snapshot = budget_snapshot
+            if synthesis_quality_enabled and role == "synthesizer" and synthesis_quality_reservation is not None:
+                report_version = synthesis_quality_reservation.report.report_version
+                try:
+                    report_progress = self._store.get_report_generation_budget(
+                        task.research_task_id, owner_id, report_version,
+                    )
+                    if report_progress.get("stage") is None:
+                        report_progress = self._store.update_report_generation_state(
+                            task.research_task_id,
+                            owner_id,
+                            report_version,
+                            expected_revision=report_progress["revision"],
+                            stage="evidence_review",
+                            rewrite_count=report_progress["rewrite_count"],
+                        )
+                    report_run_claim_id = str(uuid4())
+                    report_claim = self._store.claim_report_generation_budget(
+                        task.research_task_id,
+                        owner_id,
+                        report_version,
+                        claim_id=report_run_claim_id,
+                        agent_run_id=run_id,
+                        requested_model_loops=40,
+                        requested_tool_calls=160,
+                        requested_seconds=min(120, int(report_progress["limits"]["max_seconds"])),
+                    )
+                    if not report_claim.get("allowed"):
+                        fail_reserved_report(synthesis_quality_reservation, "REPORT_BUDGET_EXHAUSTED")
+                        synthesis_quality_result = {
+                            "status": "failed",
+                            "diagnostic": {"code": "REPORT_BUDGET_EXHAUSTED"},
+                        }
+                        synthesis_error = "REPORT_BUDGET_EXHAUSTED"
+                        failures += 1
+                        failed_ids.add(item.work_item_id)
+                        failed_item = self._store.update_work_item_status(
+                            item.work_item_id, "failed", error_code=synthesis_error,
+                            last_error_code=synthesis_error,
+                        )
+                        self._emit(
+                            task.research_task_id, "worker",
+                            self._worker_event_payload(failed_item, "failed", error_code=synthesis_error),
+                        )
+                        continue
+                    grant = report_claim["grant"]
+                    report_limits = report_progress["limits"]
+                    task_totals = report_progress["task_totals"]
+                    dispatch_budget_snapshot = {
+                        # This is a fresh AgentRun, so its local counters start
+                        # at zero. Cumulative usage remains in task_* for the
+                        # durable task cap; replayed matrix usage must not make
+                        # the resumed run start at its previous run's limit.
+                        "model_loops": 0,
+                        "tool_calls": 0,
+                        "task_model_loops": int(task_totals["model_loops_used"]),
+                        "task_tool_calls": int(task_totals["tool_calls_used"]),
+                        "elapsed_seconds": 0,
+                        "max_model_loops": int(grant["model_loops"]),
+                        "max_tool_calls": int(grant["tool_calls"]),
+                        "task_max_model_loops": min(
+                            int(report_limits["model_loops"]),
+                            int(task_totals["model_loops_used"]) + int(grant["model_loops"]),
+                        ),
+                        "task_max_tool_calls": min(
+                            int(report_limits["tool_calls"]),
+                            int(task_totals["tool_calls_used"]) + int(grant["tool_calls"]),
+                        ),
+                        "max_seconds": int(grant["seconds"]),
+                    }
+                except Exception:
+                    fail_reserved_report(synthesis_quality_reservation, "REPORT_BUDGET_CLAIM_FAILED")
+                    synthesis_quality_result = {
+                        "status": "failed",
+                        "diagnostic": {"code": "REPORT_BUDGET_CLAIM_FAILED"},
+                    }
+                    synthesis_error = "REPORT_BUDGET_CLAIM_FAILED"
+                    failures += 1
+                    failed_ids.add(item.work_item_id)
+                    failed_item = self._store.update_work_item_status(
+                        item.work_item_id, "failed", error_code=synthesis_error,
+                        last_error_code=synthesis_error,
+                    )
+                    self._emit(
+                        task.research_task_id, "worker",
+                        self._worker_event_payload(failed_item, "failed", error_code=synthesis_error),
+                    )
+                    continue
             try:
                 worker_event = self._emit(
                     task.research_task_id,
@@ -1988,7 +2191,7 @@ class Orchestrator:
                     work_item_input=work_item_input if isinstance(work_item_input, dict) else {},
                     skill_snapshot=capability,
                     tool_snapshot=capability.get("tools", ()) if capability else None,
-                    budget_snapshot=budget_snapshot,
+                    budget_snapshot=dispatch_budget_snapshot,
                     attempt=max(1, running_item.attempt),
                     resolved_model=item.resolved_model or "",
                     reasoning_effort="off",
@@ -1997,6 +2200,23 @@ class Orchestrator:
                         if worker_event else None
                     ),
                 ))
+                if report_run_claim_id is not None:
+                    try:
+                        settled = self._store.settle_report_generation_budget(
+                            task.research_task_id,
+                            owner_id,
+                            synthesis_quality_reservation.report.report_version,
+                            claim_id=report_run_claim_id,
+                        )
+                        if not settled.get("settled"):
+                            raise RuntimeError("report AgentRun budget claim was not settled")
+                    except Exception:
+                        fail_reserved_report(synthesis_quality_reservation, "REPORT_BUDGET_SETTLEMENT_FAILED")
+                        synthesis_quality_result = {
+                            "status": "failed",
+                            "diagnostic": {"code": "REPORT_BUDGET_SETTLEMENT_FAILED"},
+                        }
+                        synthesis_error = "REPORT_BUDGET_SETTLEMENT_FAILED"
             except Exception as exc:
                 from backend.app.research.application.agent_runtime import AgentRuntimeError
 
@@ -2009,7 +2229,19 @@ class Orchestrator:
                             failures += 1
                             failure_error_code = failure_error_code or error_code
                             failed_ids.add(item.work_item_id)
+                            if synthesis_quality_enabled and role == "synthesizer" and synthesis_quality_reservation is not None:
+                                fail_reserved_report(synthesis_quality_reservation, error_code)
+                                synthesis_quality_result = {
+                                    "status": "failed", "diagnostic": {"code": error_code},
+                                }
+                                synthesis_error = error_code
                         continue
+                    if synthesis_quality_enabled and role == "synthesizer" and synthesis_quality_reservation is not None:
+                        fail_reserved_report(synthesis_quality_reservation, error_code)
+                        synthesis_quality_result = {
+                            "status": "failed", "diagnostic": {"code": error_code},
+                        }
+                        synthesis_error = error_code
                     current_item = self._store.get_work_item(item.work_item_id)
                     if current_item is None or current_item.status in {"completed", "failed", "cancelled", "interrupted"}:
                         continue
@@ -2027,6 +2259,12 @@ class Orchestrator:
                 with suppress(Exception):
                     error_code = "AGENT_RUN_FAILED"
                     failure_error_code = failure_error_code or error_code
+                    if synthesis_quality_enabled and role == "synthesizer" and synthesis_quality_reservation is not None:
+                        fail_reserved_report(synthesis_quality_reservation, error_code)
+                        synthesis_quality_result = {
+                            "status": "failed", "diagnostic": {"code": error_code},
+                        }
+                        synthesis_error = error_code
                     failed_item = self._store.update_work_item_status(item.work_item_id, "failed", error_code=error_code, last_error_code=error_code)
                     self._emit(task.research_task_id, "worker", self._worker_event_payload(failed_item, "failed", error_code=error_code))
                 continue
@@ -2118,8 +2356,12 @@ class Orchestrator:
                 )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
+                expected_synthesis_version = (
+                    synthesis_quality_reservation.report.report_version
+                    if synthesis_quality_reservation is not None else plan_version
+                )
                 normalized_synthesis_output = (
-                    _bind_synthesis_report_version(normalized_output, plan_version)
+                    _bind_synthesis_report_version(normalized_output, expected_synthesis_version)
                     if isinstance(normalized_output, dict)
                     else None
                 )
@@ -2134,9 +2376,80 @@ class Orchestrator:
                     synthesis_matrix_payload = None
                     synthesis_matrix_error = None
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
+                if synthesis_quality_enabled and synthesis_quality_reservation is not None:
+                    if synthesis_matrix_payload is not None and synthesis_matrix_error is None:
+                        try:
+                            EvidenceMatrixService(self._store).build_matrix(
+                                task.research_task_id,
+                                owner_id,
+                                plan_version=plan_version,
+                                dimensions=synthesis_matrix_payload["dimensions"],
+                                claims=synthesis_matrix_payload["claims"],
+                                evidence=synthesis_matrix_payload["evidence"],
+                                cells=synthesis_matrix_payload["cells"],
+                            )
+                        except Exception:
+                            synthesis_matrix_error = "MATRIX_NOT_READY"
+                    try:
+                        synthesis_quality_result = self._generate_report_quality_body(
+                            task=task,
+                            owner_id=owner_id,
+                            work_item=running_item,
+                            selected_candidates=synthesis_validated_candidates or (),
+                            reservation=synthesis_quality_reservation,
+                            session_id=session.research_session_id,
+                        )
+                    except Exception:
+                        fail_reserved_report(synthesis_quality_reservation, "REPORT_BODY_APPLICATION_FAILED")
+                        synthesis_quality_result = {
+                            "status": "failed",
+                            "diagnostic": {"code": "REPORT_BODY_APPLICATION_FAILED"},
+                        }
+                    delivery_diagnostic = synthesis_quality_result.get("diagnostic")
+                    if (
+                        synthesis_quality_result.get("status") in {"generating", "completed"}
+                        and isinstance(delivery_diagnostic, Mapping)
+                        and delivery_diagnostic.get("code") in {"REPORT_DELIVERY_PENDING", "REPORT_PUBLISHED"}
+                        and isinstance(synthesis_quality_result.get("rendered"), Mapping)
+                    ):
+                        synthesis_quality_result = self._publish_report_quality_canonical(
+                            task=task,
+                            session=session,
+                            owner_id=owner_id,
+                            reservation=synthesis_quality_reservation,
+                            rendered=synthesis_quality_result["rendered"],
+                        )
+                    quality_status = synthesis_quality_result.get("status")
+                    if quality_status == "failed":
+                        diagnostic = synthesis_quality_result.get("diagnostic")
+                        synthesis_error = (
+                            diagnostic.get("code") if isinstance(diagnostic, Mapping)
+                            else "REPORT_BODY_FAILED"
+                        )
+                        terminal = "failed"
+                    elif quality_status in {"partial", "draft"}:
+                        synthesis_error = "REPORT_QUALITY_CHECK_FAILED"
             elif role == "synthesizer" and terminal != "completed":
                 synthesis_error = result.error_code or "AGENT_OUTPUT_INVALID"
                 synthesis_attempts = int((result.model_metadata or {}).get("attempts_used", 1) or 1)
+                if synthesis_quality_enabled and synthesis_quality_reservation is not None:
+                    fail_reserved_report(
+                        synthesis_quality_reservation,
+                        synthesis_error or "AGENT_OUTPUT_INVALID",
+                    )
+                    synthesis_quality_result = {
+                        "status": "failed",
+                        "diagnostic": {"code": synthesis_error or "AGENT_OUTPUT_INVALID"},
+                    }
+            if (
+                synthesis_quality_enabled
+                and isinstance(synthesis_quality_result, Mapping)
+                and synthesis_quality_result.get("status") == "generating"
+            ):
+                # State persistence and canonical delivery can both be
+                # recovered only while this WorkItem remains live. The report
+                # stays generating and the WorkItem is not terminalized.
+                continue
             output_json = json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)
             if len(output_json) > 100000:
                 raise ValueError("AGENT_OUTPUT_INVALID: work item output exceeds bounded envelope")
@@ -2173,6 +2486,128 @@ class Orchestrator:
                 (),
                 True,
                 waiting_items[0].last_error_code or "RESOURCE_PROBE_FAILED",
+            )
+
+        if synthesis_quality_result is not None:
+            quality_report = (
+                getattr(synthesis_quality_reservation, "report", None)
+                if synthesis_quality_reservation is not None else None
+            )
+            quality_status = synthesis_quality_result.get("status")
+            selected_quality_count = len(synthesis_validated_candidates or ())
+            if quality_status == "generating":
+                diagnostic = synthesis_quality_result.get("diagnostic")
+                recovery_code = (
+                    diagnostic.get("reason_code") or diagnostic.get("code")
+                    if isinstance(diagnostic, Mapping) else None
+                )
+                return self._result(
+                    task.research_task_id,
+                    "running",
+                    plan_version,
+                    selected_quality_count,
+                    getattr(quality_report, "report_id", None),
+                    (),
+                    False,
+                    recovery_code or "REPORT_STATE_RECOVERY_PENDING",
+                )
+
+            if quality_status == "completed":
+                delivery = synthesis_quality_result.get("delivery")
+                artifact_ids = delivery.get("artifact_ids") if isinstance(delivery, Mapping) else None
+                self._auto_import_approved_selection(
+                    task=task,
+                    owner_id=owner_id,
+                    plan_version=plan_version,
+                )
+                try:
+                    current_task = self._store.get_task(task.research_task_id, owner_id)
+                    if current_task is None:
+                        raise RuntimeError("published report task disappeared")
+                    if current_task.status != "completed":
+                        if current_task.status in TASK_TERMINAL:
+                            return self._result(
+                                task.research_task_id,
+                                current_task.status,
+                                plan_version,
+                                selected_quality_count,
+                                getattr(quality_report, "report_id", None),
+                                (),
+                                False,
+                                current_task.last_error_code,
+                            )
+                        self._store.update_task_status(task.research_task_id, owner_id, "completed")
+                except Exception:
+                    return self._result(
+                        task.research_task_id,
+                        "running",
+                        plan_version,
+                        selected_quality_count,
+                        getattr(quality_report, "report_id", None),
+                        (),
+                        False,
+                        "REPORT_TASK_COMPLETION_PENDING",
+                    )
+                self._emit(task.research_task_id, "terminal", {
+                    "status": "completed",
+                    "selected_count": selected_quality_count,
+                    "report_version": getattr(quality_report, "report_version", None),
+                })
+                return self._result(
+                    task.research_task_id,
+                    "completed",
+                    plan_version,
+                    selected_quality_count,
+                    artifact_ids[0] if isinstance(artifact_ids, list) and artifact_ids else None,
+                    (),
+                    False,
+                    None,
+                )
+
+            if quality_status not in {"draft", "partial", "failed"}:
+                return self._result(
+                    task.research_task_id,
+                    "running",
+                    plan_version,
+                    selected_quality_count,
+                    getattr(quality_report, "report_id", None),
+                    (),
+                    False,
+                    "REPORT_STATE_RECOVERY_PENDING",
+                )
+
+            diagnostic = synthesis_quality_result.get("diagnostic")
+            if isinstance(diagnostic, Mapping):
+                synthesis_error = str(diagnostic.get("code") or synthesis_error or "REPORT_BODY_FAILED")
+            else:
+                synthesis_error = synthesis_error or "REPORT_BODY_FAILED"
+            failures += 1
+            failure_error_code = synthesis_error
+            self._emit_synthesis_failure_notification(
+                task=task,
+                session=session,
+                owner_id=owner_id,
+                version=plan_version,
+                code=synthesis_error,
+                reason=None,
+            )
+            task_terminal_status = "failed" if quality_status == "failed" else "partial"
+            with suppress(InvalidStateTransition):
+                self._store.update_task_status(task.research_task_id, owner_id, task_terminal_status)
+            self._emit(task.research_task_id, "terminal", {
+                "status": task_terminal_status,
+                "selected_count": selected_quality_count,
+                "error_code": synthesis_error,
+            })
+            return self._result(
+                task.research_task_id,
+                task_terminal_status,
+                plan_version,
+                selected_quality_count,
+                getattr(quality_report, "report_id", None),
+                (),
+                True,
+                synthesis_error,
             )
 
         synthesis_artifact_id = None
@@ -3746,6 +4181,1790 @@ class Orchestrator:
             "dimensions": dimensions,
             "candidates": context_candidates,
             "allowed_paper_ids": [item["paper_id"] for item in context_candidates],
+        }
+
+    def _build_report_quality_context(
+        self,
+        *,
+        task,
+        owner_id: str,
+        work_item: ResearchWorkItem,
+        selected_candidates: Iterable[Mapping[str, Any]],
+        stage: str,
+        revision_count: int,
+        prior_report_content: Mapping[str, Any] | None = None,
+        failure_codes: Iterable[str] = (),
+    ) -> dict[str, Any]:
+        """Build a report-quality marker from the current durable task state.
+
+        Candidate abstracts are read only through the existing frozen-search
+        snapshot builder. Evidence IDs and levels come only from the existing
+        matrix projection. This method does not create Evidence or start report
+        generation; an absent matrix is returned as an actionable dependency.
+        """
+        task_id = str(getattr(task, "research_task_id", "") or "").strip()
+        if not task_id or getattr(task, "owner_id", None) != owner_id:
+            raise ReportQualityContextUnavailable("owner_scoped_current_task")
+        if (
+            getattr(work_item, "research_task_id", None) != task_id
+            or getattr(work_item, "task_type", None) != "synthesize_preliminary_report"
+        ):
+            raise ReportQualityContextUnavailable("current_synthesis_work_item")
+
+        plan_version = getattr(work_item, "plan_version", None)
+        if (
+            isinstance(plan_version, bool)
+            or not isinstance(plan_version, int)
+            or plan_version < 1
+            or plan_version != int(getattr(task, "current_plan_version", 0) or 0)
+        ):
+            raise ReportQualityContextUnavailable("current_approved_plan_version")
+        plan_getter = getattr(self._store, "get_plan", None)
+        plan = plan_getter(task_id, plan_version) if callable(plan_getter) else None
+        if (
+            plan is None
+            or getattr(plan, "research_task_id", None) != task_id
+            or int(getattr(plan, "version", 0) or 0) != plan_version
+            or getattr(plan, "status", None) not in {"active", "completed"}
+        ):
+            raise ReportQualityContextUnavailable("current_approved_plan")
+
+        report_version = work_item.input_params.get("report_version")
+        if isinstance(report_version, bool) or not isinstance(report_version, int) or report_version < 1:
+            raise ReportQualityContextUnavailable("reserved_report_version")
+        if stage not in {"evidence_review", "comparison", "drafting", "targeted_revision"}:
+            raise ReportQualityContextUnavailable("report_quality_stage")
+        if isinstance(revision_count, bool) or not isinstance(revision_count, int) or not 0 <= revision_count <= 2:
+            raise ReportQualityContextUnavailable("report_revision_count")
+
+        candidates = list(selected_candidates or ())
+        candidate_ids: list[str] = []
+        for item in candidates:
+            if not isinstance(item, Mapping):
+                raise ReportQualityContextUnavailable("approved_selected_candidates")
+            paper_id = item.get("candidate_id", item.get("catalog_paper_id"))
+            if not isinstance(paper_id, str) or not paper_id.strip() or len(paper_id.strip()) > 200:
+                raise ReportQualityContextUnavailable("approved_selected_candidates")
+            candidate_ids.append(paper_id.strip())
+        if not 5 <= len(candidate_ids) <= 64 or len(set(candidate_ids)) != len(candidate_ids):
+            raise ReportQualityContextUnavailable("approved_selected_papers_5_to_64")
+
+        try:
+            snapshot_context = self._build_synthesis_matrix_context(
+                task=task,
+                plan_version=plan_version,
+                validated_candidates=candidates,
+            )
+        except Exception as error:
+            raise ReportQualityContextUnavailable(
+                "frozen_selected_candidate_snapshot", source_code="MATRIX_SNAPSHOT_UNAVAILABLE"
+            ) from error
+        if not isinstance(snapshot_context, Mapping):
+            raise ReportQualityContextUnavailable("frozen_selected_candidate_snapshot")
+        snapshots = snapshot_context.get("candidates")
+        allowed_ids = snapshot_context.get("allowed_paper_ids")
+        if (
+            snapshot_context.get("schema_version") != "evidence-report-v1"
+            or snapshot_context.get("plan_version") != plan_version
+            or not isinstance(snapshots, list)
+            or not isinstance(allowed_ids, list)
+            or allowed_ids != candidate_ids
+            or len(snapshots) != len(candidate_ids)
+        ):
+            raise ReportQualityContextUnavailable("frozen_selected_candidate_snapshot")
+        snapshot_by_paper: dict[str, Mapping[str, Any]] = {}
+        for snapshot in snapshots:
+            if not isinstance(snapshot, Mapping):
+                raise ReportQualityContextUnavailable("frozen_selected_candidate_snapshot")
+            paper_id = snapshot.get("paper_id")
+            if not isinstance(paper_id, str) or paper_id not in candidate_ids or paper_id in snapshot_by_paper:
+                raise ReportQualityContextUnavailable("frozen_selected_candidate_snapshot")
+            snapshot_by_paper[paper_id] = snapshot
+        if set(snapshot_by_paper) != set(candidate_ids):
+            raise ReportQualityContextUnavailable("frozen_selected_candidate_snapshot")
+
+        plan_dimensions = self._matrix_dimensions(task_id, plan_version)
+        if not isinstance(plan_dimensions, list) or not plan_dimensions:
+            raise ReportQualityContextUnavailable("approved_plan_comparison_dimensions")
+        try:
+            dimensions = [
+                {
+                    "dimension_id": str(item["dimension_id"]),
+                    "label": _safe_text_input(item.get("label"), "dimension label", max_length=500),
+                    "definition": _safe_text_input(item.get("definition"), "dimension definition", max_length=2000),
+                }
+                for item in plan_dimensions
+            ]
+        except (KeyError, ReportSynthesisError, TypeError) as error:
+            raise ReportQualityContextUnavailable("approved_plan_comparison_dimensions") from error
+
+        try:
+            matrix = EvidenceMatrixService(self._store).read_matrix(
+                task_id, owner_id, plan_version=plan_version,
+            )
+        except EvidenceMatrixError as error:
+            raise ReportQualityContextUnavailable(
+                "persisted_current_plan_claim_evidence_matrix", source_code=error.code,
+            ) from error
+        except Exception as error:
+            raise ReportQualityContextUnavailable(
+                "persisted_current_plan_claim_evidence_matrix", source_code="MATRIX_READ_FAILED",
+            ) from error
+        if (
+            matrix.get("schema_version") != "evidence-report-v1"
+            or matrix.get("research_task_id", matrix.get("task_id")) != task_id
+            or matrix.get("task_id", task_id) != task_id
+            or matrix.get("plan_version") != plan_version
+        ):
+            raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+
+        def _dimension_shape(items: Iterable[Mapping[str, Any]]) -> list[tuple[str, str, str]]:
+            return [
+                (str(item.get("dimension_id", item.get("id", ""))), str(item.get("label", "")), str(item.get("definition", "")))
+                for item in items
+            ]
+
+        matrix_dimensions = matrix.get("dimensions")
+        if not isinstance(matrix_dimensions, list) or _dimension_shape(matrix_dimensions) != _dimension_shape(dimensions):
+            raise ReportQualityContextUnavailable("current_plan_matrix_dimensions_match_approved_plan")
+
+        claims = matrix.get("claims")
+        raw_evidence = matrix.get("evidence")
+        cells = matrix.get("cells")
+        if not isinstance(claims, list) or not isinstance(raw_evidence, list) or not isinstance(cells, list):
+            raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+        claims_by_id: dict[str, Mapping[str, Any]] = {}
+        for claim in claims:
+            if not isinstance(claim, Mapping):
+                raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+            claim_id = claim.get("claim_id")
+            if (
+                not isinstance(claim_id, str)
+                or not claim_id
+                or claim_id in claims_by_id
+                or claim.get("task_id", claim.get("research_task_id")) != task_id
+                or claim.get("plan_version") != plan_version
+                or not isinstance(claim.get("evidence_ids", []), list)
+            ):
+                raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+            claims_by_id[claim_id] = claim
+
+        evidence_by_id: dict[str, Mapping[str, Any]] = {}
+        for item in raw_evidence:
+            if not isinstance(item, Mapping):
+                raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+            evidence_id = item.get("evidence_id")
+            claim_id = item.get("claim_id")
+            paper_id = item.get("paper_id")
+            if (
+                not isinstance(evidence_id, str)
+                or not evidence_id
+                or evidence_id in evidence_by_id
+                or claim_id not in claims_by_id
+                or item.get("task_id", item.get("research_task_id")) != task_id
+                or item.get("plan_version") != plan_version
+                or paper_id not in snapshot_by_paper
+                or item.get("evidence_level") not in {"catalog", "abstract", "fulltext"}
+            ):
+                raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+            evidence_by_id[evidence_id] = item
+        for claim_id, claim in claims_by_id.items():
+            references = claim.get("evidence_ids", [])
+            if len(set(references)) != len(references) or any(
+                evidence_by_id.get(evidence_id) is None
+                or evidence_by_id[evidence_id].get("claim_id") != claim_id
+                for evidence_id in references
+            ):
+                raise ReportQualityContextUnavailable("persisted_current_plan_claim_evidence_matrix")
+
+        evidence_context: list[dict[str, str]] = []
+        matrix_service = EvidenceMatrixService(self._store)
+        for evidence_id, item in evidence_by_id.items():
+            if item.get("status") != "available":
+                continue
+            paper_id = str(item["paper_id"])
+            snapshot = snapshot_by_paper[paper_id]
+            locator = item.get("locator")
+            if not isinstance(locator, Mapping):
+                continue
+            level = item["evidence_level"]
+            excerpt = ""
+            try:
+                if level == "catalog":
+                    if (
+                        item.get("stance") != "contextual"
+                        or set(locator) != {"catalog_snapshot_id"}
+                        or locator.get("catalog_snapshot_id") != snapshot.get("catalog_snapshot_id")
+                    ):
+                        continue
+                    safe = _safe_catalog_metadata({"title": snapshot.get("title")})
+                    excerpt = safe.get("title", "")
+                elif level == "abstract":
+                    abstract = snapshot.get("abstract")
+                    digest = snapshot.get("abstract_digest")
+                    expected_digest = hashlib.sha256(abstract.encode("utf-8")).hexdigest() if isinstance(abstract, str) else None
+                    if (
+                        set(locator) != {"catalog_snapshot_id", "abstract_ref", "abstract_digest"}
+                        or locator.get("catalog_snapshot_id") != snapshot.get("catalog_snapshot_id")
+                        or locator.get("abstract_ref") != f"catalog:{paper_id}"
+                        or not isinstance(abstract, str)
+                        or not abstract.strip()
+                        or digest != expected_digest
+                        or locator.get("abstract_digest") != expected_digest
+                    ):
+                        continue
+                    safe = _safe_catalog_metadata({"title": snapshot.get("title"), "abstract": abstract})
+                    excerpt = safe.get("abstract", "")
+                else:
+                    # EvidenceMatrixService.read_matrix already downgrades stale
+                    # fulltext rows. Recheck the task-bound upgrade explicitly;
+                    # the only text exposed is the current cell summary tied to
+                    # this exact Evidence ID, never locator/raw chunk content.
+                    claim_id = str(item["claim_id"])
+                    upgrade_getter = getattr(self._store, "get_evidence_upgrade", None)
+                    upgrade = upgrade_getter(claim_id) if callable(upgrade_getter) else None
+                    if (
+                        upgrade is None
+                        or getattr(upgrade, "task_id", None) != task_id
+                        or getattr(upgrade, "to_level", None) != "fulltext"
+                        or getattr(upgrade, "status", None) != "upgraded"
+                        or not matrix_service._fulltext_upgrade_matches(
+                            matrix_service._evidence(item, task_id, plan_version)
+                        )
+                    ):
+                        continue
+                    summaries = [
+                        cell.get("summary")
+                        for cell in cells
+                        if isinstance(cell, Mapping)
+                        and cell.get("task_id", cell.get("research_task_id")) == task_id
+                        and cell.get("plan_version") == plan_version
+                        and cell.get("claim_id") == claim_id
+                        and cell.get("paper_id") == paper_id
+                        and cell.get("relation") != "missing"
+                        and evidence_id in (cell.get("evidence_ids") or [])
+                        and isinstance(cell.get("summary"), str)
+                        and cell.get("summary", "").strip()
+                    ]
+                    if not summaries:
+                        continue
+                    excerpt = _safe_text_input(summaries[0], "evidence excerpt", max_length=4000)
+            except (ReportSynthesisError, EvidenceMatrixError, TypeError, ValueError):
+                continue
+            if excerpt:
+                evidence_context.append({
+                    "evidence_id": evidence_id,
+                    "paper_id": paper_id,
+                    "evidence_level": str(level),
+                    "excerpt": excerpt,
+                })
+        if not evidence_context:
+            raise ReportQualityContextUnavailable("verified_current_plan_evidence_excerpt_projection")
+
+        try:
+            research_question = _safe_text_input(
+                getattr(task, "goal", None), "research question", max_length=2000,
+            )
+        except ReportSynthesisError as error:
+            raise ReportQualityContextUnavailable("safe_research_question") from error
+
+        context: dict[str, Any] = {
+            "schema_version": "report-quality-v1",
+            "stage": stage,
+            "revision_count": revision_count,
+            "plan_version": plan_version,
+            "report_version": report_version,
+            "research_question": research_question,
+            "selected_paper_ids": candidate_ids,
+            "dimensions": dimensions,
+            "evidence": evidence_context,
+        }
+        supplied_failure_codes = list(failure_codes or ())
+        if len(supplied_failure_codes) > 32 or any(
+            not isinstance(code, str) or re.fullmatch(r"[A-Z0-9_]{1,64}", code) is None
+            for code in supplied_failure_codes
+        ):
+            raise ReportQualityContextUnavailable("stable_revision_failure_codes")
+        if supplied_failure_codes:
+            context["failure_codes"] = list(dict.fromkeys(supplied_failure_codes))
+
+        if prior_report_content is not None and stage == "targeted_revision":
+            try:
+                from backend.app.research.application.report_quality import _validate_report_shape
+                from backend.app.research.application.report_synthesis import _walk_safe
+
+                prior = dict(_validate_report_shape(prior_report_content))
+                _walk_safe(prior)
+                encoded = json.dumps(prior, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                if len(encoded) > 512 * 1024:
+                    raise ValueError("prior report content exceeds limit")
+                context["prior_report_content"] = prior
+            except Exception as error:
+                raise ReportQualityContextUnavailable("validated_prior_report_content") from error
+
+        try:
+            encoded_context = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError, UnicodeEncodeError) as error:
+            raise ReportQualityContextUnavailable("bounded_report_quality_context") from error
+        if len(encoded_context) > 512 * 1024:
+            raise ReportQualityContextUnavailable("bounded_report_quality_context")
+        return context
+
+    def _publish_report_quality_canonical(
+        self,
+        *,
+        task,
+        session,
+        owner_id: str,
+        reservation,
+        rendered: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Prepare immutable delivery, publish the same canonical version, then finalize."""
+        report = getattr(reservation, "report", None)
+        report_version = getattr(report, "report_version", None)
+        task_id = str(getattr(task, "research_task_id", "") or "")
+        if (
+            report is None
+            or not isinstance(report_version, int)
+            or isinstance(report_version, bool)
+            or not task_id
+            or getattr(task, "owner_id", None) != owner_id
+            or getattr(session, "research_task_id", None) != task_id
+            or getattr(session, "owner_id", None) != owner_id
+        ):
+            return {
+                "status": "generating", "report_version": report_version,
+                "diagnostic": {"code": "REPORT_DELIVERY_PENDING", "reason_code": "REPORT_DELIVERY_BINDING_INVALID"},
+            }
+        if self._memory_repository is None:
+            return {
+                "status": "generating", "report_id": report.report_id,
+                "report_version": report_version,
+                "diagnostic": {"code": "REPORT_DELIVERY_PENDING", "reason_code": "REPORT_DELIVERY_NOT_CONFIGURED"},
+                "rendered": dict(rendered),
+            }
+
+        delivery = ReportDeliveryService(
+            store=self._store, memory_repository=self._memory_repository,
+        )
+        try:
+            current_report = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+            if current_report is None:
+                raise ReportSynthesisError("canonical report reservation disappeared", code="REPORT_NOT_PUBLISHABLE")
+            prepared = delivery.prepare_canonical(
+                task=task,
+                session=session,
+                owner_id=owner_id,
+                reservation=reservation,
+                report=current_report,
+                report_version=report_version,
+                rendered=rendered,
+            )
+            progress = self._store.get_report_generation_budget(task_id, owner_id, report_version)
+            if current_report.status == "generating":
+                self._store.update_report_generation_state(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    expected_revision=progress["revision"],
+                    stage="published",
+                    rewrite_count=progress["rewrite_count"],
+                    status="completed",
+                    published=True,
+                    reason_codes=[],
+                )
+            current_report = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+            if current_report is None or current_report.status != "completed":
+                raise ReportSynthesisError("canonical report publish CAS is not durable", code="REPORT_NOT_PUBLISHED")
+            finalized = delivery.finalize_canonical(
+                task=task,
+                session=session,
+                owner_id=owner_id,
+                reservation=reservation,
+                report=current_report,
+                report_version=report_version,
+                rendered=rendered,
+                prepared=prepared,
+            )
+            durable = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+            durable_payload = json.loads(durable.report_json or "{}") if durable is not None else {}
+            generation = durable_payload.get("generation") if isinstance(durable_payload, Mapping) else None
+            if (
+                durable is None
+                or durable.status != "completed"
+                or not isinstance(generation, Mapping)
+                or generation.get("published") is not True
+                or finalized.get("message_status") != "completed"
+                or not finalized.get("notification_id")
+            ):
+                raise ReportSynthesisError("canonical delivery is not durable", code="ARTIFACT_NOT_READY")
+            return {
+                "status": "completed",
+                "report_id": report.report_id,
+                "report_version": report_version,
+                "diagnostic": {"code": "REPORT_PUBLISHED"},
+                "rendered": dict(rendered),
+                "delivery": finalized,
+            }
+        except Exception as error:
+            reason_code = getattr(error, "code", None)
+            if not isinstance(reason_code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reason_code):
+                reason_code = "REPORT_DELIVERY_FAILED"
+            return {
+                "status": "generating",
+                "report_id": report.report_id,
+                "report_version": report_version,
+                "diagnostic": {
+                    "code": "REPORT_DELIVERY_PENDING",
+                    "reason_code": reason_code,
+                },
+                "rendered": dict(rendered),
+            }
+
+    def resume_report_quality_generation(
+        self, *, task, owner_id: str, session, report, work_item, reservation,
+    ) -> OrchestratorResult:
+        """Resume one already-reserved report version without reopening its Task.
+
+        ResearchService uses this only for a report-only successor created by
+        startup recovery. The WorkItem must already be running and bound to the
+        same durable reservation; no whole-task scheduling or Task transition
+        is performed here.
+        """
+        if (
+            getattr(task, "status", None) != "interrupted"
+            or getattr(work_item, "status", None) != "running"
+            or getattr(getattr(reservation, "work_item", None), "work_item_id", None)
+            != getattr(work_item, "work_item_id", None)
+            or getattr(report, "status", None) != "generating"
+        ):
+            return self._result(
+                getattr(task, "research_task_id", ""),
+                getattr(task, "status", "interrupted"),
+                getattr(task, "current_plan_version", 0),
+                0,
+                getattr(report, "report_id", None),
+                (),
+                False,
+                "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+        result = self._resume_report_quality_delivery(
+            task=task,
+            owner_id=owner_id,
+            session=session,
+            report=report,
+        )
+        durable_report = self._store.get_research_report(
+            task.research_task_id,
+            owner_id,
+            report_version=getattr(report, "report_version", None),
+        )
+        if durable_report is not None and durable_report.status in {"failed", "draft", "partial"}:
+            try:
+                progress = self._store.get_report_generation_budget(
+                    task.research_task_id, owner_id, durable_report.report_version,
+                )
+                reason_codes = progress.get("reason_codes", [])
+                reason_code = (
+                    reason_codes[0]
+                    if isinstance(reason_codes, list) and reason_codes
+                    else "REPORT_QUALITY_CHECK_FAILED"
+                )
+                current_item = self._store.get_work_item(work_item.work_item_id)
+                if current_item is not None and current_item.status == "running":
+                    self._store.update_work_item_status(
+                        current_item.work_item_id,
+                        "failed",
+                        error_code=reason_code,
+                        output_json=json.dumps({
+                            "status": durable_report.status,
+                            "report_id": durable_report.report_id,
+                            "report_version": durable_report.report_version,
+                            "reason_codes": reason_codes,
+                        }, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                    )
+                return self._result(
+                    task.research_task_id,
+                    "interrupted",
+                    getattr(task, "current_plan_version", 0),
+                    result.selected_count,
+                    durable_report.report_id,
+                    (),
+                    False,
+                    reason_code,
+                )
+            except Exception:
+                logger.exception(
+                    "report-only failure could not close its WorkItem: task=%s report_version=%s",
+                    task.research_task_id,
+                    getattr(durable_report, "report_version", None),
+                )
+        return result
+
+    def finalize_interrupted_canonical_report(
+        self, *, task, owner_id: str, session, report, reservation,
+    ) -> OrchestratorResult:
+        """Finish delivery of a published canonical report without a new AgentRun."""
+        from backend.app.research.application.report_generation import render_report_payload
+        from backend.app.research.application.report_quality import validate_report_content
+
+        task_id = str(getattr(task, "research_task_id", "") or "")
+        report_version = getattr(report, "report_version", None)
+        plan_version = getattr(report, "plan_version", None)
+        work_item = getattr(reservation, "work_item", None)
+        item_input = getattr(work_item, "input_params", {})
+        selected_candidates = (
+            item_input.get("validated_candidates") if isinstance(item_input, Mapping) else None
+        )
+        if (
+            not task_id
+            or getattr(task, "status", None) != "interrupted"
+            or getattr(task, "owner_id", None) != owner_id
+            or getattr(session, "research_task_id", None) != task_id
+            or getattr(session, "owner_id", None) != owner_id
+            or getattr(report, "status", None) != "completed"
+            or not isinstance(report_version, int)
+            or isinstance(report_version, bool)
+            or work_item is None
+            or work_item.status not in {"completed", "interrupted"}
+            or work_item.research_task_id != task_id
+            or work_item.plan_version != plan_version
+            or work_item.task_type != "synthesize_preliminary_report"
+            or work_item.role != "synthesizer"
+            or not isinstance(selected_candidates, list)
+        ):
+            return self._result(
+                task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                0, getattr(report, "report_id", None), (), False,
+                "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+        try:
+            payload = json.loads(getattr(report, "report_json", "{}") or "{}")
+            generation = payload.get("generation") if isinstance(payload, dict) else None
+            content = payload.get("report_content") if isinstance(payload, dict) else None
+            stored_quality = payload.get("quality_validation") if isinstance(payload, dict) else None
+            if (
+                not isinstance(generation, Mapping)
+                or generation.get("published") is not True
+                or payload.get("report_id") != report.report_id
+                or payload.get("report_version") != report_version
+                or generation.get("report_version") != report_version
+                or generation.get("plan_version") != plan_version
+                or generation.get("work_item_id") != work_item.work_item_id
+                or not isinstance(content, Mapping)
+                or not isinstance(stored_quality, Mapping)
+            ):
+                raise ValueError("canonical report identity is incomplete")
+            progress = self._store.get_report_generation_budget(task_id, owner_id, report_version)
+            revision_count = progress.get("rewrite_count")
+            context_marker = self._build_report_quality_context(
+                task=task,
+                owner_id=owner_id,
+                work_item=work_item,
+                selected_candidates=selected_candidates,
+                stage="drafting",
+                revision_count=revision_count,
+            )
+            trusted_evidence = [
+                item for item in context_marker["evidence"]
+                if item["evidence_level"] in {"abstract", "fulltext"}
+            ]
+            trusted_evidence_ids = {item["evidence_id"] for item in trusted_evidence}
+            matrix = EvidenceMatrixService(self._store).read_matrix(
+                task_id, owner_id, plan_version=plan_version,
+            )
+            filtered_matrix = dict(matrix)
+            filtered_matrix["evidence"] = [
+                dict(item) for item in matrix["evidence"]
+                if item["evidence_id"] in trusted_evidence_ids
+            ]
+            filtered_matrix["claims"] = [
+                {
+                    **dict(claim),
+                    "evidence_ids": [
+                        evidence_id for evidence_id in claim.get("evidence_ids", [])
+                        if evidence_id in trusted_evidence_ids
+                    ],
+                }
+                for claim in matrix["claims"]
+            ]
+            upgrades_reader = getattr(self._store, "list_evidence_upgrades", None)
+            quality_context = ReportQualityContext(
+                task_id=task_id,
+                plan_version=plan_version,
+                selected_paper_ids=context_marker["selected_paper_ids"],
+                evidence_matrix=filtered_matrix,
+                evidence_upgrades=upgrades_reader(task_id) if callable(upgrades_reader) else [],
+            )
+            validation = validate_report_content(
+                content, quality_context, revision_count=revision_count,
+            )
+            if validation.status != "pass" or validation.to_dict() != dict(stored_quality):
+                raise ValueError("canonical report quality no longer matches current evidence")
+            rendered = render_report_payload(
+                {"report_content": dict(content)},
+                report_id=report.report_id,
+                report_version=report_version,
+                context=quality_context,
+            )
+            delivered = self._publish_report_quality_canonical(
+                task=task,
+                session=session,
+                owner_id=owner_id,
+                reservation=reservation,
+                rendered=rendered,
+            )
+            if delivered.get("status") != "completed":
+                details = delivered.get("diagnostic")
+                code = details.get("reason_code") if isinstance(details, Mapping) else None
+                raise RuntimeError(code or "REPORT_DELIVERY_PENDING")
+            delivery = delivered.get("delivery")
+            artifact_ids = delivery.get("artifact_ids") if isinstance(delivery, Mapping) else None
+            return self._result(
+                task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                len(selected_candidates),
+                artifact_ids[0] if isinstance(artifact_ids, list) and artifact_ids else report.report_id,
+                (), False, None,
+            )
+        except Exception:
+            logger.exception(
+                "interrupted canonical report finalization failed: task=%s report_version=%s",
+                task_id,
+                report_version,
+            )
+            return self._result(
+                task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), getattr(report, "report_id", None), (), False,
+                "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+
+    def _resume_report_quality_delivery(
+        self, *, task, owner_id: str, session, report,
+    ) -> OrchestratorResult:
+        """Resume a saved canonical report without rerunning a completed AgentRun."""
+        task_id = str(getattr(task, "research_task_id", "") or "")
+        try:
+            payload = json.loads(getattr(report, "report_json", "{}") or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        generation = payload.get("generation") if isinstance(payload, Mapping) else None
+        report_version = payload.get("report_version") if isinstance(payload, Mapping) else None
+        request_key = generation.get("request_key") if isinstance(generation, Mapping) else None
+        reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+        reservation = None
+        if callable(reservation_reader) and isinstance(request_key, str):
+            with suppress(Exception):
+                reservation = reservation_reader(task_id, owner_id, request_key=request_key)
+        work_item = getattr(reservation, "work_item", None)
+        item_input = getattr(work_item, "input_params", {})
+        selected_candidates = (
+            item_input.get("validated_candidates") if isinstance(item_input, Mapping) else None
+        )
+        if (
+            reservation is None
+            or isinstance(report_version, bool)
+            or not isinstance(report_version, int)
+            or getattr(getattr(reservation, "report", None), "report_version", None) != report_version
+            or getattr(getattr(reservation, "report", None), "report_id", None) != getattr(report, "report_id", None)
+            or not isinstance(selected_candidates, list)
+            or not selected_candidates
+        ):
+            return self._result(
+                task_id, "running", getattr(task, "current_plan_version", 0), 0,
+                getattr(report, "report_id", None), (), False, "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+        if getattr(work_item, "status", None) == "completed" and getattr(report, "status", None) == "completed":
+            try:
+                current_task = self._store.get_task(task_id, owner_id)
+                if current_task is None:
+                    raise RuntimeError("published report task disappeared")
+                if current_task.status == "interrupted":
+                    artifact_ids = [
+                        item.artifact_id for item in self._store.list_artifacts_for_task(
+                            task_id, owner_id, report_version=report_version,
+                        ) if item.artifact_type == "markdown"
+                    ]
+                    return self._result(
+                        task_id, "interrupted", getattr(task, "current_plan_version", 0),
+                        len(selected_candidates), artifact_ids[0] if artifact_ids else None,
+                        (), False, None,
+                    )
+                if current_task.status not in TASK_TERMINAL:
+                    self._store.update_task_status(task_id, owner_id, "completed")
+                elif current_task.status != "completed":
+                    return self._result(
+                        task_id, current_task.status, getattr(task, "current_plan_version", 0),
+                        len(selected_candidates), getattr(report, "report_id", None), (), False,
+                        current_task.last_error_code,
+                    )
+            except Exception:
+                return self._result(
+                    task_id, "running", getattr(task, "current_plan_version", 0),
+                    len(selected_candidates), getattr(report, "report_id", None), (), False,
+                    "REPORT_TASK_COMPLETION_PENDING",
+                )
+            artifact_ids = [
+                item.artifact_id for item in self._store.list_artifacts_for_task(
+                    task_id, owner_id, report_version=report_version,
+                ) if item.artifact_type == "markdown"
+            ]
+            return self._result(
+                task_id, "completed", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), artifact_ids[0] if artifact_ids else None, (), False, None,
+            )
+        if getattr(work_item, "status", None) != "running":
+            return self._result(
+                task_id, "running", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), getattr(report, "report_id", None), (), False,
+                "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+        quality_result = self._generate_report_quality_body(
+            task=task,
+            owner_id=owner_id,
+            work_item=work_item,
+            selected_candidates=selected_candidates,
+            reservation=reservation,
+            session_id=session.research_session_id,
+        )
+        if (
+            quality_result.get("status") not in {"generating", "completed"}
+            or not isinstance(quality_result.get("rendered"), Mapping)
+        ):
+            return self._result(
+                task_id, "running", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), getattr(report, "report_id", None), (), False,
+                "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+        delivered = self._publish_report_quality_canonical(
+            task=task,
+            session=session,
+            owner_id=owner_id,
+            reservation=reservation,
+            rendered=quality_result["rendered"],
+        )
+        if delivered.get("status") != "completed":
+            diagnostic = delivered.get("diagnostic")
+            recovery_code = diagnostic.get("reason_code") if isinstance(diagnostic, Mapping) else None
+            return self._result(
+                task_id, "running", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), getattr(report, "report_id", None), (), False,
+                recovery_code or "REPORT_DELIVERY_RECOVERY_PENDING",
+            )
+
+        current_item = self._store.get_work_item(work_item.work_item_id)
+        if current_item is None or current_item.status != "running":
+            return self._result(
+                task_id, "running", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), getattr(report, "report_id", None), (), False,
+                "REPORT_WORK_ITEM_RECOVERY_PENDING",
+            )
+        output_json = json.dumps({
+            "status": "completed",
+            "report_id": report.report_id,
+            "report_version": report_version,
+            "published": True,
+        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        updated_item = self._store.update_work_item_status(
+            current_item.work_item_id, "completed", output_json=output_json,
+        )
+        self._emit(task_id, "worker", self._worker_event_payload(updated_item, "completed"))
+        try:
+            current_task = self._store.get_task(task_id, owner_id)
+            if current_task is None:
+                raise RuntimeError("published report task disappeared")
+            task_status = current_task.status
+            if current_task.status == "interrupted":
+                # Report-only startup recovery preserves the terminal Task.
+                # The durable canonical report, artifacts and notification
+                # are complete; the old Task remains an honest interruption.
+                task_status = "interrupted"
+            elif current_task.status != "completed":
+                if current_task.status in TASK_TERMINAL:
+                    return self._result(
+                        task_id, current_task.status, getattr(task, "current_plan_version", 0),
+                        len(selected_candidates), getattr(report, "report_id", None), (), False,
+                        current_task.last_error_code,
+                    )
+                self._store.update_task_status(task_id, owner_id, "completed")
+                task_status = "completed"
+        except Exception:
+            return self._result(
+                task_id, "running", getattr(task, "current_plan_version", 0),
+                len(selected_candidates), getattr(report, "report_id", None), (), False,
+                "REPORT_TASK_COMPLETION_PENDING",
+            )
+        if task_status == "completed":
+            self._emit(task_id, "terminal", {
+                "status": "completed", "selected_count": len(selected_candidates),
+                "report_version": report_version,
+            })
+        delivery = delivered.get("delivery")
+        artifact_ids = delivery.get("artifact_ids") if isinstance(delivery, Mapping) else None
+        return self._result(
+            task_id, task_status, getattr(task, "current_plan_version", 0),
+            len(selected_candidates),
+            artifact_ids[0] if isinstance(artifact_ids, list) and artifact_ids else None,
+            (), False, None,
+        )
+
+    def _generate_report_quality_body(
+        self,
+        *,
+        task,
+        owner_id: str,
+        work_item: ResearchWorkItem,
+        selected_candidates: Iterable[Mapping[str, Any]],
+        reservation,
+        session_id: str,
+    ) -> dict[str, Any]:
+        """Run the structured report body against one live reservation.
+
+        This application seam assumes the current synthesis WorkItem is already
+        running and its matrix preparation has persisted. It never creates or
+        reopens a WorkItem; its separate body/revision AgentRuns stay bound to
+        that same task, plan and WorkItem.
+        """
+        from uuid import uuid4
+
+        from backend.app.research.application.agent_runtime import AgentRunInput
+        from backend.app.research.infrastructure.research_store import (
+            ResearchReportGenerationStateConflict,
+        )
+
+        task_id = str(getattr(task, "research_task_id", "") or "").strip()
+        report = getattr(reservation, "report", None)
+        reserved_item = getattr(reservation, "work_item", None)
+        if (
+            not task_id
+            or getattr(task, "owner_id", None) != owner_id
+            or report is None
+            or reserved_item is None
+            or getattr(report, "research_task_id", None) != task_id
+            or getattr(report, "plan_version", None) != getattr(work_item, "plan_version", None)
+            or getattr(reserved_item, "work_item_id", None) != getattr(work_item, "work_item_id", None)
+            or getattr(work_item, "research_task_id", None) != task_id
+            or getattr(work_item, "status", None) != "running"
+        ):
+            return {
+                "status": "failed",
+                "diagnostic": {"code": "REPORT_RESERVATION_BINDING_INVALID"},
+            }
+
+        report_version = getattr(report, "report_version", None)
+        plan_version = getattr(report, "plan_version", None)
+        item_input = getattr(work_item, "input_params", {})
+        binding = item_input.get("report_generation") if isinstance(item_input, Mapping) else None
+        if (
+            isinstance(report_version, bool)
+            or not isinstance(report_version, int)
+            or report_version < 1
+            or isinstance(plan_version, bool)
+            or not isinstance(plan_version, int)
+            or plan_version < 1
+            or not isinstance(binding, Mapping)
+            or binding.get("report_id") != getattr(report, "report_id", None)
+            or binding.get("report_version") != report_version
+            or binding.get("plan_version") != plan_version
+            or item_input.get("report_version") != report_version
+            or item_input.get("plan_version") != plan_version
+        ):
+            return {
+                "status": "failed",
+                "diagnostic": {"code": "REPORT_RESERVATION_BINDING_INVALID"},
+            }
+
+        reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+        durable_reservation = (
+            reservation_reader(task_id, owner_id, request_key=binding.get("request_key"))
+            if callable(reservation_reader) and isinstance(binding.get("request_key"), str)
+            else None
+        )
+        if (
+            durable_reservation is None
+            or getattr(getattr(durable_reservation, "report", None), "report_id", None)
+            != getattr(report, "report_id", None)
+            or getattr(getattr(durable_reservation, "work_item", None), "work_item_id", None)
+            != getattr(work_item, "work_item_id", None)
+        ):
+            return {
+                "status": "failed",
+                "diagnostic": {"code": "REPORT_RESERVATION_NOT_CURRENT"},
+            }
+
+        current_item_reader = getattr(self._store, "get_work_item", None)
+        current_item = current_item_reader(work_item.work_item_id) if callable(current_item_reader) else None
+        if current_item is None or getattr(current_item, "status", None) != "running":
+            return {
+                "status": "failed",
+                "diagnostic": {"code": "SYNTHESIS_WORK_ITEM_NOT_RUNNING"},
+            }
+
+        def read_progress() -> dict[str, Any]:
+            return self._store.get_report_generation_budget(task_id, owner_id, report_version)
+
+        def fail_report(code: str, *, details: Mapping[str, Any] | None = None) -> dict[str, Any]:
+            import re
+
+            reason_code = code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) else "REPORT_GENERATION_FAILED"
+            try:
+                progress = read_progress()
+            except Exception:
+                return {
+                    "status": "generating", "report_version": report_version,
+                    "diagnostic": {
+                        "code": "REPORT_STATE_READ_FAILED",
+                        "failure_code": reason_code,
+                        "state": "unknown",
+                    },
+                }
+            current_status = getattr(progress.get("report"), "status", None)
+            if current_status != "generating":
+                return {
+                    "status": current_status or "generating", "report_version": report_version,
+                    "diagnostic": {"code": reason_code, "state": "already_terminal", **dict(details or {})},
+                }
+            try:
+                self._store.update_report_generation_state(
+                        task_id,
+                        owner_id,
+                        report_version,
+                        expected_revision=progress["revision"],
+                        stage="failed",
+                        rewrite_count=progress["rewrite_count"],
+                        status="failed",
+                        published=False,
+                        reason_codes=[reason_code],
+                    )
+            except Exception:
+                # Re-read in case the write committed before its adapter raised.
+                try:
+                    observed = read_progress()
+                except Exception:
+                    observed = None
+                observed_status = getattr(getattr(observed, "get", lambda *_: None)("report"), "status", None)
+                if observed_status != "failed":
+                    return {
+                        "status": observed_status or "generating", "report_version": report_version,
+                        "diagnostic": {
+                            "code": "REPORT_FAILURE_STATE_NOT_PERSISTED",
+                            "failure_code": reason_code,
+                            "state": observed_status or "unknown",
+                        },
+                    }
+            return {
+                "status": "failed", "report_version": report_version,
+                "diagnostic": {"code": reason_code, **dict(details or {})},
+            }
+
+        try:
+            progress = read_progress()
+        except Exception:
+            return {
+                "status": "generating", "report_version": report_version,
+                "diagnostic": {"code": "REPORT_STATE_READ_FAILED", "state": "unknown"},
+            }
+        try:
+            context_marker = self._build_report_quality_context(
+                task=task,
+                owner_id=owner_id,
+                work_item=work_item,
+                selected_candidates=selected_candidates,
+                stage="drafting",
+                revision_count=progress["rewrite_count"],
+            )
+        except ReportQualityContextUnavailable as error:
+            return fail_report(
+                error.source_code,
+                details={"dependency": error.dependency},
+            )
+        except Exception:
+            return fail_report("REPORT_QUALITY_CONTEXT_UNAVAILABLE")
+
+        trusted_evidence = [
+            item for item in context_marker["evidence"]
+            if item["evidence_level"] in {"abstract", "fulltext"}
+        ]
+        trusted_papers = {item["paper_id"] for item in trusted_evidence}
+        if len(trusted_papers) < 5:
+            return fail_report(
+                "INSUFFICIENT_TRUSTED_EVIDENCE",
+                details={"required_papers": 5, "available_papers": len(trusted_papers)},
+            )
+
+        trusted_evidence_ids = {item["evidence_id"] for item in trusted_evidence}
+        try:
+            matrix = EvidenceMatrixService(self._store).read_matrix(
+                task_id, owner_id, plan_version=plan_version,
+            )
+            filtered_matrix = dict(matrix)
+            filtered_matrix["evidence"] = [
+                dict(item) for item in matrix["evidence"]
+                if item["evidence_id"] in trusted_evidence_ids
+            ]
+            filtered_matrix["claims"] = [
+                {
+                    **dict(claim),
+                    "evidence_ids": [
+                        evidence_id for evidence_id in claim.get("evidence_ids", [])
+                        if evidence_id in trusted_evidence_ids
+                    ],
+                }
+                for claim in matrix["claims"]
+            ]
+            upgrades_reader = getattr(self._store, "list_evidence_upgrades", None)
+            upgrades = upgrades_reader(task_id) if callable(upgrades_reader) else []
+            quality_context = ReportQualityContext(
+                task_id=task_id,
+                plan_version=plan_version,
+                selected_paper_ids=context_marker["selected_paper_ids"],
+                evidence_matrix=filtered_matrix,
+                evidence_upgrades=upgrades,
+            )
+        except Exception:
+            return fail_report("VERIFIED_EVIDENCE_MATRIX_UNAVAILABLE")
+
+        def persisted_report_payload() -> dict[str, Any]:
+            raw = getattr(progress.get("report"), "report_json", "{}")
+            try:
+                payload = json.loads(raw or "{}")
+            except (TypeError, ValueError) as error:
+                raise ValueError("canonical report JSON is unreadable") from error
+            if not isinstance(payload, dict):
+                raise ValueError("canonical report JSON is not an object")
+            return payload
+
+        def reservation_work_item_ids() -> set[str]:
+            """Return only WorkItems carrying this exact durable reservation identity."""
+            request_key = binding.get("request_key") if isinstance(binding, Mapping) else None
+            request_fingerprint = binding.get("request_fingerprint") if isinstance(binding, Mapping) else None
+            if not isinstance(request_key, str) or not isinstance(request_fingerprint, str):
+                return set()
+            listing = getattr(self._store, "list_work_items", None)
+            if not callable(listing):
+                return {work_item.work_item_id}
+            try:
+                candidates = listing(task_id, plan_version=plan_version)
+            except Exception:
+                return set()
+            matched: set[str] = set()
+            for candidate in candidates:
+                if (
+                    getattr(candidate, "research_task_id", None) != task_id
+                    or getattr(candidate, "plan_version", None) != plan_version
+                    or getattr(candidate, "task_type", None) != "synthesize_preliminary_report"
+                    or getattr(candidate, "role", None) != "synthesizer"
+                    or getattr(candidate, "status", None) not in {"running", "queued", "completed", "interrupted"}
+                ):
+                    continue
+                candidate_input = getattr(candidate, "input_params", {})
+                candidate_binding = (
+                    candidate_input.get("report_generation")
+                    if isinstance(candidate_input, Mapping) else None
+                )
+                if (
+                    not isinstance(candidate_binding, Mapping)
+                    or candidate_input.get("report_id") != report.report_id
+                    or candidate_input.get("report_version") != report_version
+                    or candidate_input.get("plan_version") != plan_version
+                    or candidate_input.get("request_key") != request_key
+                    or candidate_input.get("request_fingerprint") != request_fingerprint
+                    or candidate_binding.get("report_id") != report.report_id
+                    or candidate_binding.get("report_version") != report_version
+                    or candidate_binding.get("plan_version") != plan_version
+                    or candidate_binding.get("request_key") != request_key
+                    or candidate_binding.get("request_fingerprint") != request_fingerprint
+                ):
+                    continue
+                matched.add(candidate.work_item_id)
+            if work_item.work_item_id not in matched:
+                return set()
+            return matched
+
+        valid_checkpoint_work_item_ids = reservation_work_item_ids()
+        if not valid_checkpoint_work_item_ids:
+            return fail_report("REPORT_RESERVATION_HISTORY_UNAVAILABLE")
+
+        def recover_stage_output(stage_name: str, *, require_body: bool) -> Any | None:
+            """Load one owner/task/session/work-item-bound Runtime checkpoint."""
+            from types import SimpleNamespace
+
+            try:
+                payload = persisted_report_payload()
+                generation = payload.get("generation")
+                state = generation.get("store_state") if isinstance(generation, Mapping) else None
+                claims = state.get("claims") if isinstance(state, Mapping) else None
+            except Exception:
+                return None
+            if not isinstance(claims, list):
+                return None
+            for claim in reversed(claims):
+                claim_work_item_id = claim.get("work_item_id") if isinstance(claim, Mapping) else None
+                if (
+                    not isinstance(claim, Mapping)
+                    or claim_work_item_id not in valid_checkpoint_work_item_ids
+                    or not isinstance(claim.get("agent_run_id"), str)
+                    or not claim["agent_run_id"].startswith(
+                        f"{claim_work_item_id}:report-{report_version}:{stage_name}-"
+                    )
+                    or not isinstance(claim.get("claim_id"), str)
+                ):
+                    continue
+                base_run_id = claim["agent_run_id"]
+                for run_id in (base_run_id, *(f"{base_run_id}:attempt-{n}" for n in range(2, 5))):
+                    try:
+                        run = self._store.get_agent_run(run_id, owner_id)
+                        if (
+                            run is None
+                            or run.status != "completed"
+                            or run.role != "synthesizer"
+                            or run.research_session_id != session_id
+                            or run.research_task_id != task_id
+                            or run.work_item_id != claim_work_item_id
+                            or not isinstance(run.checkpoint_ref, str)
+                            or not isinstance(run.checkpoint_hash, str)
+                            or not isinstance(run.output_hash, str)
+                        ):
+                            continue
+                        checkpoint = self._store.get_agent_checkpoint(run.checkpoint_ref, owner_id)
+                        if (
+                            checkpoint is None
+                            or checkpoint.owner_id != owner_id
+                            or checkpoint.research_session_id != session_id
+                            or checkpoint.research_task_id != task_id
+                            or checkpoint.work_item_id != claim_work_item_id
+                            or checkpoint.agent_run_id != run_id
+                            or checkpoint.content_hash != run.checkpoint_hash
+                            or hashlib.sha256(checkpoint.content.encode("utf-8")).hexdigest()
+                            != checkpoint.content_hash
+                        ):
+                            continue
+                        checkpoint_payload = json.loads(checkpoint.content)
+                        if (
+                            not isinstance(checkpoint_payload, Mapping)
+                            or checkpoint_payload.get("schema_version") != checkpoint.schema_version
+                            or not isinstance(checkpoint_payload.get("output"), Mapping)
+                        ):
+                            continue
+                        output = dict(checkpoint_payload["output"])
+                        output_hash = hashlib.sha256(json.dumps(
+                            {key: value for key, value in output.items() if key != "output_hash"},
+                            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                        ).encode("utf-8")).hexdigest()
+                        if (
+                            output.get("schema_version") != checkpoint.schema_version
+                            or output.get("output_hash") != output_hash
+                            or run.output_hash != output_hash
+                            or output.get("report_version") != report_version
+                            or (require_body and not isinstance(output.get("report_content"), Mapping))
+                        ):
+                            continue
+                        if claim.get("settled") is not True:
+                            settled = self._store.settle_report_generation_budget(
+                                task_id, owner_id, report_version, claim_id=claim["claim_id"],
+                            )
+                            if not settled.get("settled"):
+                                continue
+                        return SimpleNamespace(
+                            status="completed",
+                            output_json=output,
+                            model_metadata={"provider": run.provider, "model": run.resolved_model},
+                            agent_run_id=run_id,
+                        )
+                    except Exception:
+                        continue
+            return None
+
+        current_stage = progress.get("stage")
+        if current_stage not in {
+            None, "evidence_review", "comparison", "drafting", "quality_check",
+            "targeted_revision", "published", "draft_saved", "failed",
+        }:
+            return fail_report("REPORT_GENERATION_STAGE_UNSUPPORTED")
+
+        try:
+            existing_payload = persisted_report_payload()
+        except Exception:
+            return fail_report("CANONICAL_REPORT_OUTPUT_UNREADABLE")
+        existing_content = existing_payload.get("report_content")
+        existing_quality = existing_payload.get("quality_validation")
+        if progress["report"].status in {"generating", "completed", "draft", "partial"} and (
+            isinstance(existing_content, Mapping) and isinstance(existing_quality, Mapping)
+        ):
+            try:
+                recovered_validation = validate_report_content(
+                    existing_content, quality_context, revision_count=progress["rewrite_count"],
+                )
+                if recovered_validation.to_dict() != dict(existing_quality):
+                    return fail_report("CANONICAL_REPORT_QUALITY_MISMATCH")
+                recovered_rendered = (
+                    render_report_payload(
+                        {"report_content": dict(existing_content)},
+                        report_id=report.report_id,
+                        report_version=report_version,
+                        context=quality_context,
+                    )
+                    if recovered_validation.status == "pass" else None
+                )
+            except ReportQualityError as error:
+                return fail_report(error.code)
+            except Exception:
+                return fail_report("CANONICAL_REPORT_OUTPUT_UNREADABLE")
+            if recovered_validation.status == "pass":
+                return {
+                    "status": "completed" if progress["report"].status == "completed" else "generating",
+                    "report_id": report.report_id,
+                    "report_version": report_version,
+                    "quality_validation": recovered_validation.to_dict(),
+                    "diagnostic": {
+                        "code": "REPORT_PUBLISHED" if progress["report"].status == "completed"
+                        else "REPORT_DELIVERY_PENDING",
+                        "canonical_reused": True,
+                    },
+                    "rendered": recovered_rendered,
+                    "revision": progress["revision"],
+                }
+            if progress["report"].status in {"generating", "draft", "partial"}:
+                evidence_failure_codes = {
+                    "INSUFFICIENT_PAPERS", "INSUFFICIENT_COMPARISONS",
+                    "INSUFFICIENT_SUPPORTED_FINDINGS", "INVALID_PAPER_SELECTION",
+                    "INVALID_EVIDENCE_REFERENCE", "INVALID_DIMENSION_REFERENCE",
+                }
+                recovered_status = (
+                    "partial"
+                    if evidence_failure_codes.intersection(recovered_validation.failure_codes)
+                    else "draft"
+                )
+                try:
+                    saved_state = self._store.update_report_generation_state(
+                        task_id, owner_id, report_version,
+                        expected_revision=progress["revision"],
+                        stage="draft_saved", rewrite_count=recovered_validation.revision_count,
+                        status=recovered_status, published=False,
+                        reason_codes=list(recovered_validation.failure_codes)
+                        or ["REPORT_QUALITY_CHECK_FAILED"],
+                    )
+                except Exception:
+                    return {
+                        "status": "generating", "report_version": report_version,
+                        "diagnostic": {
+                            "code": "REPORT_FAILURE_STATE_NOT_PERSISTED",
+                            "failure_code": "REPORT_QUALITY_CHECK_FAILED",
+                            "state": "generating",
+                        },
+                    }
+                return {
+                    "status": recovered_status, "report_id": report.report_id,
+                    "report_version": report_version,
+                    "quality_validation": recovered_validation.to_dict(),
+                    "diagnostic": {
+                        "code": "REPORT_QUALITY_CHECK_FAILED",
+                        "failure_codes": list(recovered_validation.failure_codes),
+                    },
+                    "rendered": None, "revision": saved_state["revision"],
+                }
+        elif progress["report"].status in {"draft", "partial", "failed"}:
+            return {
+                "status": progress["report"].status,
+                "report_id": report.report_id,
+                "report_version": report_version,
+                "diagnostic": {
+                    "code": (progress.get("reason_codes") or ["REPORT_GENERATION_FAILED"])[0],
+                    "canonical_reused": True,
+                },
+            }
+        if progress["report"].status != "generating":
+            return {
+                "status": progress["report"].status,
+                "report_version": report_version,
+                "diagnostic": {"code": "REPORT_RESERVATION_NOT_GENERATING"},
+            }
+
+        current_stage = progress.get("stage")
+        if current_stage is None:
+            try:
+                progress = self._store.update_report_generation_state(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    expected_revision=progress["revision"],
+                    stage="evidence_review",
+                    rewrite_count=progress["rewrite_count"],
+                )
+            except (ValueError, ResearchReportGenerationStateConflict):
+                return fail_report("REPORT_GENERATION_STATE_CONFLICT")
+
+        if progress.get("stage") == "evidence_review":
+            try:
+                progress = self._store.update_report_generation_state(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    expected_revision=progress["revision"],
+                    stage="comparison",
+                    rewrite_count=progress["rewrite_count"],
+                )
+            except (ValueError, ResearchReportGenerationStateConflict):
+                return fail_report("REPORT_GENERATION_STATE_CONFLICT")
+
+        agent_run_ids: list[str] = []
+        output_metadata: Mapping[str, Any] = {}
+        comparison_result = recover_stage_output("comparison", require_body=True)
+        if comparison_result is not None:
+            comparison_run_id = getattr(comparison_result, "agent_run_id", None)
+            if isinstance(comparison_run_id, str):
+                agent_run_ids.append(comparison_run_id)
+            comparison_metadata = getattr(comparison_result, "model_metadata", {})
+            if isinstance(comparison_metadata, Mapping):
+                output_metadata = comparison_metadata
+            try:
+                progress = read_progress()
+            except Exception:
+                return {
+                    "status": "generating", "report_version": report_version,
+                    "diagnostic": {"code": "REPORT_STATE_READ_FAILED", "state": "unknown"},
+                }
+        if progress.get("stage") == "comparison" and comparison_result is None:
+            try:
+                comparison_context = self._build_report_quality_context(
+                    task=task,
+                    owner_id=owner_id,
+                    work_item=work_item,
+                    selected_candidates=selected_candidates,
+                    stage="comparison",
+                    revision_count=progress["rewrite_count"],
+                )
+                # Runtime `attempt` is the bounded retry-chain position for one
+                # AgentRun (1..4), not a sequence number for report stages.
+                # Keep each independent stage at attempt 1 and distinguish its
+                # durable run identity with a stage-scoped unique ID.
+                comparison_run_attempt = 1
+                comparison_run_id = (
+                    f"{work_item.work_item_id}:report-{report_version}:comparison-{uuid4().hex}"
+                )
+                comparison_claim_id = str(uuid4())
+                comparison_claim = self._store.claim_report_generation_budget(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    claim_id=comparison_claim_id,
+                    agent_run_id=comparison_run_id,
+                    requested_model_loops=40,
+                    requested_tool_calls=160,
+                    requested_seconds=min(120, int(progress["limits"]["max_seconds"])),
+                )
+            except Exception:
+                return fail_report("REPORT_COMPARISON_BUDGET_CLAIM_FAILED")
+            if not comparison_claim.get("allowed"):
+                return fail_report("REPORT_BUDGET_EXHAUSTED")
+
+            comparison_grant = comparison_claim["grant"]
+            comparison_task_totals = progress["task_totals"]
+            comparison_limits = progress["limits"]
+            comparison_budget_snapshot = {
+                # Each AgentRun starts with its own counters; task totals retain
+                # usage from the matrix preparation and prior quality stages.
+                "model_loops": 0,
+                "tool_calls": 0,
+                "task_model_loops": int(comparison_task_totals["model_loops_used"]),
+                "task_tool_calls": int(comparison_task_totals["tool_calls_used"]),
+                "elapsed_seconds": 0,
+                "max_model_loops": int(comparison_grant["model_loops"]),
+                "max_tool_calls": int(comparison_grant["tool_calls"]),
+                "task_max_model_loops": min(
+                    int(comparison_limits["model_loops"]),
+                    int(comparison_task_totals["model_loops_used"]) + int(comparison_grant["model_loops"]),
+                ),
+                "task_max_tool_calls": min(
+                    int(comparison_limits["tool_calls"]),
+                    int(comparison_task_totals["tool_calls_used"]) + int(comparison_grant["tool_calls"]),
+                ),
+                "max_seconds": int(comparison_grant["seconds"]),
+            }
+            try:
+                comparison_result = self.run_agent(AgentRunInput(
+                    agent_run_id=comparison_run_id,
+                    research_session_id=session_id,
+                    research_task_id=task_id,
+                    work_item_id=work_item.work_item_id,
+                    owner_id=owner_id,
+                    role="synthesizer",
+                    work_item_input={
+                        "report_version": report_version,
+                        "report_quality_context": comparison_context,
+                    },
+                    budget_snapshot=comparison_budget_snapshot,
+                    attempt=comparison_run_attempt,
+                    resolved_model=getattr(work_item, "resolved_model", "") or "",
+                    reasoning_effort="off",
+                ))
+            except Exception:
+                with suppress(Exception):
+                    self._store.settle_report_generation_budget(
+                        task_id, owner_id, report_version, claim_id=comparison_claim_id,
+                    )
+                return fail_report("REPORT_COMPARISON_AGENT_RUN_FAILED")
+            try:
+                settled_comparison = self._store.settle_report_generation_budget(
+                    task_id, owner_id, report_version, claim_id=comparison_claim_id,
+                )
+            except Exception:
+                return fail_report("REPORT_BUDGET_SETTLEMENT_FAILED")
+            if not settled_comparison.get("settled"):
+                return fail_report("REPORT_BUDGET_CLAIM_UNSETTLED")
+            if getattr(comparison_result, "status", None) != "completed":
+                return fail_report(
+                    str(getattr(comparison_result, "error_code", None) or "REPORT_COMPARISON_AGENT_RUN_FAILED")
+                )
+            comparison_output = getattr(comparison_result, "output_json", None)
+            if (
+                not isinstance(comparison_output, Mapping)
+                or comparison_output.get("report_version") != report_version
+                or not isinstance(comparison_output.get("report_content"), Mapping)
+            ):
+                return fail_report("REPORT_COMPARISON_OUTPUT_UNREADABLE")
+            returned_comparison_id = getattr(comparison_result, "agent_run_id", None)
+            agent_run_ids.append(
+                returned_comparison_id if isinstance(returned_comparison_id, str) else comparison_run_id
+            )
+            comparison_metadata = getattr(comparison_result, "model_metadata", {})
+            if isinstance(comparison_metadata, Mapping):
+                output_metadata = comparison_metadata
+            try:
+                progress = read_progress()
+            except Exception:
+                return {
+                    "status": "generating", "report_version": report_version,
+                    "diagnostic": {"code": "REPORT_STATE_READ_FAILED", "state": "unknown"},
+                }
+
+        if progress.get("stage") == "comparison":
+            try:
+                progress = self._store.update_report_generation_state(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    expected_revision=progress["revision"],
+                    stage="drafting",
+                    rewrite_count=progress["rewrite_count"],
+                )
+            except (ValueError, ResearchReportGenerationStateConflict):
+                return fail_report("REPORT_GENERATION_STATE_CONFLICT")
+        elif progress.get("stage") not in {"drafting", "quality_check", "targeted_revision"}:
+            return fail_report("REPORT_GENERATION_STAGE_UNSUPPORTED")
+
+        prior_content: Mapping[str, Any] | None = None
+        failure_codes: list[str] = []
+        validation = None
+        final_content: Mapping[str, Any] | None = None
+        rendered: dict[str, Any] | None = None
+
+        if progress.get("stage") in {"targeted_revision", "drafting"} and progress["rewrite_count"] > 0:
+            revision_count = progress["rewrite_count"]
+            prior_stage_name = f"revision-{revision_count - 1}" if revision_count > 1 else "drafting"
+            prior_result = recover_stage_output(prior_stage_name, require_body=True)
+            prior_output = getattr(prior_result, "output_json", None)
+            prior_content_value = prior_output.get("report_content") if isinstance(prior_output, Mapping) else None
+            if not isinstance(prior_content_value, Mapping):
+                return fail_report("REPORT_STAGE_CHECKPOINT_UNAVAILABLE")
+            try:
+                prior_validation = validate_report_content(
+                    prior_content_value, quality_context, revision_count=revision_count - 1,
+                )
+            except Exception:
+                return fail_report("REPORT_STAGE_CHECKPOINT_INVALID")
+            failure_codes = list(progress.get("reason_codes") or prior_validation.failure_codes)
+            if prior_validation.status == "pass" or not failure_codes:
+                return fail_report("REPORT_REVISION_CONTEXT_UNAVAILABLE")
+            if set(failure_codes) != set(prior_validation.failure_codes):
+                return fail_report("REPORT_REVISION_CONTEXT_MISMATCH")
+            prior_content = dict(prior_content_value)
+            if progress.get("stage") == "targeted_revision":
+                try:
+                    progress = self._store.update_report_generation_state(
+                        task_id, owner_id, report_version,
+                        expected_revision=progress["revision"], stage="drafting",
+                        rewrite_count=revision_count,
+                    )
+                except (ValueError, ResearchReportGenerationStateConflict):
+                    return fail_report("REPORT_GENERATION_STATE_CONFLICT")
+
+        for _quality_attempt in range(3):
+            try:
+                progress = read_progress()
+            except Exception:
+                return {
+                    "status": "generating", "report_version": report_version,
+                    "diagnostic": {"code": "REPORT_STATE_READ_FAILED", "state": "unknown"},
+                }
+            revision_count = progress["rewrite_count"]
+            stage = "targeted_revision" if revision_count else "drafting"
+            context_marker = self._build_report_quality_context(
+                task=task,
+                owner_id=owner_id,
+                work_item=work_item,
+                selected_candidates=selected_candidates,
+                stage=stage,
+                revision_count=revision_count,
+                prior_report_content=prior_content,
+                failure_codes=failure_codes,
+            )
+            if progress.get("stage") not in {"drafting", "quality_check"}:
+                return fail_report("REPORT_GENERATION_STAGE_UNSUPPORTED")
+
+            run_stage = f"revision-{revision_count}" if revision_count else "drafting"
+            recovered_body = recover_stage_output(run_stage, require_body=True)
+            if progress.get("stage") == "quality_check" and recovered_body is None:
+                return fail_report("REPORT_STAGE_CHECKPOINT_UNAVAILABLE")
+            if recovered_body is not None:
+                result = recovered_body
+                recovered_run_id = getattr(result, "agent_run_id", None)
+                if isinstance(recovered_run_id, str):
+                    agent_run_ids.append(recovered_run_id)
+                recovered_metadata = getattr(result, "model_metadata", {})
+                if isinstance(recovered_metadata, Mapping):
+                    output_metadata = recovered_metadata
+                try:
+                    progress = read_progress()
+                except Exception:
+                    return {
+                        "status": "generating", "report_version": report_version,
+                        "diagnostic": {"code": "REPORT_STATE_READ_FAILED", "state": "unknown"},
+                    }
+            else:
+                # Each drafting/revision call is a new AgentRun. Its retry
+                # attempt starts at one; stage/revision lives in its ID.
+                run_attempt = 1
+                run_id = (
+                    f"{work_item.work_item_id}:report-{report_version}:"
+                    f"{run_stage}-{uuid4().hex}"
+                )
+                claim_id = str(uuid4())
+                try:
+                    claim = self._store.claim_report_generation_budget(
+                        task_id,
+                        owner_id,
+                        report_version,
+                        claim_id=claim_id,
+                        agent_run_id=run_id,
+                        requested_model_loops=40,
+                        requested_tool_calls=160,
+                        requested_seconds=min(120, int(progress["limits"]["max_seconds"])),
+                    )
+                except Exception:
+                    return fail_report("REPORT_BUDGET_CLAIM_FAILED")
+                if not claim.get("allowed"):
+                    return fail_report("REPORT_BUDGET_EXHAUSTED")
+
+                grant = claim["grant"]
+                task_totals = progress["task_totals"]
+                limits = progress["limits"]
+                budget_snapshot = {
+                    # Run-local counters start at zero. Cumulative report/task
+                    # totals only cap future work.
+                    "model_loops": 0,
+                    "tool_calls": 0,
+                    "task_model_loops": int(task_totals["model_loops_used"]),
+                    "task_tool_calls": int(task_totals["tool_calls_used"]),
+                    "elapsed_seconds": 0,
+                    "max_model_loops": int(grant["model_loops"]),
+                    "max_tool_calls": int(grant["tool_calls"]),
+                    "task_max_model_loops": min(
+                        int(limits["model_loops"]),
+                        int(task_totals["model_loops_used"]) + int(grant["model_loops"]),
+                    ),
+                    "task_max_tool_calls": min(
+                        int(limits["tool_calls"]),
+                        int(task_totals["tool_calls_used"]) + int(grant["tool_calls"]),
+                    ),
+                    "max_seconds": int(grant["seconds"]),
+                }
+                try:
+                    result = self.run_agent(AgentRunInput(
+                        agent_run_id=run_id,
+                        research_session_id=session_id,
+                        research_task_id=task_id,
+                        work_item_id=work_item.work_item_id,
+                        owner_id=owner_id,
+                        role="synthesizer",
+                        work_item_input={
+                            "report_version": report_version,
+                            "report_quality_context": context_marker,
+                        },
+                        budget_snapshot=budget_snapshot,
+                        attempt=run_attempt,
+                        resolved_model=getattr(work_item, "resolved_model", "") or "",
+                        reasoning_effort="off",
+                    ))
+                except Exception:
+                    with suppress(Exception):
+                        self._store.settle_report_generation_budget(
+                            task_id, owner_id, report_version, claim_id=claim_id,
+                        )
+                    return fail_report("REPORT_BODY_AGENT_RUN_FAILED")
+                try:
+                    settled_claim = self._store.settle_report_generation_budget(
+                        task_id, owner_id, report_version, claim_id=claim_id,
+                    )
+                except Exception:
+                    return fail_report("REPORT_BUDGET_SETTLEMENT_FAILED")
+                if not settled_claim.get("settled"):
+                    return fail_report("REPORT_BUDGET_CLAIM_UNSETTLED")
+
+            if getattr(result, "status", None) != "completed":
+                return fail_report(
+                    str(getattr(result, "error_code", None) or "REPORT_BODY_AGENT_RUN_FAILED")
+                )
+            output = getattr(result, "output_json", None)
+            if not isinstance(output, Mapping):
+                return fail_report("REPORT_BODY_OUTPUT_UNREADABLE")
+            content = output.get("report_content")
+            if output.get("report_version") != report_version:
+                return fail_report("REPORT_VERSION_MISMATCH")
+            returned_run_id = getattr(result, "agent_run_id", None)
+            agent_run_ids.append(returned_run_id if isinstance(returned_run_id, str) else run_id)
+
+            try:
+                validation = validate_report_content(
+                    content, quality_context, revision_count=revision_count,
+                )
+            except ReportQualityError as error:
+                return fail_report(error.code)
+            except Exception:
+                return fail_report("REPORT_QUALITY_VALIDATION_FAILED")
+
+            try:
+                progress = read_progress()
+            except Exception:
+                return {
+                    "status": "generating", "report_version": report_version,
+                    "diagnostic": {"code": "REPORT_STATE_READ_FAILED", "state": "unknown"},
+                }
+            try:
+                progress = self._store.update_report_generation_state(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    expected_revision=progress["revision"],
+                    stage="quality_check",
+                    rewrite_count=revision_count,
+                    reason_codes=list(validation.failure_codes),
+                )
+            except (ValueError, ResearchReportGenerationStateConflict):
+                return fail_report("REPORT_GENERATION_STATE_CONFLICT")
+
+            if validation.status != "pass" and revision_count < 2:
+                try:
+                    progress = self._store.update_report_generation_state(
+                        task_id,
+                        owner_id,
+                        report_version,
+                        expected_revision=progress["revision"],
+                        stage="targeted_revision",
+                        rewrite_count=revision_count + 1,
+                        reason_codes=list(validation.failure_codes),
+                    )
+                    progress = self._store.update_report_generation_state(
+                        task_id,
+                        owner_id,
+                        report_version,
+                        expected_revision=progress["revision"],
+                        stage="drafting",
+                        rewrite_count=revision_count + 1,
+                    )
+                except (ValueError, ResearchReportGenerationStateConflict):
+                    return fail_report("REPORT_GENERATION_STATE_CONFLICT")
+                prior_content = content
+                failure_codes = list(validation.failure_codes)
+                continue
+
+            final_content = dict(content)
+            if validation.status == "pass":
+                try:
+                    rendered = render_report_payload(
+                        {"report_content": final_content},
+                        report_id=report.report_id,
+                        report_version=report_version,
+                        context=quality_context,
+                    )
+                except Exception:
+                    return fail_report("REPORT_RENDER_FAILED")
+
+            metadata = getattr(result, "model_metadata", {})
+            output_metadata = metadata if isinstance(metadata, Mapping) else {}
+            break
+
+        if final_content is None or validation is None:
+            return fail_report("REPORT_REVISION_LIMIT_REACHED")
+
+        generation_output = {
+            "path": "agent_runner",
+            "output_disposition": "accepted" if validation.status == "pass" else "rejected",
+            "agent_run_ids": list(dict.fromkeys(agent_run_ids)),
+        }
+        for key in ("provider", "model"):
+            value = output_metadata.get(key)
+            if isinstance(value, str) and 1 <= len(value) <= 128:
+                generation_output[key] = value
+        try:
+            progress = read_progress()
+            saved = self._store.save_report_generation_output(
+                task_id,
+                owner_id,
+                report_version,
+                plan_version=plan_version,
+                expected_revision=progress["revision"],
+                report_content=final_content,
+                quality_validation=validation.to_dict(),
+                generation_output=generation_output,
+            )
+            if validation.status == "pass":
+                terminal = saved
+                result_status = "generating"
+            else:
+                evidence_failure_codes = {
+                    "INSUFFICIENT_PAPERS",
+                    "INSUFFICIENT_COMPARISONS",
+                    "INSUFFICIENT_SUPPORTED_FINDINGS",
+                    "INVALID_PAPER_SELECTION",
+                    "INVALID_EVIDENCE_REFERENCE",
+                    "INVALID_DIMENSION_REFERENCE",
+                }
+                result_status = (
+                    "partial"
+                    if evidence_failure_codes.intersection(validation.failure_codes)
+                    else "draft"
+                )
+                terminal = self._store.update_report_generation_state(
+                    task_id,
+                    owner_id,
+                    report_version,
+                    expected_revision=saved["revision"],
+                    stage="draft_saved",
+                    rewrite_count=validation.revision_count,
+                    status=result_status,
+                    published=False,
+                    reason_codes=list(validation.failure_codes) or ["REPORT_QUALITY_CHECK_FAILED"],
+                )
+        except Exception:
+            return fail_report("CANONICAL_REPORT_SAVE_FAILED")
+
+        return {
+            "status": result_status,
+            "report_id": report.report_id,
+            "report_version": report_version,
+            "quality_validation": validation.to_dict(),
+            "diagnostic": (
+                {"code": "REPORT_QUALITY_CHECK_FAILED", "failure_codes": list(validation.failure_codes)}
+                if validation.status != "pass" else {"code": "REPORT_DELIVERY_PENDING"}
+            ),
+            "rendered": rendered,
+            "revision": terminal["revision"],
         }
 
     @staticmethod

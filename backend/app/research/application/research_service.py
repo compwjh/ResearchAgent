@@ -76,6 +76,12 @@ def _utcnow() -> str:
 _INFLIGHT_LOCK = threading.Lock()
 _INFLIGHT: set[str] = set()
 
+# Report-only restart work is independent from the whole-task in-flight set:
+# ResearchTask remains terminal ``interrupted`` while its bound report version
+# and a same-reservation successor WorkItem finish in the existing executor.
+_REPORT_RECOVERY_LOCK = threading.Lock()
+_REPORT_RECOVERY_INFLIGHT: set[tuple[str, int]] = set()
+
 
 class ResearchServiceError(Exception):
     """服务层稳定错误：code 必须来自 ``contracts.ERROR_CODES``。"""
@@ -706,7 +712,285 @@ class ResearchService:
                     payload={"report_version": task.current_plan_version, "error_code": "STARTUP_AUDIT_INTERRUPTED"},
                     idempotency_key=f"research-report:{task.research_task_id}:{task.current_plan_version}:interrupted",
                 )
+        for task in self._store.list_tasks_for_status("interrupted"):
+            self._schedule_interrupted_report_recovery(task)
         return count
+
+    def _schedule_interrupted_report_recovery(self, task) -> None:
+        """Resume a generating report on a report-only successor WorkItem.
+
+        The ResearchTask stays terminal.  This is a narrow restart seam for a
+        durable canonical report reservation, not a retry of whole-task
+        orchestration or a reopening of its interrupted WorkItem.
+        """
+        task_id = getattr(task, "research_task_id", None)
+        owner_id = getattr(task, "owner_id", None)
+        if not isinstance(task_id, str) or not task_id or not isinstance(owner_id, str) or not owner_id:
+            return
+        try:
+            current_task = self._store.get_task(task_id, owner_id)
+            if current_task is None or current_task.status != "interrupted":
+                return
+            session = self._store.get_session_by_task(task_id, owner_id)
+            if session is None:
+                return
+            reports_reader = getattr(self._store, "list_research_reports", None)
+            reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+            successor_rebinder = getattr(self._store, "rebind_report_generation_successor", None)
+            if not all(callable(value) for value in (reports_reader, reservation_reader, successor_rebinder)):
+                return
+            reports = reports_reader(task_id, owner_id)
+            for report in reversed(reports):
+                if getattr(report, "status", None) not in {"generating", "completed"}:
+                    continue
+                try:
+                    report_payload = json.loads(getattr(report, "report_json", "{}") or "{}")
+                except (TypeError, ValueError):
+                    continue
+                generation = report_payload.get("generation") if isinstance(report_payload, dict) else None
+                report_version = report_payload.get("report_version") if isinstance(report_payload, dict) else None
+                request_key = generation.get("request_key") if isinstance(generation, dict) else None
+                plan_version = generation.get("plan_version") if isinstance(generation, dict) else None
+                if (
+                    not isinstance(generation, dict)
+                    or isinstance(report_version, bool)
+                    or not isinstance(report_version, int)
+                    or report_version != getattr(report, "report_version", None)
+                    or report_payload.get("report_id") != getattr(report, "report_id", None)
+                    or isinstance(plan_version, bool)
+                    or not isinstance(plan_version, int)
+                    or plan_version != getattr(report, "plan_version", None)
+                    or plan_version != getattr(current_task, "current_plan_version", None)
+                    or not isinstance(request_key, str)
+                ):
+                    continue
+                reservation = reservation_reader(task_id, owner_id, request_key=request_key)
+                if (
+                    reservation is None
+                    or getattr(getattr(reservation, "report", None), "report_id", None)
+                    != getattr(report, "report_id", None)
+                    or getattr(getattr(reservation, "report", None), "report_version", None)
+                    != report_version
+                    or getattr(getattr(reservation, "report", None), "plan_version", None)
+                    != plan_version
+                ):
+                    continue
+                work_item = getattr(reservation, "work_item", None)
+                if (
+                    work_item is None
+                    or getattr(work_item, "research_task_id", None) != task_id
+                    or getattr(work_item, "plan_version", None) != plan_version
+                    or getattr(work_item, "task_type", None) != "synthesize_preliminary_report"
+                    or getattr(work_item, "role", None) != "synthesizer"
+                ):
+                    continue
+                if report.status == "completed":
+                    if work_item.status == "running":
+                        # A report-only worker can publish the canonical CAS
+                        # while the Task is already interrupted, then crash
+                        # before its final delivery step.  Keep the bound row
+                        # terminal and finalize directly; no successor/model
+                        # run is needed for an already-published canonical.
+                        work_item = self._store.update_work_item_status(
+                            work_item.work_item_id, "interrupted",
+                        )
+                    if (
+                        generation.get("published") is not True
+                        or work_item.status not in {"completed", "interrupted"}
+                        or not isinstance(work_item.input_params.get("validated_candidates"), list)
+                    ):
+                        continue
+                    key = (task_id, report_version)
+                    with _REPORT_RECOVERY_LOCK:
+                        if key in _REPORT_RECOVERY_INFLIGHT:
+                            return
+                        _REPORT_RECOVERY_INFLIGHT.add(key)
+                    try:
+                        self._executor.submit(
+                            self._run_interrupted_canonical_delivery_recovery,
+                            task_id,
+                            owner_id,
+                            session.research_session_id,
+                            report_version,
+                            request_key,
+                            work_item.work_item_id,
+                        )
+                    except Exception:
+                        with _REPORT_RECOVERY_LOCK:
+                            _REPORT_RECOVERY_INFLIGHT.discard(key)
+                        logger.exception(
+                            "canonical delivery recovery dispatch failed: task=%s report_version=%s",
+                            task_id,
+                            report_version,
+                        )
+                    return
+                if work_item.status == "running":
+                    # A prior report-only worker may have died while the Task
+                    # was already terminal.  Startup owns this interrupted
+                    # Task, so close its stale live item before rebinding.
+                    work_item = self._store.update_work_item_status(
+                        work_item.work_item_id, "interrupted",
+                    )
+                if work_item.status in {"interrupted", "completed"}:
+                    from uuid import NAMESPACE_URL, uuid5
+
+                    successor_id = uuid5(
+                        NAMESPACE_URL,
+                        f"research-report-successor:{task_id}:{report_version}:{work_item.work_item_id}",
+                    ).hex
+                    reservation = successor_rebinder(
+                        task_id,
+                        owner_id,
+                        report_version,
+                        expected_work_item_id=work_item.work_item_id,
+                        successor_work_item_id=successor_id,
+                        request_key=request_key,
+                        plan_version=plan_version,
+                    )
+                    work_item = getattr(reservation, "work_item", None)
+                if work_item is None or work_item.status != "queued":
+                    continue
+                if not isinstance(work_item.input_params.get("validated_candidates"), list):
+                    continue
+                key = (task_id, report_version)
+                with _REPORT_RECOVERY_LOCK:
+                    if key in _REPORT_RECOVERY_INFLIGHT:
+                        return
+                    _REPORT_RECOVERY_INFLIGHT.add(key)
+                try:
+                    self._executor.submit(
+                        self._run_interrupted_report_recovery,
+                        task_id,
+                        owner_id,
+                        session.research_session_id,
+                        report_version,
+                        request_key,
+                        work_item.work_item_id,
+                    )
+                except Exception:
+                    with _REPORT_RECOVERY_LOCK:
+                        _REPORT_RECOVERY_INFLIGHT.discard(key)
+                    logger.exception(
+                        "report-only recovery dispatch failed: task=%s report_version=%s",
+                        task_id,
+                        report_version,
+                    )
+                return
+        except Exception:
+            logger.exception("report-only startup recovery failed: task=%s", task_id)
+
+    def _run_interrupted_report_recovery(
+        self,
+        task_id: str,
+        owner_id: str,
+        session_id: str,
+        report_version: int,
+        request_key: str,
+        work_item_id: str,
+    ) -> None:
+        """Execute one queued report successor without changing terminal Task state."""
+        key = (task_id, report_version)
+        try:
+            task = self._store.get_task(task_id, owner_id)
+            session = self._store.get_session_by_task(task_id, owner_id)
+            report = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+            reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+            reservation = (
+                reservation_reader(task_id, owner_id, request_key=request_key)
+                if callable(reservation_reader) else None
+            )
+            work_item = getattr(reservation, "work_item", None)
+            if (
+                task is None
+                or task.status != "interrupted"
+                or session is None
+                or session.research_session_id != session_id
+                or report is None
+                or report.status != "generating"
+                or reservation is None
+                or work_item is None
+                or work_item.work_item_id != work_item_id
+                or work_item.status != "queued"
+            ):
+                return
+            running_item = self._store.update_work_item_status(
+                work_item_id, "running", attempt=max(1, int(work_item.attempt)),
+            )
+            self._orchestrator().resume_report_quality_generation(
+                task=task,
+                owner_id=owner_id,
+                session=session,
+                report=report,
+                work_item=running_item,
+                reservation=reservation,
+            )
+        except Exception:
+            # Keep the durable report reservation retryable.  A subsequent
+            # startup will turn a stale running successor into interrupted
+            # and bind another successor; do not invent Task completion.
+            logger.exception(
+                "report-only recovery worker failed: task=%s report_version=%s",
+                task_id,
+                report_version,
+            )
+        finally:
+            with _REPORT_RECOVERY_LOCK:
+                _REPORT_RECOVERY_INFLIGHT.discard(key)
+
+    def _run_interrupted_canonical_delivery_recovery(
+        self,
+        task_id: str,
+        owner_id: str,
+        session_id: str,
+        report_version: int,
+        request_key: str,
+        work_item_id: str,
+    ) -> None:
+        """Finalize an already published canonical report using its terminal WorkItem."""
+        key = (task_id, report_version)
+        try:
+            task = self._store.get_task(task_id, owner_id)
+            session = self._store.get_session_by_task(task_id, owner_id)
+            report = self._store.get_research_report(
+                task_id, owner_id, report_version=report_version,
+            )
+            reservation_reader = getattr(self._store, "get_report_generation_reservation", None)
+            reservation = (
+                reservation_reader(task_id, owner_id, request_key=request_key)
+                if callable(reservation_reader) else None
+            )
+            work_item = getattr(reservation, "work_item", None)
+            if (
+                task is None
+                or task.status != "interrupted"
+                or session is None
+                or session.research_session_id != session_id
+                or report is None
+                or report.status != "completed"
+                or reservation is None
+                or work_item is None
+                or work_item.work_item_id != work_item_id
+                or work_item.status not in {"completed", "interrupted"}
+            ):
+                return
+            self._orchestrator().finalize_interrupted_canonical_report(
+                task=task,
+                owner_id=owner_id,
+                session=session,
+                report=report,
+                reservation=reservation,
+            )
+        except Exception:
+            logger.exception(
+                "interrupted canonical delivery worker failed: task=%s report_version=%s",
+                task_id,
+                report_version,
+            )
+        finally:
+            with _REPORT_RECOVERY_LOCK:
+                _REPORT_RECOVERY_INFLIGHT.discard(key)
 
     # ------------------------------------------------------------------ #
     # 内部

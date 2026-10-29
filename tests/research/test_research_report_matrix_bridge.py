@@ -24,6 +24,7 @@ from backend.app.research.application.report_generation import ReportGenerationS
 from backend.app.research.application.report_synthesis import ReportSynthesizer, report_output_hash
 from backend.app.research.application.search_catalog_adapter import CatalogSearchAdapter
 from backend.app.research.domain.models import (
+    AgentCheckpoint,
     AgentRun,
     ResearchArtifact,
     ResearchPaperSelection,
@@ -115,6 +116,37 @@ def _payload(paper_ids: list[str] | None = None) -> dict:
             }
             for paper_id, evidence_id in zip(paper_ids, evidence_ids, strict=True)
         ],
+    }
+
+
+def _quality_report_content(paper_ids: list[str]) -> dict:
+    evidence_ids = [f"evidence-{index}" for index in range(1, 6)]
+    paper_analyses = []
+    for index, paper_id in enumerate(paper_ids):
+        paper_analyses.append({
+            "paper_id": paper_id,
+            "method": {
+                "status": "supported", "text": "研究" * 320,
+                "evidence_ids": [evidence_ids[index]],
+            },
+            "findings": {"status": "unavailable", "text": "", "evidence_ids": []},
+            "limitations": {"status": "not_stated", "text": "", "evidence_ids": []},
+        })
+    shared_evidence = evidence_ids[:2]
+    return {
+        "schema_version": "research-report-content-v1",
+        "research_question": {"text": "比较五篇论文中的隐私方法"},
+        "evidence_scope": {"text": "根据已核验摘要进行比较", "paper_ids": list(paper_ids)},
+        "paper_analyses": paper_analyses,
+        "cross_paper_comparisons": [{
+            "dimension_id": "facet-1", "paper_ids": list(paper_ids[:2]),
+            "statement": "两篇论文都描述了隐私边界。", "evidence_ids": shared_evidence,
+        }],
+        "synthesis_findings": [{
+            "finding_id": f"finding-{index}", "statement": f"跨论文发现{index}。",
+            "paper_ids": list(paper_ids[:2]), "evidence_ids": shared_evidence,
+        } for index in range(1, 4)],
+        "research_gaps": [],
     }
 
 
@@ -418,6 +450,7 @@ def _run_matrix_agent_scenario(
     candidate_count: int = 1,
     validated_sequences: list[list[dict]] | None = None,
     synthesis_has_matrix: bool = True,
+    run_trace: list | None = None,
 ):
     memory = MemoryRepository(tmp_path / "memory.sqlite3")
     conversation, user, activity = memory.create_conversation_messages(
@@ -443,6 +476,7 @@ def _run_matrix_agent_scenario(
     session = ResearchSession(
         "session-matrix-terminal", "owner", conversation.conversation_id, user.message_id,
         "draft", "running", research_task_id=task.research_task_id,
+        current_plan_version=1,
         activity_message_id=activity.message_id,
     )
     store.create_session(session, memory_repository=memory)
@@ -524,6 +558,8 @@ def _run_matrix_agent_scenario(
 
         def run(self, run_input):
             seed_existing_artifact()
+            if run_trace is not None:
+                run_trace.append(run_input)
             if run_input.role == "search_worker":
                 output = {
                     "schema_version": "runtime-v1", "work_item_id": run_input.work_item_id,
@@ -545,12 +581,38 @@ def _run_matrix_agent_scenario(
                     "evidence_refs": [f"catalog:{paper_id}" for paper_id in paper_ids],
                     "source_refs": ["usenix_security"],
                 }
+            elif run_input.role == "synthesizer" and isinstance(
+                run_input.work_item_input.get("report_quality_context"), dict
+            ):
+                marker = run_input.work_item_input["report_quality_context"]
+                output = {
+                    "schema_version": "runtime-v1", "safe_summary": {}, "source_refs": [],
+                    "work_item_id": run_input.work_item_id,
+                    "report_version": marker["report_version"],
+                    "sections": [], "citation_manifest": [], "artifact_ids": [],
+                    "report_content": _quality_report_content(paper_ids),
+                }
             else:
                 output = synthesis
+            checkpoint_ref = None
+            checkpoint_hash = None
+            checkpoint_content = None
+            run_started_at = (
+                datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+                if run_input.role == "synthesizer" else "2026-10-29T00:00:00Z"
+            )
+            if run_input.role == "synthesizer":
+                checkpoint_content = json.dumps(
+                    {"schema_version": output.get("schema_version", "runtime-v1"),
+                     "output": output, "tool_results": []},
+                    ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                )
+                checkpoint_hash = hashlib.sha256(checkpoint_content.encode("utf-8")).hexdigest()
+                checkpoint_ref = f"checkpoint:{run_input.agent_run_id}:{checkpoint_hash[:16]}"
             store.create_agent_run(AgentRun(
                 agent_run_id=run_input.agent_run_id,
                 research_session_id=session.research_session_id,
-                attempt=1,
+                attempt=run_input.attempt,
                 role=run_input.role,
                 skill_name="test",
                 skill_schema_version="1",
@@ -559,17 +621,47 @@ def _run_matrix_agent_scenario(
                 reasoning_effort="off",
                 allowed_tools_json="[]",
                 provider="test",
-                status="completed",
+                status="running" if run_input.role == "synthesizer" else "completed",
+                output_hash=hashlib.sha256(
+                    json.dumps(output, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                ).hexdigest(),
+                checkpoint_ref=checkpoint_ref,
+                checkpoint_hash=checkpoint_hash,
+                model_loop_count=(
+                    40 if run_input.role == "synthesizer" and
+                    "report_quality_context" not in run_input.work_item_input else 0
+                ),
+                tool_call_count=(
+                    160 if run_input.role == "synthesizer" and
+                    "report_quality_context" not in run_input.work_item_input else 0
+                ),
                 research_task_id=task.research_task_id,
                 work_item_id=run_input.work_item_id,
+                started_at=run_started_at,
+                ended_at=None if run_input.role == "synthesizer" else "2026-10-29T00:00:01Z",
                 owner_id="owner",
             ), owner_id="owner")
+            if run_input.role == "synthesizer":
+                store.create_agent_checkpoint(AgentCheckpoint(
+                    checkpoint_ref=checkpoint_ref,
+                    owner_id="owner",
+                    research_session_id=session.research_session_id,
+                    research_task_id=task.research_task_id,
+                    work_item_id=run_input.work_item_id,
+                    agent_run_id=run_input.agent_run_id,
+                    schema_version=output.get("schema_version", "runtime-v1"),
+                    content=checkpoint_content,
+                    content_hash=checkpoint_hash,
+                ), expected_generation=0)
+                store.update_agent_run_status(
+                    run_input.agent_run_id, "owner", "completed",
+                )
             return AgentRunOutput(
                 "completed", output_json=output, output_hash="hash", agent_run_id=run_input.agent_run_id,
             )
 
     planner = SimpleNamespace(build_plan=lambda **_: SimpleNamespace(
-        facets=("systems",), planner_model="test", rationale_summary="test",
+        facets=("隐私",), planner_model="test", rationale_summary="test",
         work_items=(
             {"id": "s1", "task_type": "search_catalog", "role": "search-worker", "depends_on": [], "params": {}},
             {"id": "e1", "task_type": "evaluate_papers", "role": "paper-evaluator", "depends_on": ["s1"], "params": {}},
@@ -662,6 +754,87 @@ def test_synthesis_keeps_the_same_candidate_allowlist_after_final_projection_cha
     assert store.list_research_reports(task.research_task_id, "owner")
 
 
+def test_natural_language_synthesis_runs_quality_body_before_single_work_item_terminal(
+    tmp_path, monkeypatch,
+) -> None:
+    run_trace = []
+    result, store, task, _memory = _run_matrix_agent_scenario(
+        tmp_path,
+        monkeypatch,
+        target_paper_count=5,
+        candidate_count=5,
+        run_trace=run_trace,
+    )
+
+    synthesizer_runs = [item for item in run_trace if item.role == "synthesizer"]
+    assert len(synthesizer_runs) == 3
+    assert "report_quality_context" not in synthesizer_runs[0].work_item_input
+    comparison_marker = synthesizer_runs[1].work_item_input["report_quality_context"]
+    marker = synthesizer_runs[2].work_item_input["report_quality_context"]
+    assert comparison_marker["schema_version"] == "report-quality-v1"
+    assert comparison_marker["stage"] == "comparison"
+    assert comparison_marker["report_version"] == synthesizer_runs[1].work_item_input["report_version"]
+    assert marker["stage"] == "drafting"
+    assert marker["report_version"] == synthesizer_runs[2].work_item_input["report_version"]
+    assert {item["evidence_level"] for item in marker["evidence"]} == {"abstract"}
+    assert len({item["paper_id"] for item in marker["evidence"]}) == 5
+
+    synthesis_item = next(
+        item for item in store.list_work_items(task.research_task_id, plan_version=1)
+        if item.role == "synthesizer"
+    )
+    assert synthesis_item.status == "completed"
+    assert synthesis_item.attempt == 1
+    report = store.get_research_report(task.research_task_id, "owner", report_version=1)
+    assert report is not None
+    assert report.status == "completed"
+    canonical = json.loads(report.report_json)
+    assert canonical["generation"]["published"] is True
+    persisted_agent_run_ids = canonical["generation"]["agent_run_ids"]
+    assert {item.agent_run_id for item in synthesizer_runs[1:]} <= set(persisted_agent_run_ids)
+    assert all(
+        store.get_agent_run(item.agent_run_id, "owner").status == "completed"
+        for item in synthesizer_runs
+    )
+    for item in synthesizer_runs[1:]:
+        persisted_run = store.get_agent_run(item.agent_run_id, "owner")
+        checkpoint = store.get_agent_checkpoint(persisted_run.checkpoint_ref, "owner")
+        assert checkpoint is not None
+        checkpoint_payload = json.loads(checkpoint.content)
+        assert checkpoint_payload["output"]["report_content"] == _quality_report_content(
+            [entry["paper_id"] for entry in marker["evidence"]][:5]
+        )
+    assert canonical["quality_validation"]["status"] == "pass"
+    assert canonical["report_content"]["schema_version"] == "research-report-content-v1"
+    assert all(claim["settled"] for claim in canonical["generation"]["store_state"]["claims"])
+    assert len(canonical["generation"]["store_state"]["claims"]) == 3
+    assert synthesizer_runs[1].budget_snapshot["model_loops"] == 0
+    assert synthesizer_runs[1].budget_snapshot["tool_calls"] == 0
+    assert synthesizer_runs[1].budget_snapshot["task_model_loops"] == 40
+    assert synthesizer_runs[1].budget_snapshot["task_tool_calls"] == 160
+    assert synthesizer_runs[2].budget_snapshot["model_loops"] == 0
+    assert synthesizer_runs[2].budget_snapshot["tool_calls"] == 0
+    assert synthesizer_runs[2].budget_snapshot["task_model_loops"] == 40
+    assert synthesizer_runs[2].budget_snapshot["task_tool_calls"] == 160
+    artifacts = store.list_artifacts_for_task(task.research_task_id, "owner", report_version=1)
+    assert {item.artifact_type for item in artifacts} == {
+        "markdown", "html", "citation_manifest",
+    }
+    session = store.get_session("session-matrix-terminal", "owner")
+    final_message = _memory.get_activity_message(
+        session.conversation_id, "owner", "research-report:task-matrix-terminal:1",
+    )
+    assert final_message is not None
+    assert final_message.status == "completed"
+    assert session.final_message_id == final_message.message_id
+    notifications = store.list_notifications("owner")
+    assert len(notifications) == 1
+    assert notifications[0].research_task_id == task.research_task_id
+    assert notifications[0].subject_version == 1
+    assert result.status == "completed"
+    assert result.error_code is None
+
+
 def test_matrix_build_failure_cannot_close_agent_task_as_completed(tmp_path, monkeypatch) -> None:
     """A candidate artifact fallback is still a degraded, non-canonical result."""
     result, store, task, _memory = _run_matrix_agent_scenario(tmp_path, monkeypatch, fail_matrix=True)
@@ -742,6 +915,14 @@ def test_approved_minimum_controls_agent_completion_and_surface_reason(
     assert result.error_code == expected_error
     assert result.selected_count == selected_count
     assert store.get_task(task.research_task_id, "owner").status == expected_status
+
+    if expected_status == "running":
+        report = store.get_research_report(task.research_task_id, "owner", report_version=1)
+        assert report is not None and report.status == "generating"
+        assert store.list_artifacts_for_task(task.research_task_id, "owner") == []
+        assert not [event for event in store.list_events(task.research_task_id)
+                    if event.event_type == "terminal"]
+        return
 
     terminal = [
         event for event in store.list_events(task.research_task_id)
