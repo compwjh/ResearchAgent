@@ -1,0 +1,203 @@
+{
+  "captured_at_utc": "2026-10-29T03:12:16Z",
+  "service": "http://127.0.0.1:8000",
+  "method": "GET",
+  "privacy": "Stores only session/task/artifact IDs, statuses, timestamps, response codes, and derived structure counts. No goals, conversation messages, raw report bodies, cookies, credentials, or source PDFs are included.",
+  "sampling": {
+    "session_and_task_list_requests": [
+      {
+        "path": "/api/research-sessions?limit=20",
+        "http_status": 200,
+        "rows": 20
+      },
+      {
+        "path": "/api/research-tasks?limit=20",
+        "http_status": 200,
+        "rows": 20
+      },
+      {
+        "path": "/api/research-sessions?limit=100",
+        "http_status": 200,
+        "rows": 100,
+        "next_cursor_present": true
+      },
+      {
+        "path": "/api/research-tasks?limit=100",
+        "http_status": 200,
+        "rows": 100,
+        "next_cursor_present": true
+      }
+    ],
+    "scope_note": "Two completed sessions were examined: one explicitly known historical ID and one completed task visible on the first 100-item task page. Later pages were not exhausted; this is not an exhaustive runtime census."
+  },
+  "samples": [
+    {
+      "label": "known_historical",
+      "session_id": "a93fc08be4394a73a85b9710edaf1af1",
+      "task_id": "83592e7cd6b85e2ca9462d1bc62078c6",
+      "session_status": "completed",
+      "task_status": "completed",
+      "plan_version": 1,
+      "session_created_at": "2026-09-16T09:20:19Z",
+      "task_created_at": "2026-09-16T09:20:42Z",
+      "task_current_provider": "ollama",
+      "artifacts": [
+        {
+          "type": "markdown",
+          "artifact_id": "6c6e7450fe88464a82bb4a7601118892",
+          "generated_by_agent_run_id": "83592e7cd6b85e2ca9462d1bc62078c6:syn:run-1",
+          "created_at": "2026-09-16T09:25:20Z",
+          "get_path": "/api/research-sessions/a93fc08be4394a73a85b9710edaf1af1/artifacts/6c6e7450fe88464a82bb4a7601118892/download",
+          "http_status": 200,
+          "unicode_chars": 1435,
+          "utf8_bytes": 2105,
+          "heading_counts_by_level": {
+            "h1": 1,
+            "h2": 2,
+            "h3": 5,
+            "h4": 5
+          },
+          "paper_entry_headings": 5,
+          "citation_reference_lines": 5,
+          "nonheading_body_chars": 826
+        },
+        {
+          "type": "html",
+          "artifact_id": "0d455776b3d544899facb5db55ab9681",
+          "generated_by_agent_run_id": "83592e7cd6b85e2ca9462d1bc62078c6",
+          "created_at": "2026-09-16T09:25:20Z"
+        },
+        {
+          "type": "citation_manifest",
+          "artifact_id": "c0b5c4f187b14705883c3d4e0c1ce203",
+          "generated_by_agent_run_id": "83592e7cd6b85e2ca9462d1bc62078c6:syn:run-1",
+          "created_at": "2026-09-16T09:25:20Z",
+          "get_path": "/api/research-sessions/a93fc08be4394a73a85b9710edaf1af1/artifacts/c0b5c4f187b14705883c3d4e0c1ce203/download",
+          "http_status": 200,
+          "citation_entries": 5,
+          "unique_candidate_ids": 5
+        }
+      ],
+      "canonical_report_get": {
+        "path": "/api/research-tasks/83592e7cd6b85e2ca9462d1bc62078c6/reports/1",
+        "http_status": 404
+      }
+    },
+    {
+      "label": "completed_task_visible_on_first_100_task_page",
+      "session_id": "da70204dd1eb46f7a48652dd2a1118b1",
+      "task_id": "fc83662fd8f15748b57ed7f49ad32445",
+      "session_status": "completed",
+      "task_status": "completed",
+      "plan_version": 1,
+      "session_created_at": "2026-10-08T00:07:48Z",
+      "task_created_at": "2026-10-08T00:08:08Z",
+      "task_completed_at": "2026-10-08T00:17:51Z",
+      "task_current_provider": "ollama",
+      "artifacts": [
+        {
+          "type": "markdown",
+          "artifact_id": "8e1e792c014a442ca23a0c37925ba6fb",
+          "generated_by_agent_run_id": "fc83662fd8f15748b57ed7f49ad32445:syn:run-1:attempt-4",
+          "created_at": "2026-10-08T00:17:51Z",
+          "get_path": "/api/research-sessions/da70204dd1eb46f7a48652dd2a1118b1/artifacts/8e1e792c014a442ca23a0c37925ba6fb/download",
+          "http_status": 200,
+          "unicode_chars": 7649,
+          "utf8_bytes": 8197,
+          "heading_counts_by_level": {
+            "h1": 1,
+            "h2": 2,
+            "h3": 1,
+            "h4": 5
+          },
+          "paper_entry_headings": 5,
+          "citation_reference_lines": 5,
+          "nonheading_body_chars": 7185,
+          "metadata_field_counts": {
+            "abstract_rows": 5,
+            "nonempty_abstract_rows": 4,
+            "keyword_rows": 5,
+            "nonempty_keyword_rows": 0,
+            "method_rows": 5,
+            "nonempty_method_rows": 0,
+            "source_rows": 5,
+            "nonempty_source_rows": 2,
+            "year_rows": 5,
+            "nonempty_year_rows": 2,
+            "official_url_rows": 5,
+            "nonempty_official_url_rows": 2
+          }
+        },
+        {
+          "type": "html",
+          "artifact_id": "d02b12ae66bd4ada943e9f4374c2a69f",
+          "generated_by_agent_run_id": "fc83662fd8f15748b57ed7f49ad32445:syn:run-1:attempt-4",
+          "created_at": "2026-10-08T00:17:51Z"
+        },
+        {
+          "type": "citation_manifest",
+          "artifact_id": "8d57f8abe7294e9892e5aac6a3392122",
+          "generated_by_agent_run_id": "fc83662fd8f15748b57ed7f49ad32445:syn:run-1:attempt-4",
+          "created_at": "2026-10-08T00:17:51Z",
+          "get_path": "/api/research-sessions/da70204dd1eb46f7a48652dd2a1118b1/artifacts/8d57f8abe7294e9892e5aac6a3392122/download",
+          "http_status": 200,
+          "citation_entries": 5,
+          "unique_candidate_ids": 5
+        }
+      ],
+      "canonical_report_get": {
+        "path": "/api/research-tasks/fc83662fd8f15748b57ed7f49ad32445/reports/1",
+        "http_status": 404
+      }
+    }
+  ],
+  "runtime_source_classification": {
+    "finding": "Both samples have artifact run IDs in the actual-run pattern; the older task's event stream also contains a completed synthesizer worker. The source defines the synthetic deterministic-only run as <work_item_id>:report-run-v<version>, with deterministic provider metadata. Neither sampled artifact uses that synthetic ID format.",
+    "branch_limit": "Artifact metadata does not prove whether an AgentRunner-produced envelope passed validation or whether the deterministic candidate fallback rendered the Markdown after a synthesis failure. The exposed GET responses do not record that branch choice."
+  },
+  "knowledge_base": {
+    "path": "/api/kb/documents?limit=100",
+    "http_status": 200,
+    "total_documents": 53,
+    "rows_returned": 53,
+    "next_cursor_present": false,
+    "media_type_pdf": 52,
+    "status_indexed": 51,
+    "status_indexing": 2,
+    "source_sha256_present": 53,
+    "source_immutable_true": 53,
+    "page_count_positive": 1,
+    "chunk_count_positive": 51,
+    "sampled_candidate_id_to_document_id_direct_matches": {
+      "historical": 0,
+      "recent": 0
+    },
+    "coverage_limit": "The list exposes document IDs and index metadata but not a catalog-paper crosswalk. The sample proves the KB has indexed/chunked material, not that the exact five cited candidates in either report have matching full-text documents. No document source was fetched."
+  },
+  "event_stream_read": {
+    "path": "/api/research-tasks/83592e7cd6b85e2ca9462d1bc62078c6/events?after_seq=0",
+    "http_status": 200,
+    "frames": 59,
+    "synthesizer_worker_completed": true,
+    "projection_warning_observed": "TRACE_PROJECTION_FAILED",
+    "side_effect_note": "Although the endpoint is GET, its handler calls drain_processing_projection_retries before streaming (routes_research.py:1761). This audit invoked that route once; the response contained TRACE_PROJECTION_FAILED frames. Without a pre-read retry-state snapshot, whether the drain changed persisted retry state cannot be confirmed.",
+    "synthesizer_worker_completed_note": "A completed worker event does not establish that model output passed synthesis validation or that a retry succeeded."
+  },
+  "source_routes": {
+    "session_and_task_routes": "backend/app/api/routes_research.py:71-72,1091-1125,1204-1218,1258-1268,1396-1446",
+    "canonical_report_route": "backend/app/api/routes_research.py:1683-1715",
+    "artifact_metadata_projection": "backend/app/api/routes_research.py:781-803",
+    "deterministic_run_id": "backend/app/research/application/orchestrator.py:3395-3424",
+    "matrix_generation_and_fallback": "backend/app/research/application/orchestrator.py:2325-2458",
+    "knowledge_base_list": "backend/app/api/routes_kb.py:260-275,420-459",
+    "session_projection_reconciliation": "backend/app/api/routes_research.py:1204-1218; backend/app/research/application/research_service.py:224-245"
+  },
+  "session_detail_gets": {
+    "paths": [
+      "/api/research-sessions/a93fc08be4394a73a85b9710edaf1af1",
+      "/api/research-sessions/da70204dd1eb46f7a48652dd2a1118b1"
+    ],
+    "http_status_each": 200,
+    "side_effect_note": "The GET handler calls reconcile_session_projection for linked tasks. That service may persist terminal session status and complete a proposed/active session plan. Both detail GETs were invoked before this behavior was noticed. No pre-read snapshot exists, so whether either call actually changed a stored value cannot be confirmed."
+  }
+}
