@@ -243,3 +243,23 @@ Verdict: **BLOCK** — 原预算/阶段恢复/质量状态/改写与同版发布
 | 独立 terminal published canonical → 两次 startup recovery 探针 | 0 | Task 状态不变；notification `0→1→1`；Runtime calls `2→2`；原 WorkItem ID 保持、无 successor |
 
 **当前 report-only wrapper 与终态恢复窄审：PASS。** 原先发现的 finalizer P1 已修复；没有剩余 P0/P1。未运行全量测试、部署、真实模型或 Git 操作。此前 helper review 的 startup successor、budget/checkpoint、evidence、quality 和 publisher 结论均保留为历史记录。
+
+## Report-content field feedback and comparison-seed follow-up review — 2026-10-30
+
+**当前窄审结论：PASS。** 本轮只复核 report_content 的结构/引用错误反馈、诊断安全持久化、legacy synthesizer 兼容，以及 comparison checkpoint 到 drafting 的复用；不改变此前各节的历史 BLOCK/PASS 记录。
+
+### 复核结论
+
+- `ReportQualityError.field_path` 只保存不超过 256 字符且匹配固定字段路径语法的路径；shape validator 将数组项路径表述为固定模式，例如 `paper_analyses[].method.status`。Runtime 再次只接受 `report_content` 根下的小写字段路径白名单，并把不合格路径降级为固定根路径。[report_quality.py:48](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_quality.py:48) [agent_runtime.py:548](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:548) [agent_runtime.py:2311](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:2311)
+- Runtime 把固定枚举 failure code 与安全 field path 放入下一次 `validation_feedback` 调用。provider 原始字段值和异常文本不进入反馈或诊断；当前诊断只保留稳定 `AGENT_OUTPUT_INVALID`、固定 failure code、rule/path 和 feedback 状态。失败尝试的 checkpoint 持久化相同安全诊断，不持久化被拒的 report_content。新回归覆盖 schema 与 Evidence reference 两类错误，确认第二次模型调用实际接收到反馈，返回后 metadata 将 `feedback_sent` 标成 true；checkpoint 保留 failure code/path，并断言 raw canary 不出现。[agent_runtime.py:583](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:583) [agent_runtime.py:2539](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:2539) [agent_runtime.py:3015](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:3015) [test_report_quality_context.py:610](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_quality_context.py:610)
+- Runtime 将固定 `REPORT_SCHEMA_INVALID` 和引用错误码映射到结构化修正反馈；测试确认两次 FakeModel 调用之间第二个请求含精确路径/失败码而没有被拒输出的 canary。持久 checkpoint 中也仅见安全诊断字段。
+- comparison 输出仅在相同的经过 `recover_stage_output` 绑定校验的 report-version/WorkItem checkpoint 中读取，并作为初稿 `prior_report_content`；Runtime 会按当前 context 再校验其 schema、Evidence 与维度引用。comparison 阶段可保留 coverage 缺口，但 drafting 输出的 Runtime 检查仍启用跨论文 Evidence coverage；Orchestrator 随后还会运行服务端 `validate_report_content`，只有最终 pass 才 render 并进入 canonical accepted 输出。[orchestrator.py:6253](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:6253) [agent_runtime.py:2331](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:2331) [orchestrator.py:6435](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:6435)
+- comparison-seed 回归确认覆盖不完整但结构/引用合法的 comparison checkpoint 被传入 drafting；随后有效 draft 通过最终质量校验，手动提交覆盖不足 draft 时 Runtime 明确返回 `INSUFFICIENT_COMPARISONS` 与固定 evidence path。`report_quality_context` 不存在时仍走 legacy synthesizer 路径，缺少 `report_content` 仍通过。
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_report_quality.py tests/research/test_report_content_runtime.py tests/research/test_report_quality_context.py -q` | 0 | `84 passed in 5.44s` |
+
+本轮仅复核上述安全反馈、checkpoint seed 和 legacy 边界；未运行全量测试、部署或真实模型。**该增量无 P0/P1 阻塞。**

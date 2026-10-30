@@ -172,3 +172,19 @@ Store 的 successor 接口允许 reservation 原先绑定的旧 synthesis WorkIt
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_quality_context.py -q` | 0 | 55 passed |
 
 另新增精确反例：300 秒 grant 的 primary/fallback 为 30/270 秒；报告 stage 剩余 87 秒后按 87、86 秒申请；禁用 fallback 的既有路径不变；schema retry 在 1 秒总 grant 下使用递减的 1.0/0.6/0.2 秒请求并于预算耗尽停止。未调用线上模型、修改部署或运行全量回归。
+
+## 报告结构错误安全反馈与比较稿续用（2026-10-30）
+
+结构校验现在保留稳定 `ReportQualityError.code` 和受限的 `field_path`。Runtime 将这些值映射到安全错误诊断和具体 JSON 字段路径（例如 `report_content.paper_analyses[].method.status`），下一次模型请求只收到错误码、固定规则 ID 与安全字段路径，不包含拒绝正文或原始异常文本。retry checkpoint 持久化相同的安全 `failure_code` 与字段路径，正文数据不会作为校验诊断内容写入。
+
+drafting 会读取当前 reservation 下已接受的 comparison AgentRun checkpoint，并仅把其结构化 `report_content` 作为 `prior_report_content` 输入；prompt 明确它不是质量通过。此种子在 drafting 上下文校验时允许覆盖不足以便模型修订，但新生成正文仍由 Runtime 完整检查证据归属与跨论文覆盖，并继续经过 canonical report quality gate。没有 comparison checkpoint 时仍按原流程生成正文。
+
+### 本轮定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_report_quality_context.py tests/research/test_report_quality.py tests/research/test_agent_runtime_contract.py -q` | 0 | 125 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/report_quality.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py` | 0 | 通过 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m ruff check --ignore SIM102 backend/app/research/application/report_quality.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py tests/research/test_report_quality_context.py` | 0 | All checks passed |
+
+未忽略 `SIM102` 的 Ruff 检查在 `report_quality.py` 两处未改动的既有嵌套条件处报告问题；本轮未扩展修复范围。验证未调用真实模型、未部署、未访问生产数据库且未运行全量回归。

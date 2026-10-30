@@ -25,6 +25,7 @@ QUALITY_SCHEMA_VERSION = "report-quality-v1"
 CJK_COUNT_METHOD = "report-quality-v1"
 MIN_CJK_COUNT = 1500
 MAX_REPORT_BYTES = 512 * 1024
+_SAFE_FIELD_PATH = re.compile(r"^[a-z][a-z0-9_]*(?:\[\])?(?:\.[a-z][a-z0-9_]*(?:\[\])?)*$")
 
 _CJK_RANGES = (
     (0x3400, 0x4DBF),
@@ -44,9 +45,22 @@ _CJK_RANGES = (
 class ReportQualityError(ValueError):
     """A stable schema or server-context validation error."""
 
-    def __init__(self, message: str, *, code: str = "REPORT_SCHEMA_INVALID") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "REPORT_SCHEMA_INVALID",
+        field_path: str | None = None,
+    ) -> None:
         self.code = code
         self.message = message
+        self.field_path = (
+            field_path
+            if isinstance(field_path, str)
+            and len(field_path) <= 256
+            and _SAFE_FIELD_PATH.fullmatch(field_path)
+            else None
+        )
         super().__init__(message)
 
 
@@ -115,8 +129,13 @@ class _UpgradeLookup:
         return self._upgrades.get(claim_id)
 
 
-def _fail(message: str, *, code: str = "REPORT_SCHEMA_INVALID") -> None:
-    raise ReportQualityError(message, code=code)
+def _fail(
+    message: str,
+    *,
+    code: str = "REPORT_SCHEMA_INVALID",
+    field_path: str | None = None,
+) -> None:
+    raise ReportQualityError(message, code=code, field_path=field_path)
 
 
 def _as_mapping(value: Any, field: str) -> Mapping[str, Any]:
@@ -127,33 +146,33 @@ def _as_mapping(value: Any, field: str) -> Mapping[str, Any]:
         converted = to_dict()
         if isinstance(converted, Mapping):
             return converted
-    _fail(f"{field} must be an object")
+    _fail(f"{field} must be an object", field_path=field)
 
 
 def _id(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip() or len(value.strip()) > 200:
-        _fail(f"{field} must be a non-empty string of at most 200 characters")
+        _fail(f"{field} must be a non-empty string of at most 200 characters", field_path=field)
     return value.strip()
 
 
 def _text(value: Any, field: str, *, minimum: int, maximum: int) -> str:
     if not isinstance(value, str) or len(value) < minimum or len(value) > maximum:
-        _fail(f"{field} length must be between {minimum} and {maximum}")
+        _fail(f"{field} length must be between {minimum} and {maximum}", field_path=field)
     if minimum and not value.strip():
-        _fail(f"{field} must not be blank")
+        _fail(f"{field} must not be blank", field_path=field)
     return value
 
 
 def _object(value: Any, field: str, required: set[str]) -> Mapping[str, Any]:
     item = _as_mapping(value, field)
     if set(item) != required:
-        _fail(f"{field} fields must be exactly {sorted(required)}")
+        _fail(f"{field} fields must be exactly {sorted(required)}", field_path=field)
     return item
 
 
 def _array(value: Any, field: str, *, minimum: int, maximum: int) -> list[Any]:
     if not isinstance(value, list) or not minimum <= len(value) <= maximum:
-        _fail(f"{field} must contain {minimum}..{maximum} items")
+        _fail(f"{field} must contain {minimum}..{maximum} items", field_path=field)
     return value
 
 
@@ -161,7 +180,7 @@ def _id_array(value: Any, field: str, *, minimum: int, maximum: int) -> list[str
     items = _array(value, field, minimum=minimum, maximum=maximum)
     ids = [_id(item, field) for item in items]
     if len(set(ids)) != len(ids):
-        _fail(f"{field} values must be unique")
+        _fail(f"{field} values must be unique", field_path=field)
     return ids
 
 
@@ -397,22 +416,22 @@ def count_report_content_cjk(report_content: Mapping[str, Any]) -> int:
 
 def _validate_report_shape(report_content: Any) -> Mapping[str, Any]:
     if not isinstance(report_content, Mapping):
-        _fail("report_content must be an object")
+        _fail("report_content must be an object", field_path="report_content")
     try:
         encoded = json.dumps(report_content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     except (TypeError, ValueError, UnicodeEncodeError) as error:
-        _fail(f"report_content must be UTF-8 JSON: {error}")
+        _fail(f"report_content must be UTF-8 JSON: {error}", field_path="report_content")
     if len(encoded) > MAX_REPORT_BYTES:
-        _fail("report_content exceeds 512 KiB")
+        _fail("report_content exceeds 512 KiB", field_path="report_content")
 
     required = {
         "schema_version", "research_question", "evidence_scope", "paper_analyses",
         "cross_paper_comparisons", "synthesis_findings", "research_gaps",
     }
     if set(report_content) != required:
-        _fail("report_content fields do not match the versioned schema")
+        _fail("report_content fields do not match the versioned schema", field_path="report_content")
     if report_content.get("schema_version") != REPORT_CONTENT_SCHEMA_VERSION:
-        _fail("report_content schema_version is unsupported")
+        _fail("report_content schema_version is unsupported", field_path="report_content.schema_version")
 
     question = _object(report_content.get("research_question"), "research_question", {"text"})
     _text(question.get("text"), "research_question.text", minimum=1, maximum=2000)
@@ -423,51 +442,52 @@ def _validate_report_shape(report_content: Any) -> Mapping[str, Any]:
     analyses = _array(report_content.get("paper_analyses"), "paper_analyses", minimum=5, maximum=64)
     analysis_ids: set[str] = set()
     for raw in analyses:
-        item = _object(raw, "paper_analysis", {"paper_id", "method", "findings", "limitations"})
-        paper_id = _id(item.get("paper_id"), "paper_analysis.paper_id")
+        item = _object(raw, "paper_analyses[]", {"paper_id", "method", "findings", "limitations"})
+        paper_id = _id(item.get("paper_id"), "paper_analyses[].paper_id")
         if paper_id in analysis_ids:
-            _fail("paper_analysis.paper_id values must be unique")
+            _fail("paper_analysis.paper_id values must be unique", field_path="paper_analyses[].paper_id")
         analysis_ids.add(paper_id)
         for field in ("method", "findings", "limitations"):
-            block = _object(item.get(field), f"paper_analysis.{field}", {"status", "text", "evidence_ids"})
+            block_path = f"paper_analyses[].{field}"
+            block = _object(item.get(field), block_path, {"status", "text", "evidence_ids"})
             status = block.get("status")
             if not isinstance(status, str) or status not in {"supported", "not_stated", "unavailable"}:
-                _fail(f"paper_analysis.{field}.status is invalid")
-            text = _text(block.get("text"), f"paper_analysis.{field}.text", minimum=0, maximum=4000)
-            evidence_ids = _id_array(block.get("evidence_ids"), f"paper_analysis.{field}.evidence_ids", minimum=0, maximum=32)
+                _fail(f"paper_analysis.{field}.status is invalid", field_path=f"{block_path}.status")
+            text = _text(block.get("text"), f"{block_path}.text", minimum=0, maximum=4000)
+            evidence_ids = _id_array(block.get("evidence_ids"), f"{block_path}.evidence_ids", minimum=0, maximum=32)
             if status == "supported":
                 if not text.strip() or not evidence_ids:
-                    _fail(f"supported {field} requires text and evidence_ids")
+                    _fail(f"supported {field} requires text and evidence_ids", field_path=f"{block_path}.evidence_ids")
             elif text != "" or evidence_ids:
-                _fail(f"{status} {field} must have empty text and evidence_ids")
+                _fail(f"{status} {field} must have empty text and evidence_ids", field_path=f"{block_path}.text")
         if not any(item[field]["status"] == "supported" for field in ("method", "findings", "limitations")):
-            _fail("each paper_analysis requires at least one supported block")
+            _fail("each paper_analysis requires at least one supported block", field_path="paper_analyses[].method.status")
 
     comparisons = _array(report_content.get("cross_paper_comparisons"), "cross_paper_comparisons", minimum=1, maximum=16)
     for raw in comparisons:
-        item = _object(raw, "cross_paper_comparison", {"dimension_id", "paper_ids", "statement", "evidence_ids"})
-        _id(item.get("dimension_id"), "comparison.dimension_id")
-        _id_array(item.get("paper_ids"), "comparison.paper_ids", minimum=2, maximum=64)
-        _text(item.get("statement"), "comparison.statement", minimum=1, maximum=3000)
-        _id_array(item.get("evidence_ids"), "comparison.evidence_ids", minimum=2, maximum=32)
+        item = _object(raw, "cross_paper_comparisons[]", {"dimension_id", "paper_ids", "statement", "evidence_ids"})
+        _id(item.get("dimension_id"), "cross_paper_comparisons[].dimension_id")
+        _id_array(item.get("paper_ids"), "cross_paper_comparisons[].paper_ids", minimum=2, maximum=64)
+        _text(item.get("statement"), "cross_paper_comparisons[].statement", minimum=1, maximum=3000)
+        _id_array(item.get("evidence_ids"), "cross_paper_comparisons[].evidence_ids", minimum=2, maximum=32)
 
     findings = _array(report_content.get("synthesis_findings"), "synthesis_findings", minimum=3, maximum=16)
     finding_ids: set[str] = set()
     for raw in findings:
-        item = _object(raw, "synthesis_finding", {"finding_id", "statement", "paper_ids", "evidence_ids"})
-        finding_id = _id(item.get("finding_id"), "finding_id")
+        item = _object(raw, "synthesis_findings[]", {"finding_id", "statement", "paper_ids", "evidence_ids"})
+        finding_id = _id(item.get("finding_id"), "synthesis_findings[].finding_id")
         if finding_id in finding_ids:
-            _fail("finding_id values must be unique")
+            _fail("finding_id values must be unique", field_path="synthesis_findings[].finding_id")
         finding_ids.add(finding_id)
-        _text(item.get("statement"), "finding.statement", minimum=1, maximum=3000)
-        _id_array(item.get("paper_ids"), "finding.paper_ids", minimum=2, maximum=64)
-        _id_array(item.get("evidence_ids"), "finding.evidence_ids", minimum=2, maximum=32)
+        _text(item.get("statement"), "synthesis_findings[].statement", minimum=1, maximum=3000)
+        _id_array(item.get("paper_ids"), "synthesis_findings[].paper_ids", minimum=2, maximum=64)
+        _id_array(item.get("evidence_ids"), "synthesis_findings[].evidence_ids", minimum=2, maximum=32)
 
     gaps = _array(report_content.get("research_gaps"), "research_gaps", minimum=0, maximum=32)
     for raw in gaps:
-        item = _object(raw, "research_gap", {"statement", "evidence_ids"})
-        _text(item.get("statement"), "research_gap.statement", minimum=1, maximum=2000)
-        _id_array(item.get("evidence_ids"), "gap.evidence_ids", minimum=0, maximum=32)
+        item = _object(raw, "research_gaps[]", {"statement", "evidence_ids"})
+        _text(item.get("statement"), "research_gaps[].statement", minimum=1, maximum=2000)
+        _id_array(item.get("evidence_ids"), "research_gaps[].evidence_ids", minimum=0, maximum=32)
     return report_content
 
 

@@ -4673,7 +4673,7 @@ class Orchestrator:
         if supplied_failure_codes:
             context["failure_codes"] = list(dict.fromkeys(supplied_failure_codes))
 
-        if prior_report_content is not None and stage == "targeted_revision":
+        if prior_report_content is not None and stage in {"drafting", "targeted_revision"}:
             try:
                 from backend.app.research.application.report_quality import _validate_report_shape
                 from backend.app.research.application.report_synthesis import _walk_safe
@@ -6251,6 +6251,14 @@ class Orchestrator:
             return fail_report("REPORT_GENERATION_STAGE_UNSUPPORTED")
 
         prior_content: Mapping[str, Any] | None = None
+        if progress.get("stage") in {"drafting", "quality_check"} and progress["rewrite_count"] == 0:
+            comparison_seed = recover_stage_output("comparison", require_body=True)
+            seed_output = getattr(comparison_seed, "output_json", None)
+            seed_content = seed_output.get("report_content") if isinstance(seed_output, Mapping) else None
+            if isinstance(seed_content, Mapping):
+                # Use the accepted comparison checkpoint only as draft input.
+                # The draft AgentRun and the canonical quality gate still run.
+                prior_content = dict(seed_content)
         failure_codes: list[str] = []
         validation = None
         final_content: Mapping[str, Any] | None = None

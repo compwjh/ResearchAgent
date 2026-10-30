@@ -179,7 +179,7 @@ _REPORT_QUALITY_STAGES = frozenset({"evidence_review", "comparison", "drafting",
 _REPORT_QUALITY_FAILURE_CODES = frozenset({
     "INVALID_PAPER_SELECTION", "INVALID_EVIDENCE_REFERENCE", "INSUFFICIENT_PAPERS",
     "INSUFFICIENT_COMPARISONS", "INSUFFICIENT_SUPPORTED_FINDINGS", "CJK_COUNT_BELOW_MINIMUM",
-    "INVALID_DIMENSION_REFERENCE",
+    "INVALID_DIMENSION_REFERENCE", "REPORT_SCHEMA_INVALID",
 })
 
 
@@ -203,7 +203,7 @@ def _validate_report_quality_references(
     dimension_ids: set[str],
     enforce_cross_paper_coverage: bool = True,
     allow_undercovered_failures: set[str] | None = None,
-) -> str | None:
+) -> tuple[str, str] | None:
     """Check allowlists and real cross-paper coverage without final report counts.
 
     The per-element ``len(mapped) >= 2`` rule matches
@@ -215,48 +215,51 @@ def _validate_report_quality_references(
     scope = report_content["evidence_scope"]
     scope_papers = set(scope["paper_ids"])
     if not scope_papers.issubset(selected_paper_ids):
-        return "INVALID_PAPER_SELECTION"
+        return "INVALID_PAPER_SELECTION", "report_content.evidence_scope.paper_ids"
 
     for analysis in report_content["paper_analyses"]:
         paper_id = analysis["paper_id"]
         if paper_id not in selected_paper_ids or paper_id not in scope_papers:
-            return "INVALID_PAPER_SELECTION"
+            return "INVALID_PAPER_SELECTION", "report_content.paper_analyses[].paper_id"
         for field_name in ("method", "findings", "limitations"):
             block = analysis[field_name]
             if any(evidence_to_paper.get(evidence_id) != paper_id for evidence_id in block["evidence_ids"]):
-                return "INVALID_EVIDENCE_REFERENCE"
+                return (
+                    "INVALID_EVIDENCE_REFERENCE",
+                    f"report_content.paper_analyses[].{field_name}.evidence_ids",
+                )
 
     for comparison in report_content["cross_paper_comparisons"]:
         papers = set(comparison["paper_ids"])
         if not papers.issubset(selected_paper_ids):
-            return "INVALID_PAPER_SELECTION"
+            return "INVALID_PAPER_SELECTION", "report_content.cross_paper_comparisons[].paper_ids"
         if comparison["dimension_id"] not in dimension_ids:
-            return "INVALID_DIMENSION_REFERENCE"
+            return "INVALID_DIMENSION_REFERENCE", "report_content.cross_paper_comparisons[].dimension_id"
         mapped_papers = {evidence_to_paper.get(evidence_id) for evidence_id in comparison["evidence_ids"]}
         if None in mapped_papers or not mapped_papers.issubset(papers):
-            return "INVALID_EVIDENCE_REFERENCE"
+            return "INVALID_EVIDENCE_REFERENCE", "report_content.cross_paper_comparisons[].evidence_ids"
         if (
             enforce_cross_paper_coverage and len(mapped_papers) < 2
             and "INSUFFICIENT_COMPARISONS" not in repairable
         ):
-            return "INSUFFICIENT_COMPARISONS"
+            return "INSUFFICIENT_COMPARISONS", "report_content.cross_paper_comparisons[].evidence_ids"
 
     for finding in report_content["synthesis_findings"]:
         papers = set(finding["paper_ids"])
         if not papers.issubset(selected_paper_ids):
-            return "INVALID_PAPER_SELECTION"
+            return "INVALID_PAPER_SELECTION", "report_content.synthesis_findings[].paper_ids"
         mapped_papers = {evidence_to_paper.get(evidence_id) for evidence_id in finding["evidence_ids"]}
         if None in mapped_papers or not mapped_papers.issubset(papers):
-            return "INVALID_EVIDENCE_REFERENCE"
+            return "INVALID_EVIDENCE_REFERENCE", "report_content.synthesis_findings[].evidence_ids"
         if (
             enforce_cross_paper_coverage and len(mapped_papers) < 2
             and "INSUFFICIENT_SUPPORTED_FINDINGS" not in repairable
         ):
-            return "INSUFFICIENT_SUPPORTED_FINDINGS"
+            return "INSUFFICIENT_SUPPORTED_FINDINGS", "report_content.synthesis_findings[].evidence_ids"
 
     for gap in report_content["research_gaps"]:
         if any(evidence_id not in evidence_to_paper for evidence_id in gap["evidence_ids"]):
-            return "INVALID_EVIDENCE_REFERENCE"
+            return "INVALID_EVIDENCE_REFERENCE", "report_content.research_gaps[].evidence_ids"
     return None
 
 
@@ -399,7 +402,9 @@ def _validate_report_quality_context(
             selected_paper_ids=paper_set,
             evidence_to_paper=evidence_to_paper,
             dimension_ids=dimension_ids,
-            enforce_cross_paper_coverage=stage in {"drafting", "targeted_revision"},
+            # A comparison-stage body can seed drafting even if its coverage
+            # is incomplete. Final draft output is checked with coverage on.
+            enforce_cross_paper_coverage=stage == "targeted_revision",
             allow_undercovered_failures=repairable_prior_failures,
         )
         if reference_error:
@@ -494,11 +499,17 @@ def _report_quality_prompt_boundary(context: Mapping[str, Any]) -> str:
             "supported conclusions or 1,500 CJK characters; do not claim a quality pass."
         )
     elif stage == "drafting":
+        seed_instruction = (
+            " A comparison-stage candidate is supplied in prior_report_content; use it as a drafting seed, not as a quality pass. "
+            "Re-check every claim against the supplied evidence, repair gaps, and return a complete draft that satisfies all drafting requirements."
+            if isinstance(context.get("prior_report_content"), Mapping)
+            else ""
+        )
         focus = (
             " Current stage is drafting. Develop the full report_content from the approved excerpts and dimensions, "+
             "cover at least 5 selected papers, include at least one cross-paper comparison and at least three "+
             "evidence-supported synthesis findings, and target at least 1,500 CJK ideographs in readable body text. "+
-            "Do not calculate the character count; the server computes the final count."
+            "Do not calculate the character count; the server computes the final count." + seed_instruction
         )
     elif stage == "targeted_revision":
         codes = context.get("failure_codes", ())
@@ -534,6 +545,17 @@ _OUTPUT_CONTRACT_PATHS = frozenset({
     "report_version", "sections", "citation_manifest", "artifact_ids", "evidence_matrix", "report_content",
     "research_task_id", "research_session_id", "owner_id",
 })
+_REPORT_CONTENT_FIELD_PATH = re.compile(
+    r"^report_content(?:\.[a-z][a-z0-9_]*(?:\[\])?)*$"
+)
+
+
+def _is_safe_report_content_path(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) <= 256
+        and _REPORT_CONTENT_FIELD_PATH.fullmatch(value) is not None
+    )
 
 
 def _output_contract_error(
@@ -549,7 +571,10 @@ def _output_contract_error(
     # ``field_paths`` is intentionally accepted only for fixed call-site
     # constants.  The diagnostic builder applies a second fixed allowlist, so
     # model-derived values cannot be persisted.
-    safe_paths = tuple(path for path in field_paths if path in _OUTPUT_CONTRACT_PATHS)
+    safe_paths = tuple(
+        path for path in field_paths
+        if path in _OUTPUT_CONTRACT_PATHS or _is_safe_report_content_path(path)
+    )
     if safe_paths:
         error.output_contract_field_paths = safe_paths
     return error
@@ -563,15 +588,30 @@ def _output_contract_feedback(
 ) -> dict[str, Any]:
     """Return bounded correction instructions for any output-contract retry."""
     required = tuple(dict.fromkeys((*ROLE_GENERIC_OUTPUT_FIELDS, *ROLE_OUTPUT_FIELDS.get(role, ()))))
-    if role == "synthesizer" and getattr(validation_error, "output_contract_field_paths", ()) == ("report_content",):
+    observed_paths = getattr(validation_error, "output_contract_field_paths", ())
+    if role == "synthesizer" and any(
+        path == "report_content" or _is_safe_report_content_path(path)
+        for path in observed_paths
+    ):
         required = tuple(dict.fromkeys((*required, "report_content")))
     if role == "synthesizer" and require_synthesis_matrix:
         required = tuple(dict.fromkeys((*required, "evidence_matrix")))
     stage = getattr(validation_error, "output_contract_stage", None)
     safe = _OUTPUT_CONTRACT_DIAGNOSTICS.get(stage)
+    quality_failure_code = getattr(validation_error, "report_quality_failure_code", None)
+    feedback_code = (
+        quality_failure_code
+        if isinstance(quality_failure_code, str) and quality_failure_code in _REPORT_QUALITY_FAILURE_CODES
+        else "AGENT_OUTPUT_INVALID"
+    )
     feedback: dict[str, Any] = {
-        "code": getattr(validation_error, "report_quality_failure_code", "AGENT_OUTPUT_INVALID"),
-        "message": "Emit the required bounded JSON fields; correct the reported contract issue without adding prose, URLs, credentials, or hidden reasoning.",
+        "code": feedback_code,
+        "message": (
+            "Correct the reported report_content field path and return the complete structured body. "
+            "Preserve valid supported content; do not add prose, URLs, credentials, or hidden reasoning."
+            if feedback_code in _REPORT_QUALITY_FAILURE_CODES
+            else "Emit the required bounded JSON fields; correct the reported contract issue without adding prose, URLs, credentials, or hidden reasoning."
+        ),
         "required_fields": list(required),
         "shape": {
             "schema_version": "non-empty string",
@@ -581,7 +621,6 @@ def _output_contract_feedback(
         },
     }
     if safe is not None:
-        observed_paths = getattr(validation_error, "output_contract_field_paths", ())
         feedback["failure"] = {
             "rule_id": safe[0],
             "field_paths": list(observed_paths) if observed_paths else list(safe[1]),
@@ -620,6 +659,13 @@ def _validation_diagnostic(
             diagnostic["rule_id"], paths = safe
             observed_paths = getattr(validation_error, "output_contract_field_paths", ())
             diagnostic["field_paths"] = list(observed_paths) if observed_paths else list(paths)
+    quality_failure_code = getattr(validation_error, "report_quality_failure_code", None)
+    if isinstance(quality_failure_code, str) and quality_failure_code in _REPORT_QUALITY_FAILURE_CODES:
+        diagnostic["failure_code"] = quality_failure_code
+        observed_paths = getattr(validation_error, "output_contract_field_paths", ())
+        quality_paths = [path for path in observed_paths if _is_safe_report_content_path(path)]
+        if quality_paths:
+            diagnostic["field_paths"] = ["report_content", *quality_paths]
     return diagnostic
 
 
@@ -2263,22 +2309,35 @@ class ResearchAgentRunner:
                 raise error
             try:
                 report_content = dict(_validate_report_shape(result.get("report_content")))
-            except ReportQualityError:
-                error = _output_contract_error("structure", field_paths=("report_content",))
+            except ReportQualityError as shape_error:
+                field_path = getattr(shape_error, "field_path", None)
+                prefixed_field_path = (
+                    f"report_content.{field_path}"
+                    if isinstance(field_path, str) and field_path != "report_content"
+                    else field_path
+                )
+                full_field_path = (
+                    prefixed_field_path
+                    if _is_safe_report_content_path(prefixed_field_path)
+                    else "report_content"
+                )
+                error = _output_contract_error("structure", field_paths=(full_field_path,))
+                error.report_quality_failure_code = shape_error.code
                 raise error from None
             context_evidence = {
                 item["evidence_id"]: item["paper_id"]
                 for item in report_quality_context["evidence"]
             }
-            failure_code = _validate_report_quality_references(
+            reference_error = _validate_report_quality_references(
                 report_content,
                 selected_paper_ids=set(report_quality_context["selected_paper_ids"]),
                 evidence_to_paper=context_evidence,
                 dimension_ids={item["dimension_id"] for item in report_quality_context["dimensions"]},
                 enforce_cross_paper_coverage=report_quality_context["stage"] in {"drafting", "targeted_revision"},
             )
-            if failure_code:
-                error = _output_contract_error("structure", field_paths=("report_content",))
+            if reference_error:
+                failure_code, field_path = reference_error
+                error = _output_contract_error("structure", field_paths=(field_path,))
                 error.report_quality_failure_code = failure_code
                 raise error
             result["report_content"] = report_content

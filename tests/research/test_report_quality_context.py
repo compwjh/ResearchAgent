@@ -607,6 +607,192 @@ def _create_runtime_session(store, task, session_id):
     ), memory_repository=_MemoryReferences())
 
 
+@pytest.mark.parametrize(
+    ("invalid_kind", "expected_code", "expected_path"),
+    [
+        (
+            "schema",
+            "REPORT_SCHEMA_INVALID",
+            "report_content.paper_analyses[].method.status",
+        ),
+        (
+            "reference",
+            "INVALID_EVIDENCE_REFERENCE",
+            "report_content.cross_paper_comparisons[].evidence_ids",
+        ),
+    ],
+)
+def test_report_quality_validation_feedback_is_safe_and_checkpointed(
+    tmp_path, invalid_kind, expected_code, expected_path,
+):
+    store, catalog_store, task, _work_item, candidates = _seed_report_context(tmp_path)
+    reservation, running = _reserve_running_report(
+        store, task,
+        request_key=str(uuid4()),
+        request_payload={"plan_version": 1, "purpose": "safe-report-validation-feedback"},
+    )
+    session_id = "session-safe-report-validation-feedback"
+    _create_runtime_session(store, task, session_id)
+    progress = store.get_report_generation_budget(
+        task.research_task_id, "owner", reservation.report.report_version,
+    )
+    progress = store.update_report_generation_state(
+        task.research_task_id, "owner", reservation.report.report_version,
+        expected_revision=progress["revision"], stage="evidence_review", rewrite_count=0,
+    )
+    store.update_report_generation_state(
+        task.research_task_id, "owner", reservation.report.report_version,
+        expected_revision=progress["revision"], stage="comparison", rewrite_count=0,
+    )
+
+    papers = [item["paper_id"] for item in candidates]
+    valid_content = _quality_report_content(papers, cjk_repetitions=10)
+    invalid_content = json.loads(json.dumps(valid_content))
+    raw_marker = "REJECTED_RAW_REPORT_BODY_MUST_NOT_BE_PERSISTED"
+    if invalid_kind == "schema":
+        invalid_content["paper_analyses"][0]["method"]["status"] = raw_marker
+        invalid_content["paper_analyses"][0]["method"]["text"] = raw_marker
+    else:
+        invalid_content["cross_paper_comparisons"][0]["evidence_ids"] = [
+            "evidence-1", "evidence-3",
+        ]
+    model = FakeModel([
+        _report_runtime_output(reservation.report.report_version, running.work_item_id, invalid_content),
+        _report_runtime_output(reservation.report.report_version, running.work_item_id, valid_content),
+    ])
+
+    result, run_input, _runtime = _checkpoint_quality_run(
+        store=store, catalog_store=catalog_store, task=task, work_item=running,
+        session_id=session_id, reservation=reservation, candidates=candidates,
+        model=model, stage="comparison",
+    )
+
+    assert result.status == "completed"
+    assert len(model.calls) == 2
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == expected_code
+    assert feedback["failure"]["field_paths"] == [expected_path]
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["failure_code"] == expected_code
+    assert diagnostic["field_paths"] == ["report_content", expected_path]
+    assert diagnostic["feedback_sent"] is True
+    assert raw_marker not in json.dumps(feedback)
+
+    failed_attempt = store.get_agent_run(run_input.agent_run_id, "owner")
+    assert failed_attempt is not None and failed_attempt.checkpoint_ref
+    checkpoint = store.get_agent_checkpoint(failed_attempt.checkpoint_ref, "owner")
+    assert checkpoint is not None
+    checkpoint_payload = json.loads(checkpoint.content)
+    persisted_diagnostic = checkpoint_payload["validation_diagnostic"]
+    assert persisted_diagnostic["failure_code"] == expected_code
+    assert persisted_diagnostic["field_paths"] == ["report_content", expected_path]
+    assert raw_marker not in checkpoint.content
+
+
+def test_drafting_reuses_accepted_comparison_checkpoint_as_prior_content(tmp_path):
+    store, catalog_store, task, _work_item, candidates = _seed_report_context(
+        tmp_path, add_fulltext=True, fulltext_summary="经核验的全文矩阵摘录。",
+    )
+    reservation, running = _reserve_running_report(
+        store, task,
+        request_key=str(uuid4()),
+        request_payload={"plan_version": 1, "purpose": "comparison-checkpoint-drafting-seed"},
+    )
+    session_id = "session-comparison-checkpoint-drafting-seed"
+    _create_runtime_session(store, task, session_id)
+    progress = store.get_report_generation_budget(
+        task.research_task_id, "owner", reservation.report.report_version,
+    )
+    progress = store.update_report_generation_state(
+        task.research_task_id, "owner", reservation.report.report_version,
+        expected_revision=progress["revision"], stage="evidence_review", rewrite_count=0,
+    )
+    store.update_report_generation_state(
+        task.research_task_id, "owner", reservation.report.report_version,
+        expected_revision=progress["revision"], stage="comparison", rewrite_count=0,
+    )
+
+    papers = [item["paper_id"] for item in candidates]
+    comparison_content = _quality_report_content(papers, cjk_repetitions=10)
+    # The comparison checkpoint is structurally valid but has cross-paper
+    # coverage gaps; drafting may use it as a seed and must repair them.
+    comparison_content["cross_paper_comparisons"][0]["evidence_ids"] = [
+        "evidence-1", "evidence-fulltext",
+    ]
+    comparison_model = FakeModel([_report_runtime_output(
+        reservation.report.report_version, running.work_item_id, comparison_content,
+    )])
+    comparison_result, _comparison_input, _comparison_runtime = _checkpoint_quality_run(
+        store=store, catalog_store=catalog_store, task=task, work_item=running,
+        session_id=session_id, reservation=reservation, candidates=candidates,
+        model=comparison_model, stage="comparison",
+    )
+    assert comparison_result.status == "completed"
+
+    draft_content = _quality_report_content(papers)
+    draft_markers = []
+
+    def fake_draft_runner(run_input):
+        marker = run_input.work_item_input["report_quality_context"]
+        draft_markers.append(marker)
+        store.create_agent_run(AgentRun(
+            run_input.agent_run_id, session_id, run_input.attempt,
+            "synthesizer", "research-report-synthesis", "1", "probe-hash", "probe-model",
+            "off", "[]", provider="test", status="completed",
+            research_task_id=task.research_task_id, work_item_id=running.work_item_id,
+            started_at="2026-10-29T00:00:00Z", ended_at="2026-10-29T00:00:01Z",
+            owner_id="owner",
+        ), owner_id="owner")
+        return SimpleNamespace(
+            status="completed",
+            output_json=_report_runtime_output(
+                reservation.report.report_version, running.work_item_id, draft_content,
+            )["output_json"],
+            model_metadata={"provider": "test", "model": "probe-model"},
+            agent_run_id=run_input.agent_run_id,
+        )
+
+    orchestrator = Orchestrator(
+        store=store, search_adapter=SimpleNamespace(_store=catalog_store),
+        probe=object(), agent_runner=SimpleNamespace(run=fake_draft_runner),
+    )
+    result = orchestrator._generate_report_quality_body(
+        task=task, owner_id="owner", work_item=running,
+        selected_candidates=_selected_candidates(candidates),
+        reservation=reservation, session_id=session_id,
+    )
+
+    assert result["status"] == "generating"
+    assert len(draft_markers) == 1
+    assert draft_markers[0]["stage"] == "drafting"
+    assert draft_markers[0]["prior_report_content"] == comparison_content
+    assert result["quality_validation"]["status"] == "pass"
+    persisted = store.get_research_report(
+        task.research_task_id, "owner", report_version=reservation.report.report_version,
+    )
+    assert json.loads(persisted.report_json)["report_content"] == draft_content
+
+    invalid_draft = json.loads(json.dumps(draft_content))
+    invalid_draft["cross_paper_comparisons"][0]["evidence_ids"] = [
+        "evidence-1", "evidence-fulltext",
+    ]
+    runtime = ResearchAgentRunner(store=store)
+    with pytest.raises(AgentRuntimeError) as error:
+        runtime._validate_output(
+            "synthesizer",
+            _report_runtime_output(
+                reservation.report.report_version, running.work_item_id, invalid_draft,
+            )["output_json"],
+            expected_work_item_id=running.work_item_id,
+            report_quality_context=draft_markers[0],
+            expected_report_version=reservation.report.report_version,
+        )
+    assert error.value.report_quality_failure_code == "INSUFFICIENT_COMPARISONS"
+    assert error.value.output_contract_field_paths == (
+        "report_content.cross_paper_comparisons[].evidence_ids",
+    )
+
+
 def test_report_quality_body_fails_when_fewer_than_five_papers_have_trusted_evidence(tmp_path):
     store, catalog_store, task, _work_item, candidates = _seed_report_context(
         tmp_path, trusted_paper_count=4,
