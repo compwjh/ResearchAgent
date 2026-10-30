@@ -6,7 +6,7 @@
 
 ## 结论
 
-**最新页外目标增量：PASS / Approve。** 初审发现的旧列表并发覆盖 HIGH 已由 `taskListRequestGeneration` 守卫修复，窄复审通过旧列表失败与空结果成功两种延迟响应反例。此前报告质量增量的三项 HIGH 缺陷也均已修复并通过复核；历史记录保留如下。
+**最新 v21 报告版本增量：PASS / Approve。** v20 发现的 202 响应伪发布问题已修复：POST 受理结果始终投影为 generating / quality pending / unpublished；只有版本号匹配的 canonical GET 才能提供质量和发布字段。GET 失败与成功两例均通过窄复审，先前 v5 通知版本路径也保持通过。
 
 ## 历史发现与修复复核
 
@@ -21,13 +21,13 @@
 | 检查项 | 结果 | 代码依据 |
 |---|---|---|
 | DOM / CSS 契约 | PASS | 新增反馈区 ID/class 在 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:331)、[research-tasks.js](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/research-tasks.js:2761) 与 [styles.css](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/styles.css:3719) 双向对应。新增 CSS 钩子均限定在 `#research-view`。 |
-| 资源版本 | PASS | 当前脚本版本为 `research-tasks.js?v=19`，样式版本仍为 `styles.css?v=67`，见 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:8) 和 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:804)。 |
+| 资源版本 | PASS | 当前脚本版本为 `research-tasks.js?v=21`，样式版本仍为 `styles.css?v=67`，见 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:8) 和 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:804)。 |
 | XSS | PASS | `frontend/research-tasks.js` 无 `innerHTML`；新反馈字段以 `textContent` 写入（约 2753–2770 行），报告正文仍使用既有安全 Markdown / HTML 渲染路径。 |
 | CSS 作用域 | PASS | 新增样式均以 `#research-view` 开头，见 `frontend/styles.css:3719–3727`；没有裸全局选择器。 |
 
 ## 指定行为核对
 
-- POST 的 202 只显示“已受理 / 生成中”；完成状态要求版本已发布且质量合同完整通过。测试覆盖 202 pending、随后轮询至发布。
+- 202 无论响应体声称什么，都只投影为“已受理 / 生成中”；canonical 版本读取成功后才展示对应质量状态，且完整质量合同通过后才标记正式发布。v20 伪发布反例已在 v21 修复并复核通过，见本报告末尾。
 - 幂等 key 使用 UUID 并持久化；提交结果不确定时重试复用同 key，收到受理后清理；用户主动重试使用新 key。`test_report_action_race.js` 覆盖同 key 网络重试和新 key。
 - 版本竞态由 request ID 守卫；切换任务时递增 task generation 并取消定时器。正在飞行的轮询响应再检查 poll identity 和 task generation，离开当前任务后不写入状态。
 - 阶段、版本、改写轮数、实测 elapsed 与稳定原因码通过安全文案显示；离页重进从当前报告恢复 generating 并重新启动版本轮询。
@@ -120,3 +120,51 @@ Fake DOM 探针按真实页面时序执行：`boot()` 启动的列表请求 A �
 - `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_research_report_notifications_contract.py tests/frontend/test_research_plan_cards_contract.py -q`：退出码 0，13 passed。
 
 本轮只审查通知响应形状和 refresh 竞态，未运行后端测试、全量测试、部署或 Git 操作，也未修改业务代码。最新前端差异 PASS，可进入主Agent要求的浏览器通知路径复测。
+
+## 窄复审：v20 通知版本身份与手选保持、202 初审
+
+### 通过项
+
+- 通知版本按 `research_task_id` 写入 `reportVersionSelections`，不再从 `current_plan_version` 推导；真实响应夹具为 plan v1、report v5，canonical JSON 返回 `report_content` 对象及 `quality_validation.cjk_count=2912`，Markdown 正文通过版本化 Markdown 路由读取。报告状态、质量值和正文均对应 v5。
+- 手动选择 v5 时 `pendingReportVersion` 让下拉在等待期间保持 v5；成功后按 task ID 记忆选择。后续 `loadReport()` 和 terminal/SSE 刷新读取该 task 的 canonical v5 JSON/Markdown，不用默认 legacy `/report` v1 覆盖。
+- 选择和加载均由 task generation / request ID 守卫；版本记忆以 task ID 为 key。切换 task 会更新 task generation，旧 task 的异步选择/加载不能写进当前 task。新增延迟 default report 与 Markdown 响应的探针通过。
+- 脚本资源版本更新到 `research-tasks.js?v=20`。
+
+### v20 BLOCK — HIGH 发现（v21 已修复）
+
+`generateReportVersion()` 收到任意 2xx POST 响应后，会把响应体的 `status`、`published`、`generation.published` 和 `quality_validation` 直接复制进 `state.report`（[research-tasks.js](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/research-tasks.js:2183)）。随后 `readGeneratedReportVersion()` 若 canonical GET 失败，会恢复其入口时保存的 `previousReport`，即这份未经 canonical 确认的 POST 响应。标准 generating/published=false fixture 不暴露此路径。
+
+最小 Fake DOM/API 探针让 POST 返回 HTTP 202，响应体人为带 `status=completed`、`published=true`、`generation.published=true` 及完整 `report-quality-v1/status=pass`；其后 canonical `/reports/5?format=json` 返回 500。最终状态为 action `retryable`，但 `state.report` 仍是 v5 completed，`isQualityValidated(state.report) === true`、`cjk_count=2912`。因此 202 响应本身可以被 UI 判定为正式发布，违反“202 仅表示受理”。
+
+修复要求：将 POST 202 响应强制投影为受理/生成中状态、清除发布与质量通过字段；只有版本号一致的 canonical GET 结果可覆盖为已发布，并补充 canonical GET 暂时失败 fixture。v21 已满足并通过下节复核。
+
+### 验证
+
+- `node --check frontend/research-tasks.js`：退出码 0。
+- `node tests/frontend/test_report_action_race.js`：退出码 0。
+- `node tests/frontend/test_research_session_workspace.js`：退出码 0。
+- `node tests/frontend/test_plan_approval_select.js`：退出码 0。
+- `node tests/frontend/test_research_report_notifications.js`：退出码 0。
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_evidence_report_frontend_contract.py -q`：退出码 0，3 passed。
+- v20 202 伪发布 body + canonical GET 500 聚焦探针：曾复现 `isQualityValidated(state.report) === true`；v21 修复后的回归断言见下节。
+
+本轮只复核版本身份、手动选择保持、跨 task 隔离和 202 发布边界；未运行后端测试、全量测试、部署或 Git 操作，也未修改业务代码。页外目标、通知真实形状及 v20 报告身份增量历史结论保持 PASS；v20 的 202 BLOCK 在 v21 关闭。
+
+## 最终窄复审：v21 202 接受投影
+
+### 结论
+
+**PASS / Approve。** `generateReportVersion()` 现在不把 POST 响应的 status、published、generation 或 quality 字段复制到 `state.report`；只保留返回的版本号，并固定设置 `status='generating'`、`quality_status='pending'`、`published=false`、`generation.published=false`、空正文/产物。canonical GET 由 `readGeneratedReportVersion()` 校验对象和报告版本 ID 后才写入报告状态。
+
+新增伪发布 202 fixture 返回 HTTP 202 + completed/published=true + 完整 quality pass，随后 canonical JSON GET 返回 500。断言报告仍为 generating、未发布、质量字段未知、无指标/下载链接，action 保持 retryable 并继续轮询。成功路径通过 canonical generating 响应后，后续 canonical poll 返回 completed/quality pass，才将 action 标成 completed。
+
+### v5 路径未回退
+
+同一目标 Node 测试仍覆盖 plan v1 / report v5 的真实响应形状：通知版本按 task 预选；从 canonical v5 JSON 的对象型 `report_content` 读取 `quality_validation.cjk_count=2912`，再从 v5 Markdown 路由读取正文。手动选择 v5 在延迟 legacy v1 报告和后续 `loadReport()` 刷新期间保持；task-keyed 版本选择和请求代次隔离仍通过。
+
+### 验证
+
+- `node --check frontend/research-tasks.js`：退出码 0。
+- `node tests/frontend/test_report_action_race.js`：退出码 0；含 202 伪发布 + canonical 500、canonical 成功发布及 v5 通知/手选保持用例。
+- `node tests/frontend/test_research_session_workspace.js`：退出码 0。
+- 未运行后端测试、全量测试、部署或 Git 操作；未修改业务代码。v21 前端增量 PASS，可供主 Agent 继续浏览器通知路径最终复测。

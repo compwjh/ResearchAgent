@@ -73,6 +73,9 @@ function resetState() {
   state.booted = false;
   state.notifications = new Map();
   state.selectTaskInFlight = null;
+  state.reportVersionSelections = new Map();
+  state.pendingReportVersion = null;
+  state.reportLoadRequest = 0;
   state.taskGeneration = 0;
   state.reportVersionRequest = 0;
   state.report = null;
@@ -246,8 +249,9 @@ async function testReportSubmissionUsesIdempotencyKeyAndTreats202AsPending() {
       submittedKeys.push(options.headers?.['Idempotency-Key']);
       if (postCount === 1) throw new Error('connection reset after submit');
       if (postCount === 2) return response({
-        report_version: 3, status: 'generating', quality_status: 'pending', published: false,
-        reason_codes: [], report_url: '/api/research-tasks/task-report/reports/3?format=json',
+        ...qualityReport(3, 'completed', true, 'pass'),
+        published: true,
+        report_url: '/api/research-tasks/task-report/reports/3?format=json',
       }, 202);
       return response({
         report_version: 4, status: 'generating', quality_status: 'pending', published: false,
@@ -275,6 +279,11 @@ async function testReportSubmissionUsesIdempotencyKeyAndTreats202AsPending() {
   await nextTurn();
   assert.equal(state.acquisition.reportActionStatus, 'generating');
   assert.match(state.acquisition.reportActionMessage, /已受理|正在生成/);
+  assert.equal(state.report.status, 'generating', 'POST 202 body cannot publish its claimed completed status');
+  assert.equal(state.report.published, false, 'POST 202 body cannot set published=true');
+  assert.equal(state.report.generation.published, false, 'POST 202 body cannot publish through generation metadata');
+  assert.equal(state.report.quality_validation, undefined, 'quality remains unknown until the canonical GET');
+  assert.equal(api.reportDownloadAllowed(state.report), false);
   pendingRead.resolve(response(qualityReport(3, 'generating', false)));
   const accepted = await acceptedPromise;
   assert.equal(accepted.report_version, 3);
@@ -302,6 +311,46 @@ async function testReportSubmissionUsesIdempotencyKeyAndTreats202AsPending() {
   assert.equal(state.report.status, 'draft');
   assert.equal(state.report.generation.published, false);
   if (state.reportPollTimer) clearTimeout(state.reportPollTimer);
+  state.reportPollTimer = null;
+}
+
+async function testForged202CannotPublishWhenCanonicalReadFails() {
+  resetState();
+  state.selectedTaskId = 'task-accepted-only';
+  state.selectedTask = { current_plan_version: 1, research_session_id: 'session-accepted-only' };
+  state.taskGeneration = 9;
+  state.acquisition.reportActionTaskIds = ['task-accepted-only'];
+  state.acquisition.reportActionStatus = 'available';
+  let scheduledPoll = null;
+  let markdownCalls = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback) => { scheduledPoll = callback; return 9003; };
+  fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/reports') && options.method === 'POST') {
+      return response({
+        ...qualityReport(6, 'completed', true, 'pass'),
+        published: true,
+        report_url: '/api/research-tasks/task-accepted-only/reports/6?format=json',
+      }, 202);
+    }
+    if (url.includes('/reports/6?format=json')) return response({ error: 'temporary read failure' }, 500);
+    if (url.includes('/reports/6?format=markdown')) { markdownCalls += 1; return response('不可见正文'); }
+    if (url.includes('/sessions/session-accepted-only/artifacts')) return response({ artifacts: [] });
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  await api.generateReportVersion('task-accepted-only');
+  assert.equal(state.report.status, 'generating');
+  assert.equal(state.report.published, false);
+  assert.equal(state.report.generation.published, false);
+  assert.equal(state.report.quality_validation, undefined);
+  assert.equal(api.reportPublicationText(state.report), '生成中 · 尚未发布');
+  assert.deepEqual(api.reportQualityMetrics(state.report), []);
+  assert.equal(api.reportDownloadAllowed(state.report), false);
+  assert.equal(state.acquisition.reportActionStatus, 'retryable');
+  assert.equal(markdownCalls, 0);
+  assert.equal(typeof scheduledPoll, 'function', 'failed canonical read should continue tracking the accepted version');
+  globalThis.setTimeout = originalSetTimeout;
   state.reportPollTimer = null;
 }
 
@@ -412,6 +461,31 @@ function reportSelectionFetch(oldSessionIds = []) {
   };
 }
 
+function canonicalReportV5() {
+  return {
+    report_id: 'report-v5',
+    report_version: 5,
+    status: 'completed',
+    published: true,
+    report_content: {
+      schema_version: 'research-report-content-v1',
+      research_question: { text: 'report quality review' },
+      evidence_scope: { paper_ids: [], text: 'abstract evidence' },
+      paper_analyses: [{ findings: [], limitations: [], method: '', paper_id: 'paper-1' }],
+      cross_paper_comparisons: [{ dimension_id: 'facet-1', evidence_ids: [], paper_ids: [], statement: '' }],
+      synthesis_findings: [{ evidence_ids: [], finding_id: 'finding-1', paper_ids: [], statement: '' }],
+      research_gaps: [{ evidence_ids: [], statement: '' }],
+    },
+    quality_validation: {
+      schema_version: 'report-quality-v1', count_method: 'report-quality-v1', status: 'pass',
+      cjk_count: 2912, paper_count: 5, comparison_count: 5,
+      supported_finding_count: 6, revision_count: 0,
+    },
+    generation: { published: true, path: 'agent_runner', report_version: 5 },
+    reason_codes: [],
+  };
+}
+
 async function testCurrentConversationLoadsSessionOutsideFirstHundred() {
   resetState();
   const oldSessionIds = Array.from({ length: 100 }, (_, index) => `old-session-${index}`);
@@ -494,7 +568,12 @@ async function testReportNotificationUsesTaskEmbeddedInOwnerScopedSessionDetail(
   globalThis.setTimeout = (callback) => { scheduled.push(callback); return 9922; };
   const oldSessionIds = Array.from({ length: 100 }, (_, index) => `old-session-${index}`);
   const fallback = reportSelectionFetch(oldSessionIds);
-  const report = qualityReport(5, 'completed', true, 'pass');
+  const report = canonicalReportV5();
+  const legacyReport = { report_version: 1, plan_version: 1, status: 'completed', published: true, markdown: '旧计划报告正文' };
+  const markdownArtifact = {
+    artifact_id: 'artifact-v5-markdown', artifact_type: 'markdown', report_version: 5,
+    download_url: '/api/research-sessions/session-target/artifacts/artifact-v5-markdown/download',
+  };
   const sessionDetail = {
     research_session_id: 'session-target', conversation_id: 'conversation-target',
     status: 'completed', current_plan_version: 1,
@@ -522,9 +601,11 @@ async function testReportNotificationUsesTaskEmbeddedInOwnerScopedSessionDetail(
       throw new Error('notification must be recoverable from the owner-scoped session detail');
     }
     if (url === '/api/research-tasks/task-target/evidence-matrix') return response({ error: { code: 'MATRIX_NOT_READY' } }, 404);
-    if (url === '/api/research-tasks/task-target/report') return response({ ...report, markdown: '已发布版本五', artifacts: [], selections: [], evidence: [] });
+    if (url === '/api/research-tasks/task-target/report') return response({ ...legacyReport, artifacts: [], selections: [], evidence: [] });
     if (url === '/api/research-tasks/task-target/reports/5?format=json') return response(report);
-    if (url === '/api/research-sessions/session-target/artifacts') return response({ artifacts: [] });
+    if (url === '/api/research-tasks/task-target/reports/5?format=markdown') return response('已发布版本五');
+    if (url === '/api/research-sessions/session-target/artifacts') return response({ artifacts: [markdownArtifact] });
+    if (url === '/api/research-sessions/session-target/artifacts?report_version=5') return response({ artifacts: [markdownArtifact] });
     if (url === '/api/research-tasks/task-target/acquisitions') return response({ status: 'completed', items: [], events: [], issues: [] });
     return fallback(url, options);
   };
@@ -547,11 +628,95 @@ async function testReportNotificationUsesTaskEmbeddedInOwnerScopedSessionDetail(
     assert.equal(state.selectedSessionId, 'session-target');
     assert.equal(state.report.report_version, 5);
     assert.equal(state.report.markdown, '已发布版本五');
+    assert.equal(state.report.quality_validation.cjk_count, 2912);
+    assert.equal(state.report.published, true, 'the v5 canonical version, not the plan-v1 response, owns publication state');
+    assert.ok(requested.includes('/api/research-tasks/task-target/reports/5?format=markdown'), 'report body is loaded from the selected canonical report version');
+    assert.equal(state.reportVersionSelections.get('task-target'), 5, 'notification version is independent of current plan v1');
     assert.ok(state.tasks.some((task) => task.research_session_id === 'session-target'), 'the session outside the 100-row list stays visible');
   } finally {
     globalThis.history.replaceState = originalReplaceState;
     globalThis.setTimeout = originalSetTimeout;
     globalThis.location = originalLocation;
+  }
+}
+
+async function testManualReportVersionSurvivesLateRefreshAndKeepsPickerValue() {
+  resetState();
+  const nodes = new Map();
+  const originalGetElementById = fakeDocument.getElementById;
+  fakeDocument.getElementById = (id) => {
+    if (!nodes.has(id)) nodes.set(id, fakeElement());
+    return nodes.get(id);
+  };
+  state.document = fakeDocument;
+  state.selectedTaskId = 'task-version-race';
+  state.selectedTask = { research_task_id: 'task-version-race', research_session_id: 'session-version-race', current_plan_version: 1 };
+  state.taskGeneration = 12;
+  state.reportVersions = [5, 2, 1];
+  state.report = { report_version: 1, status: 'completed', published: true, markdown: '旧版正文', citation_manifest: [] };
+
+  const delayedDefaultReport = deferred();
+  const delayedV5Markdown = deferred();
+  const requested = [];
+  const v5 = canonicalReportV5();
+  const v5Artifact = {
+    artifact_id: 'artifact-v5-markdown', artifact_type: 'markdown', report_version: 5,
+    download_url: '/api/research-sessions/session-version-race/artifacts/artifact-v5-markdown/download',
+  };
+  fetchImpl = async (url) => {
+    requested.push(url);
+    if (url.endsWith('/research-tasks/task-version-race/report')) return delayedDefaultReport.promise;
+    if (url.endsWith('/research-tasks/task-version-race/reports/5?format=json')) return response(v5);
+    if (url.endsWith('/research-tasks/task-version-race/reports/5?format=markdown')) return delayedV5Markdown.promise;
+    if (url.endsWith('/research-sessions/session-version-race/artifacts')) return response({ artifacts: [v5Artifact] });
+    if (url.endsWith('/research-sessions/session-version-race/artifacts?report_version=5')) return response({ artifacts: [v5Artifact] });
+    if (url.endsWith('/research-tasks/task-version-race/acquisitions')) return response({ status: 'completed', items: [], events: [], issues: [] });
+    throw new Error(`unexpected request: ${url}`);
+  };
+
+  try {
+    const lateRefresh = api.loadReport('task-version-race');
+    await nextTurn();
+    const selection = api.selectReportVersion(5);
+    assert.equal(nodes.get('research-report-version-select')?.value, '5', 'the picker keeps the user-selected version while its request is pending');
+    await nextTurn();
+
+    delayedDefaultReport.resolve(response({
+      report_version: 1, plan_version: 1, status: 'completed', markdown: '旧版正文',
+      selections: [], artifacts: [], evidence: [],
+    }));
+    await lateRefresh;
+    assert.equal(state.report?.report_version, 1, 'the in-flight previous report stays visible until the manual version resolves');
+
+    delayedV5Markdown.resolve(response('v5 正文来自 canonical Markdown API'));
+    await selection;
+    assert.equal(state.report?.report_version, 5);
+    assert.equal(state.report?.markdown, 'v5 正文来自 canonical Markdown API');
+    assert.equal(state.report?.quality_validation?.cjk_count, 2912);
+    assert.equal(state.reportVersionSelections.get('task-version-race'), 5);
+
+    fetchImpl = async (url) => {
+      requested.push(url);
+      if (url.endsWith('/research-tasks/task-version-race/report')) return response({
+        report_version: 1, plan_version: 1, status: 'completed', markdown: '旧版正文',
+        selections: [], artifacts: [], evidence: [],
+      });
+      if (url.endsWith('/research-sessions/session-version-race/artifacts')) return response({ artifacts: [v5Artifact] });
+      if (url.endsWith('/research-tasks/task-version-race/reports/5?format=json')) return response(v5);
+      if (url.endsWith('/research-tasks/task-version-race/reports/5?format=markdown')) return response('v5 正文恢复');
+      if (url.endsWith('/research-sessions/session-version-race/artifacts?report_version=5')) return response({ artifacts: [v5Artifact] });
+      if (url.endsWith('/research-tasks/task-version-race/acquisitions')) return response({ status: 'completed', items: [], events: [], issues: [] });
+      throw new Error(`unexpected request: ${url}`);
+    };
+    await api.loadReport('task-version-race');
+    assert.equal(state.report?.report_version, 5, 'terminal/SSE refresh restores the selected report version instead of default plan v1');
+    assert.equal(state.report?.markdown, 'v5 正文恢复');
+    assert.equal(state.report?.status, 'completed');
+    assert.equal(api.isQualityValidated(state.report), true);
+    assert.equal(state.report?.quality_validation?.cjk_count, 2912);
+    assert.ok(requested.includes('/api/research-tasks/task-version-race/reports/5?format=json'));
+  } finally {
+    fakeDocument.getElementById = originalGetElementById;
   }
 }
 
@@ -646,11 +811,13 @@ async function testLateBootListSuccessCannotDropSelectedCurrentSession() {
   await testLateUploadResponseCannotCreateTheNextTaskButton();
   await testVersionFailureRollsBackAndLateVersionCannotWin();
   await testReportSubmissionUsesIdempotencyKeyAndTreats202AsPending();
+  await testForged202CannotPublishWhenCanonicalReadFails();
   await testAsyncPollCannotPublishMalformedQualitySchema();
   await testSelectingLegacyVersionDoesNotInheritCurrentQualityFields();
   await testCurrentConversationLoadsSessionOutsideFirstHundred();
   await testCompletedSessionNotificationLoadsItsReportWithoutTaskId();
   await testReportNotificationUsesTaskEmbeddedInOwnerScopedSessionDetail();
+  await testManualReportVersionSurvivesLateRefreshAndKeepsPickerValue();
   await testLateBootListFailureCannotClearSelectedCurrentSession();
   await testLateBootListSuccessCannotDropSelectedCurrentSession();
   console.log('Report action race contract: PASS (task isolation, rollback, delayed response ordering)');

@@ -75,3 +75,19 @@
 - 修复：当通知 task ID 与已取 session detail 投影的 task ID 一致时，直接复用 owner-scoped session/task 投影；`refreshWorkspace` 记录开始时的任务选择代次，在 conversation/list await 前后检测代次变化，任何更晚的显式选择都阻止旧刷新清空或重选详情。
 - 新增真实响应形状回归：顶层 task/session ID、无 payload conversation ID、session 中嵌套 task、报告 v5；旧 100 条列表请求保持 pending，通知选择并加载报告后再返回旧列表。先验证旧实现发起多余 task 查询并失败，再验证目标仍选中、v5 正文保留、目标会话仍在列表。
 - 本轮验证：`node --check frontend/research-tasks.js`、`node tests/frontend/test_report_action_race.js`、`node tests/frontend/test_research_session_workspace.js`、`node tests/frontend/test_research_report_notifications.js`、`node tests/frontend/test_plan_approval_select.js` 均退出 0；两项前端静态 pytest 共 13 passed；`git diff --check` 通过。脚本资源版本升至 `research-tasks.js?v=19`。真实诊断只 GET 三项指定 API，未请求 task endpoint、未修改后端/部署/数据库。
+
+## 报告版本选择与刷新恢复复核
+
+- 真实浏览器复现：通知 #222 的报告版本为 v5，但所选研究任务的计划版本仍为 v1；报告区最初显示 v1。版本选择器渲染函数每次都会将 `<select>` 重设成当前 `state.report` 版本，因此手动选择 v5 后，目标请求开始时控件立即跳回 v1。终态 SSE 又调用 `loadReport()`，该函数只读默认 `/report` 版本，随后以计划 v1 覆盖已选择的报告。
+- 真实 v5 JSON 的脱敏字段核对：顶层含 `report_content`（结构化对象）、`quality_validation`、`generation`、`report_version` 等；质量字段为 `report-quality-v1`/`pass`、正文计数 2912、5 篇论文、5 项比较、6 项支持发现、revision 0。捕获样本当时尚未提供顶层 `status`/`published` 或 Markdown 字符串；没有从研究任务的 `failed` 状态推断报告状态，也没有合成报告正文。父会话随后确认后端读取修复已部署为 `404279dd`，真实 v5 JSON 现返回 `completed`/`published=true`/质量指标，Markdown API 返回 HTTP 200 和 11905 字节；前端继续依赖版本化 canonical JSON 和 Markdown API。
+- 修复：通知报告版本先按 task ID 记录；版本控件在异步请求期间尊重 pending 选择。各 task 分别记忆已明确选择的报告版本；终态/工作区刷新从该版本重新读取 JSON、Markdown 和同版 artifact，报告版本状态只由该 canonical 对象构造，不继承 `/report` 计划版本上的质量/发布字段。版本请求开始时会使旧的 report refresh 失效，旧刷新不能回写 v1。新生成的报告接受后将其新版本设为当前选择。
+- 新增精确测试覆盖真实 v5 字段形状（结构化 `report_content`、2912 指标、显式 durable status/published）、通知 v5 与基础计划 v1 分离、Markdown 按 v5 读取、下拉框异步选择保持，以及启动旧版本刷新后选 v5、旧响应迟到、后续终态刷新恢复 v5 的时序。
+- 本轮定向验证：`node --check frontend/research-tasks.js`、`node tests/frontend/test_report_action_race.js`、`node tests/frontend/test_research_session_workspace.js` 与 `node tests/frontend/test_research_report_notifications.js` 均退出 0。前端资源版本升至 `research-tasks.js?v=20`；未改后端、spec 或部署，未运行后端 pytest。
+- 残项：前端测试和节点语法检查通过；父会话需在修复后的部署版本复核真实浏览器中的 v5 正文、指标、通知打开与终态 SSE 刷新。前端未部署，也未独立重启或改动后端。
+
+## 202 受理响应发布边界复核
+
+- 独立评审指出 POST 202 body 即使含有 `completed`、`published=true` 和 report-quality-v1 pass，也只能证明请求已受理，不能作为报告 canonical 状态；旧实现 spread 整个 body 会提前显示正式发布。
+- 修复：受理响应仅保留已校验的 report version，前端固定投影为 `generating`、`published=false`、`generation.published=false` 与 `quality_status=pending`，不把受理 body 的 quality/generation 字段带入报告。版本化 canonical GET 成功前，不显示质量指标、正式发布或下载；读取失败仍留在生成中并安排同版本轮询/读取重试。
+- 测试：将伪正式的 202 body 加入现有幂等/轮询测试；新增 canonical GET 返回 500 场景，断言报告保持生成中、没有质量指标和下载、且继续追踪。现有延迟轮询测试仍验证 canonical GET 返回合规 completed + published + quality-v1 pass 后才转正式并读正文。
+- 定向验证：`node --check frontend/research-tasks.js`、`node tests/frontend/test_report_action_race.js`、`node tests/frontend/test_research_session_workspace.js` 与 `git diff --check -- frontend/research-tasks.js frontend/index.html tests/frontend/test_report_action_race.js` 均退出 0；缓存版本升至 `research-tasks.js?v=21`，未发现 `innerHTML`。未跑后端测试、未部署。

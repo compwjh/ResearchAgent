@@ -164,6 +164,9 @@
     taskListRequestGeneration: 0,
     taskGeneration: 0,
     reportVersionRequest: 0,
+    reportLoadRequest: 0,
+    reportVersionSelections: new Map(),
+    pendingReportVersion: null,
     reportPollTimer: null,
     reportPoll: null,
     paperDisplays: new Map(),
@@ -742,29 +745,38 @@
     let conversationId = typeof payload.conversation_id === 'string' ? payload.conversation_id : '';
     const taskId = item?.research_task_id || (typeof payload.research_task_id === 'string' ? payload.research_task_id : '');
     const sessionId = item?.research_session_id || (typeof payload.research_session_id === 'string' ? payload.research_session_id : '');
+    const reportVersion = safePositiveInteger(payload.report_version || item?.subject_version);
+    const currentTaskForSession = !taskId && sessionId && sessionId === state.selectedSessionId ? state.selectedTaskId : '';
+    let resolvedTaskId = taskId || currentTaskForSession;
     let sessionDetail = null;
-    if (!conversationId && sessionId) {
+    if (sessionId && (!conversationId || (reportVersion && !resolvedTaskId))) {
       try {
         sessionDetail = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
-        conversationId = typeof sessionDetail?.conversation_id === 'string' ? sessionDetail.conversation_id : '';
+        if (!conversationId) conversationId = typeof sessionDetail?.conversation_id === 'string' ? sessionDetail.conversation_id : '';
+        if (!resolvedTaskId) resolvedTaskId = sessionDetail?.task?.research_task_id || sessionDetail?.research_task?.research_task_id || sessionDetail?.research_task_id || '';
       } catch (_) { /* keep the notification visible if its target was removed */ }
     }
-    if (conversationId && (taskId || sessionId)) {
+    if (reportVersion && resolvedTaskId) state.reportVersionSelections.set(resolvedTaskId, reportVersion);
+    if (conversationId && (resolvedTaskId || sessionId)) {
       openForConversation(conversationId);
       root.setTimeout(() => {
-        const alreadySelected = taskId ? state.selectedTaskId === taskId
+        const alreadySelected = resolvedTaskId ? state.selectedTaskId === resolvedTaskId
           : Boolean(sessionId && state.selectedSessionId === sessionId && state.selectedTaskId);
         const sameSelectionInFlight = Boolean(state.selectTaskInFlight
-          && ((taskId && state.selectedTaskId === taskId) || (sessionId && state.selectedSessionId === sessionId)));
+          && ((resolvedTaskId && state.selectedTaskId === resolvedTaskId) || (sessionId && state.selectedSessionId === sessionId)));
         if (!alreadySelected && !sameSelectionInFlight) {
-          return selectTask(taskId || null, sessionId || null, sessionDetail);
+          return selectTask(resolvedTaskId || null, sessionId || null, sessionDetail);
         }
+        if (alreadySelected && reportVersion && state.selectedTaskId) {
+          return state.report ? selectReportVersion(reportVersion) : loadReport(state.selectedTaskId);
+        }
+        if (sameSelectionInFlight && reportVersion && state.selectedTaskId) return loadReport(state.selectedTaskId);
         return null;
       }, 0);
       return;
     }
-    if (taskId || sessionId) {
-      await selectTask(taskId || null, sessionId || null, sessionDetail);
+    if (resolvedTaskId || sessionId) {
+      await selectTask(resolvedTaskId || null, sessionId || null, sessionDetail);
       return;
     }
     if (conversationId && typeof root.openConversation === 'function') {
@@ -773,10 +785,10 @@
       if (messageId) root.setTimeout(() => focusConversationMessage(messageId), 500);
       return;
     }
-    if (taskId) {
+    if (resolvedTaskId) {
       showView();
-      if (state.tasks.some((task) => task.research_task_id === taskId)) selectTask(taskId);
-      else refreshWorkspace().then(() => selectTask(taskId));
+      if (state.tasks.some((task) => task.research_task_id === resolvedTaskId)) selectTask(resolvedTaskId);
+      else refreshWorkspace().then(() => selectTask(resolvedTaskId));
     }
   }
 
@@ -2129,6 +2141,7 @@
     if (!taskId || state.acquisition.reportActionInFlight) return null;
     const isCurrent = () => isCurrentTaskGeneration(taskId, requestGeneration);
     const requestId = ++state.reportVersionRequest;
+    state.pendingReportVersion = null;
     const previousReport = state.report;
     const previousReportViews = new Map(state.reportViews || []);
     const previousReportVersions = [...(state.reportVersions || [])];
@@ -2158,6 +2171,7 @@
         if (!version) {
           const error = new Error('生成报告未返回版本号'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
         }
+        state.reportVersionSelections.set(taskId, version);
         clearReportGenerationKey(taskId);
         state.acquisition.reportActionVersion = version;
         state.acquisition.reportActionRetryMode = null;
@@ -2166,13 +2180,15 @@
         setAcquisitionStatus(state.acquisition.reportActionMessage, 'queued');
         reportUrl = reportJsonUrl(taskId, version, result?.report_url);
         state.reportVersions = [...new Set([...(state.reportVersions || []), version])].sort((a, b) => b - a);
+        // A 202 response only acknowledges the request. Do not project any
+        // report-quality/publication fields from it; those become visible only
+        // after the versioned canonical GET succeeds.
         state.report = {
-          ...result,
           report_version: version,
-          status: result?.status || 'generating',
-          quality_status: result?.quality_status || 'pending',
-          published: result?.published === true,
-          generation: { report_version: version, published: result?.published === true },
+          status: 'generating',
+          quality_status: 'pending',
+          published: false,
+          generation: { report_version: version, published: false },
           artifacts: [],
           markdown: '',
         };
@@ -2185,6 +2201,7 @@
         renderAcquisition();
         renderReportFeedback();
       }
+      if (retryVersion) state.reportVersionSelections.set(taskId, retryVersion);
       try {
         const loaded = await readGeneratedReportVersion(taskId, version, requestGeneration, { requestId, reportUrl });
         if (!isCurrent()) return null;
@@ -2890,7 +2907,10 @@
       if (versionSelect.childNodes.length !== versions.length || versions.some((version, index) => versionSelect.childNodes[index]?.value !== String(version))) {
         clearNode(versionSelect); versions.forEach((version) => { const option = state.document.createElement('option'); option.value = String(version); option.textContent = `v${version}`; versionSelect.appendChild(option); });
       }
-      versionSelect.value = String(state.report.report_version || state.report.plan_version || versions[0] || '');
+      const taskId = normalizeReportActionTaskId(state.selectedTaskId);
+      const pendingVersion = state.pendingReportVersion?.taskId === taskId ? state.pendingReportVersion.version : null;
+      const rememberedVersion = taskId ? state.reportVersionSelections?.get?.(taskId) : null;
+      versionSelect.value = String(pendingVersion || rememberedVersion || state.report.report_version || state.report.plan_version || versions[0] || '');
     }
     state.document?.querySelectorAll?.('[data-report-format]').forEach((button) => { const active = button.dataset.reportFormat === state.reportFormat; button.classList.toggle('is-active', active); button.setAttribute('aria-selected', active ? 'true' : 'false'); });
     if (!state.report) { if (markdown) { markdown.hidden = true; markdown.replaceChildren(); } if (raw) raw.hidden = true; return; }
@@ -2928,6 +2948,8 @@
     const previousReport = state.report;
     const previousReportViews = new Map(state.reportViews || []);
     const previousReportFormat = state.reportFormat;
+    const previousSelectedVersion = safePositiveInteger(previousReport.report_version || previousReport.plan_version);
+    state.pendingReportVersion = { taskId, version: targetVersion, requestId };
     // Keep the previous version visible while the target is in flight. This
     // prevents a target label from being paired with the previous正文.
     renderReportFormatTabs();
@@ -2953,6 +2975,8 @@
       if (!isCurrent()) return null;
       const requestGuard = () => isCurrent();
       state.report = { ...canonical, markdown, artifacts, report_version: targetVersion };
+      state.reportVersionSelections.set(taskId, targetVersion);
+      if (state.pendingReportVersion?.requestId === requestId) state.pendingReportVersion = null;
       state.reportViews = new Map(previousReportViews);
       state.reportViews.set(String(targetVersion) + ':json', canonical);
       state.reportViews.set(`${targetVersion}:artifacts`, artifacts);
@@ -2972,6 +2996,9 @@
       return state.report;
     } catch (error) {
       if (!isCurrent()) return null;
+      if (previousSelectedVersion) state.reportVersionSelections.set(taskId, previousSelectedVersion);
+      else state.reportVersionSelections.delete(taskId);
+      if (state.pendingReportVersion?.requestId === requestId) state.pendingReportVersion = null;
       state.report = previousReport;
       state.reportViews = previousReportViews;
       state.reportFormat = previousReportFormat;
@@ -2997,19 +3024,34 @@
   }
 
   async function loadReport(taskId) {
+    taskId = normalizeReportActionTaskId(taskId);
+    if (!taskId) return null;
+    if (state.pendingReportVersion?.taskId === taskId) return state.report;
     const requestGeneration = state.taskGeneration;
+    const requestId = ++state.reportLoadRequest;
+    const versionRequestAtStart = state.reportVersionRequest;
+    const isCurrent = () => isCurrentTaskGeneration(taskId, requestGeneration)
+      && state.selectedTaskId === taskId
+      && state.reportLoadRequest === requestId
+      && state.reportVersionRequest === versionRequestAtStart;
+    const previousReport = state.report;
+    const previousReportViews = new Map(state.reportViews || []);
+    const previousReportVersions = [...(state.reportVersions || [])];
     cancelReportPoll();
     const stateNode = byId('research-report-state');
-    const reportNode = byId('research-report-markdown');
-    if (stateNode) stateNode.textContent = '正在读取报告…';
-    if (reportNode) { reportNode.hidden = true; reportNode.replaceChildren(); }
-    const rawNode = byId('research-report-raw'); if (rawNode) { rawNode.hidden = true; rawNode.textContent = ''; }
-    renderReportArtifacts([]); renderReportCitations([]); const citationDetail = byId('research-report-citation-detail'); if (citationDetail) { citationDetail.hidden = true; citationDetail.replaceChildren(); }
-    state.reportSelections = [];
-    state.report = null; state.reportViews = new Map(); state.reportVersions = []; state.activeCitationNo = null; state.reportFormat = 'markdown'; renderReportFormatTabs();
-    renderSelection();
+    if (stateNode) stateNode.textContent = previousReport ? '正在同步报告…' : '正在读取报告…';
+    if (!previousReport) {
+      const reportNode = byId('research-report-markdown');
+      if (reportNode) { reportNode.hidden = true; reportNode.replaceChildren(); }
+      const rawNode = byId('research-report-raw'); if (rawNode) { rawNode.hidden = true; rawNode.textContent = ''; }
+      renderReportArtifacts([]); renderReportCitations([]); const citationDetail = byId('research-report-citation-detail'); if (citationDetail) { citationDetail.hidden = true; citationDetail.replaceChildren(); }
+      state.reportSelections = [];
+      state.report = null; state.reportViews = new Map(); state.reportVersions = []; state.activeCitationNo = null; state.reportFormat = 'markdown'; renderReportFormatTabs();
+      renderSelection();
+    }
     try {
       const report = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/report`);
+      if (!isCurrent()) return null;
       let allArtifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
       const sessionId = state.selectedTask?.research_session_id || state.selectedTask?.research_session?.research_session_id;
       if (sessionId) {
@@ -3018,20 +3060,47 @@
           allArtifacts = Array.isArray(artifactData?.artifacts) ? artifactData.artifacts : allArtifacts;
         } catch (_) { /* legacy report remains readable when artifact metadata is unavailable */ }
       }
-      const version = safePositiveInteger(report.report_version || report.plan_version);
+      if (!isCurrent()) return null;
+      const defaultVersion = safePositiveInteger(report.report_version || report.plan_version);
+      const selectedVersion = safePositiveInteger(state.reportVersionSelections?.get?.(taskId));
+      const version = selectedVersion || defaultVersion;
       let canonical = null;
       if (version) {
-        state.reportVersions = [...new Set([version, ...allArtifacts.map((artifact) => safePositiveInteger(artifact?.report_version))].filter(Boolean))].sort((a, b) => b - a);
         try {
           canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/reports/${version}?format=json`);
-          if (canonical && typeof canonical === 'object') canonical = { ...canonical, report_version: version };
-          state.reportViews.set(`${version}:json`, canonical);
-        } catch (_) { /* legacy report remains readable while the versioned seam is unavailable */ }
+          if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical)
+            || safePositiveInteger(canonical.report_version) !== version) {
+            const error = new Error('报告版本响应无效'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+          }
+          canonical = { ...canonical, report_version: version };
+        } catch (error) {
+          if (selectedVersion || version !== defaultVersion) throw error;
+          canonical = null; // A legacy /report payload remains readable when v1 canonical is unavailable.
+        }
       }
-      const activeReport = { ...report, ...(canonical || {}), report_version: version };
+      if (!isCurrent()) return null;
+      let activeReport;
+      if (canonical) activeReport = { ...canonical, report_version: version };
+      else if (!selectedVersion && version === defaultVersion) activeReport = { ...report, report_version: version };
+      else throw new Error('所选报告版本暂时不可用');
       const artifacts = explicitlyUnpublished(activeReport)
         ? [] : allArtifacts.filter((artifact) => safePositiveInteger(artifact?.report_version) === version);
-      state.report = { ...activeReport, artifacts };
+      let markdown = typeof activeReport.markdown === 'string' ? activeReport.markdown : '';
+      if (!markdown && version === defaultVersion && typeof report.markdown === 'string') markdown = report.markdown;
+      if (!markdown && version && activeReport.status !== 'generating') {
+        try { markdown = await requestText(`/api/research-tasks/${encodeURIComponent(taskId)}/reports/${version}?format=markdown`); }
+        catch (error) { if (reportIsPublished(activeReport)) throw error; }
+      }
+      if (!isCurrent()) return null;
+      if (reportIsPublished(activeReport) && !markdown.trim()) {
+        const error = new Error('报告正文为空'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      }
+      const allVersions = [...new Set([version, ...allArtifacts.map((artifact) => safePositiveInteger(artifact?.report_version))].filter(Boolean))].sort((a, b) => b - a);
+      state.reportVersions = allVersions;
+      state.reportViews = new Map(previousReportViews);
+      if (canonical) state.reportViews.set(`${version}:json`, canonical);
+      if (markdown) state.reportViews.set(`${version}:markdown`, markdown);
+      state.report = { ...activeReport, markdown, artifacts };
       if (version) state.reportViews.set(`${version}:artifacts`, artifacts);
       state.reportSelections = Array.isArray(report.selections) ? report.selections : [];
       state.reportSelections.forEach((selection) => {
@@ -3042,9 +3111,6 @@
       });
       state.acquisition.evidence = Array.isArray(report.evidence_upgrades) ? report.evidence_upgrades : (Array.isArray(report.evidence) ? report.evidence : []);
       renderSelection();
-      await loadAcquisitionPreview(taskId);
-      renderSummary();
-      if (report.markdown) state.reportViews.set(`${version}:markdown`, report.markdown);
       renderReportFormatTabs();
       renderReportArtifacts(artifacts); renderReportCitations(state.report.citation_manifest);
       renderReportFeedback();
@@ -3067,8 +3133,17 @@
           if (isCurrentTaskGeneration(taskId, requestGeneration) && state.acquisition.reportActionRetryMode === 'post') generateReportVersion(taskId);
         }, 0);
       }
+      await loadAcquisitionPreview(taskId);
+      if (isCurrent()) renderSummary();
       return report;
     } catch (error) {
+      if (!isCurrent()) return null;
+      const selectedVersion = safePositiveInteger(state.reportVersionSelections?.get?.(taskId));
+      const previousVersion = safePositiveInteger(previousReport?.report_version || previousReport?.plan_version);
+      if (previousReport && (!selectedVersion || previousVersion === selectedVersion)) {
+        if (stateNode) stateNode.textContent = userError(error, '报告暂时不可用。');
+        return null;
+      }
       // A report can lag behind the durable acquisition record. Reconcile the
       // task-local issue queue before clearing report-only state so waiting
       // login / retry / upload actions remain available while it is pending.
@@ -3201,6 +3276,7 @@
     state.taskListRequestGeneration += 1;
     state.taskGeneration += 1;
     state.reportVersionRequest += 1;
+    state.pendingReportVersion = null;
     cancelReportPoll();
     state.selectTaskInFlight = target;
     closeStream();
@@ -3324,6 +3400,8 @@
     else {
       state.taskGeneration += 1;
       state.reportVersionRequest += 1;
+      state.reportLoadRequest += 1;
+      state.pendingReportVersion = null;
       cancelReportPoll();
       closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
       state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.reportActionRequestKey = null; state.acquisition.reportActionRequestTaskId = null; state.acquisition.reportActionRetryMode = null; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
@@ -3533,6 +3611,7 @@
     api.generateReportVersion = generateReportVersion;
     api.uploadIssue = uploadIssue;
     api.openNotification = openNotification;
+    api.loadReport = loadReport;
   }
   return api;
 }));
