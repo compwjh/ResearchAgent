@@ -280,3 +280,24 @@ Verdict: **BLOCK** — 原预算/阶段恢复/质量状态/改写与同版发布
 | `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/report_quality.py` | 0 | `All checks passed!` |
 
 未运行全量测试、部署、模型或 Git 操作。
+
+## Empty Markdown/HTML canonical artifact read-back follow-up（2026-10-30）
+
+**当前窄审结论：PASS。** 本轮仅复核 report GET 在 canonical Markdown/HTML 列为空时的 owner-scoped Artifact 回填、失败关闭和 JSON 元数据投影。
+
+### 复核结论
+
+- 只有原 report row 的 status 为 `completed`、canonical JSON 顶层 `report_id/report_version` 与 durable row 一致、`generation.published is True`、generation report/version/plan 与 row 一致、path 为 `agent_runner`、disposition 为 `accepted` 且 run ID 列表有效时，空 Markdown/HTML 才会查询 Artifact。查询参数使用 row 的 task ID、当前 owner ID 和精确 report version；底层 `list_artifacts_for_task` 通过 task-owner join 限权并筛选同版本。[report_generation.py:474](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_generation.py:474) [research_store.py:4567](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/infrastructure/research_store.py:4567)
+- Artifact 必须唯一匹配请求的 `markdown`/`html` 类型，并再次匹配 task/version 和最后一个 `agent_run_id`；外置 `storage_ref`、空内容、非 UTF-8、超过 4 MiB 或 SHA-256 与正文不符都会返回固定 `REPORT_NOT_READY`。canonical publisher 用同一末次 run ID 写入 Markdown/HTML/citation artifacts，故该回读绑定与发布侧身份约定一致。[report_generation.py:519](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_generation.py:519) [report_synthesis.py:1007](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_synthesis.py:1007)
+- 现有非空 `report.markdown`/`report.html` 路径保持原样直读，未要求旧版矩阵报告满足新的 canonical Artifact 元数据；这保留了既有读路径。只有空列会进入新的发布门禁，未发布或绑定不符时不会从 Artifact 暴露正文。
+- JSON projection 复制并保留历史 payload 字段，再以 durable row 投影 task/report/plan/version/status；`published` 从 generation 的显式 bool 投影，缺少 generation marker 时只保留 payload 中显式的 `published is True`，不会因 status=`completed` 推断发布。回归核对了现有 `report_content` 保留。[report_generation.py:439](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_generation.py:439) [test_report_generation.py:179](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_generation.py:179)
+- 回归覆盖正常空列回填、hash/task/version/type/run 不匹配、`published=false`、owner 范围拒绝，以及 JSON status/published 投影。独立执行本文件测试 18 项全通过。没有发现该增量的 P0/P1 阻塞。
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_generation.py` | 0 | `18 passed in 1.00s` |
+| 独立 legacy JSON/nonempty-column probe | 0 | 非空 MD/HTML 直返且未查 Artifact；保留任意 legacy key；status=`completed` 不推断 `published=true` |
+
+此结果仅覆盖该 GET 回填增量；不替代部署后的浏览器/API 复测或 Spec 最终回归。

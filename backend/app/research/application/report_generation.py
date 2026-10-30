@@ -7,6 +7,7 @@ all facts and locators must already be present in that projection.
 
 from __future__ import annotations
 
+import hashlib
 import html as html_module
 import json
 from collections.abc import Mapping, Sequence
@@ -434,6 +435,117 @@ class ReportGenerationService:
             payload = {}
         return payload if isinstance(payload, dict) else {}
 
+    @staticmethod
+    def _report_json_projection(report: Any, payload: Any) -> Any:
+        """Add authoritative report-row metadata without dropping legacy fields."""
+        if not isinstance(payload, Mapping):
+            return payload
+        projected = dict(payload)
+        task_id = getattr(report, "research_task_id", None)
+        report_id = getattr(report, "report_id", None)
+        plan_version = getattr(report, "plan_version", None)
+        report_version = getattr(report, "report_version", None)
+        if isinstance(task_id, str) and task_id:
+            projected["research_task_id"] = task_id
+            projected.setdefault("task_id", task_id)
+        if isinstance(report_id, str) and report_id:
+            projected["report_id"] = report_id
+        if isinstance(plan_version, int) and not isinstance(plan_version, bool):
+            projected["plan_version"] = plan_version
+        if isinstance(report_version, int) and not isinstance(report_version, bool):
+            projected["report_version"] = report_version
+        status = getattr(report, "status", None)
+        if isinstance(status, str):
+            projected["status"] = status
+        generation = projected.get("generation")
+        if isinstance(generation, Mapping):
+            projected["published"] = generation.get("published") is True
+        else:
+            # Legacy rows without a generation marker remain readable, but a
+            # missing marker never implies publication from status alone.
+            projected["published"] = projected.get("published") is True
+        if isinstance(task_id, str) and task_id and isinstance(report_version, int) and not isinstance(report_version, bool):
+            projected.setdefault(
+                "report_url",
+                f"/api/research-tasks/{task_id}/reports/{report_version}?format=json",
+            )
+        return projected
+
+    def _published_artifact_view(
+        self, report: Any, owner_id: str, artifact_type: str,
+    ) -> str:
+        """Read a published canonical view from its owner-scoped immutable artifact."""
+        task_id = getattr(report, "research_task_id", None)
+        report_id = getattr(report, "report_id", None)
+        report_version = getattr(report, "report_version", None)
+        plan_version = getattr(report, "plan_version", None)
+        payload = self._report_generation_payload(report)
+        generation = payload.get("generation")
+        run_ids = generation.get("agent_run_ids") if isinstance(generation, Mapping) else None
+        if (
+            getattr(report, "status", None) != "completed"
+            or not isinstance(task_id, str)
+            or not task_id
+            or not isinstance(report_id, str)
+            or not report_id
+            or isinstance(report_version, bool)
+            or not isinstance(report_version, int)
+            or report_version < 1
+            or isinstance(plan_version, bool)
+            or not isinstance(plan_version, int)
+            or plan_version < 1
+            or not isinstance(generation, Mapping)
+            or payload.get("report_id") != report_id
+            or payload.get("report_version") != report_version
+            or generation.get("published") is not True
+            or generation.get("report_id", report_id) != report_id
+            or generation.get("report_version") != report_version
+            or generation.get("plan_version") != plan_version
+            or generation.get("path") != "agent_runner"
+            or generation.get("output_disposition") != "accepted"
+            or not isinstance(run_ids, list)
+            or not run_ids
+            or any(not isinstance(run_id, str) or not run_id for run_id in run_ids)
+        ):
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY")
+
+        artifacts_reader = getattr(self.store, "list_artifacts_for_task", None)
+        if not callable(artifacts_reader):
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY")
+        try:
+            artifacts = artifacts_reader(task_id, owner_id, report_version=report_version)
+        except Exception as error:
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY") from error
+        matches = [
+            artifact for artifact in artifacts
+            if getattr(artifact, "artifact_type", None) == artifact_type
+        ]
+        if len(matches) != 1:
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY")
+        artifact = matches[0]
+        content = getattr(artifact, "content", None)
+        if (
+            getattr(artifact, "research_task_id", None) != task_id
+            or getattr(artifact, "report_version", None) != report_version
+            or getattr(artifact, "artifact_type", None) != artifact_type
+            or getattr(artifact, "generated_by_agent_run_id", None) != run_ids[-1]
+            or getattr(artifact, "storage_ref", None) is not None
+            or not isinstance(content, str)
+            or not content.strip()
+        ):
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY")
+        try:
+            encoded = content.encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY") from error
+        content_hash = hashlib.sha256(encoded).hexdigest()
+        if (
+            len(encoded) > 4 * 1024 * 1024
+            or getattr(artifact, "content_hash", None) != content_hash
+        ):
+            raise EvidenceReportError("published report view is unavailable", code="REPORT_NOT_READY")
+        return content
+
     def _validated_report_candidates(self, research_task_id: str, plan_version: int) -> list[dict[str, Any]]:
         """Reuse only the frozen synthesizer selection matching durable selections."""
         list_selections = getattr(self.store, "list_selections", None)
@@ -794,11 +906,15 @@ class ReportGenerationService:
         if report is None:
             raise EvidenceReportError("report is not ready", code="REPORT_NOT_READY")
         if format == "json":
-            return json.loads(report.report_json)
+            return self._report_json_projection(report, json.loads(report.report_json))
         if format == "markdown":
-            return report.markdown
+            if isinstance(report.markdown, str) and report.markdown.strip():
+                return report.markdown
+            return self._published_artifact_view(report, owner_id, "markdown")
         if format == "html":
-            return report.html
+            if isinstance(report.html, str) and report.html.strip():
+                return report.html
+            return self._published_artifact_view(report, owner_id, "html")
         raise EvidenceReportError("unsupported report format", code="FORMAT_SEMANTIC_MISMATCH")
 
 

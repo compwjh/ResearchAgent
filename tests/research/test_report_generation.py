@@ -1,4 +1,6 @@
+import hashlib
 import json
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -107,6 +109,149 @@ def test_generation_persists_one_immutable_projection(monkeypatch):
     assert result["report"]["report_version"] == 2
     assert len(store.saved) == 1
     assert json.loads(store.saved[0].report_json)["report_id"] == result["report"]["report_id"]
+
+
+def _published_empty_column_report(
+    *, report_status="completed", published=True, artifact_changes=None,
+    artifact_owner_id="owner-canonical",
+):
+    markdown = "# Published report\n\nVerified immutable markdown.\n"
+    html = "<h1>Published report</h1><p>Verified immutable HTML.</p>"
+    report_payload = {
+        "report_id": "report-canonical-3",
+        "report_version": 3,
+        "report_content": {"schema_version": "research-report-content-v1"},
+        "generation": {
+            "report_version": 3,
+            "plan_version": 2,
+            "path": "agent_runner",
+            "output_disposition": "accepted",
+            "published": published,
+            "agent_run_ids": ["draft-run-3"],
+        },
+        "quality_validation": {"status": "pass"},
+    }
+    report = ResearchReport(
+        "report-canonical-3", "task-canonical", 2, 3, report_status,
+        "", "", json.dumps(report_payload), "[]", "now",
+    )
+    changes = artifact_changes or {}
+
+    def artifact(artifact_type, content):
+        values = {
+            "artifact_id": f"artifact-{artifact_type}",
+            "research_task_id": "task-canonical",
+            "report_version": 3,
+            "artifact_type": artifact_type,
+            "content": content,
+            "storage_ref": None,
+            "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "generated_by_agent_run_id": "draft-run-3",
+        }
+        values.update(changes.get(artifact_type, {}))
+        return SimpleNamespace(**values)
+
+    artifacts = [artifact("markdown", markdown), artifact("html", html)]
+
+    class _PublishedArtifactStore:
+        def __init__(self):
+            self.artifact_queries = []
+
+        def get_research_report(self, task_id, owner_id, *, report_version=None):
+            if task_id == "task-canonical" and owner_id == "owner-canonical" and report_version == 3:
+                return report
+            return None
+
+        def list_artifacts_for_task(self, task_id, owner_id, *, report_version=None):
+            self.artifact_queries.append((task_id, owner_id, report_version))
+            if (
+                task_id != "task-canonical"
+                or owner_id != "owner-canonical"
+                or artifact_owner_id != owner_id
+            ):
+                return []
+            # Return rows as stored; the service must independently verify type/version/hash.
+            return artifacts
+
+    return _PublishedArtifactStore(), report, markdown, html
+
+
+def test_read_uses_published_versioned_artifacts_when_canonical_columns_are_empty():
+    store, _report, markdown, html = _published_empty_column_report()
+    service = ReportGenerationService(store)
+
+    assert service.read("task-canonical", "owner-canonical", report_version=3, format="markdown") == markdown
+    assert service.read("task-canonical", "owner-canonical", report_version=3, format="html") == html
+    projected = service.read("task-canonical", "owner-canonical", report_version=3, format="json")
+
+    assert projected["report_content"] == {"schema_version": "research-report-content-v1"}
+    assert projected["report_id"] == "report-canonical-3"
+    assert projected["research_task_id"] == "task-canonical"
+    assert projected["plan_version"] == 2
+    assert projected["report_version"] == 3
+    assert projected["status"] == "completed"
+    assert projected["published"] is True
+    assert projected["report_url"] == "/api/research-tasks/task-canonical/reports/3?format=json"
+    assert store.artifact_queries == [
+        ("task-canonical", "owner-canonical", 3),
+        ("task-canonical", "owner-canonical", 3),
+    ]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"markdown": {"content_hash": "0" * 64}},
+        {"markdown": {"research_task_id": "another-task"}},
+        {"markdown": {"report_version": 2}},
+        {"markdown": {"artifact_type": "html"}},
+        {"markdown": {"generated_by_agent_run_id": "other-run"}},
+    ],
+    ids=("hash-mismatch", "task-mismatch", "version-mismatch", "type-mismatch", "run-mismatch"),
+)
+def test_read_rejects_mismatched_published_artifact(changes):
+    store, _report, _markdown, _html = _published_empty_column_report(artifact_changes=changes)
+
+    with pytest.raises(EvidenceReportError) as error:
+        ReportGenerationService(store).read(
+            "task-canonical", "owner-canonical", report_version=3, format="markdown",
+        )
+
+    assert error.value.code == "REPORT_NOT_READY"
+
+
+def test_read_does_not_use_artifacts_before_canonical_publication():
+    store, _report, _markdown, _html = _published_empty_column_report(
+        report_status="completed", published=False,
+    )
+
+    projected = ReportGenerationService(store).read(
+        "task-canonical", "owner-canonical", report_version=3, format="json",
+    )
+    assert projected["status"] == "completed"
+    assert projected["published"] is False
+
+    with pytest.raises(EvidenceReportError) as error:
+        ReportGenerationService(store).read(
+            "task-canonical", "owner-canonical", report_version=3, format="markdown",
+        )
+
+    assert error.value.code == "REPORT_NOT_READY"
+    assert store.artifact_queries == []
+
+
+def test_read_does_not_use_artifact_outside_owner_scope():
+    store, _report, _markdown, _html = _published_empty_column_report(
+        artifact_owner_id="other-owner",
+    )
+
+    with pytest.raises(EvidenceReportError) as error:
+        ReportGenerationService(store).read(
+            "task-canonical", "owner-canonical", report_version=3, format="markdown",
+        )
+
+    assert error.value.code == "REPORT_NOT_READY"
+    assert store.artifact_queries == [("task-canonical", "owner-canonical", 3)]
 
 
 def test_report_generation_downgrades_stale_fulltext_after_revalidation(tmp_path, monkeypatch):
