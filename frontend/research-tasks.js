@@ -3233,10 +3233,18 @@
       let task;
       let sessionDetail = knownSession?.research_session_id === sessionId ? knownSession : null;
       let activeTaskId = taskId;
-      if (taskId) task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
-      else {
+      let sessionProjection = sessionDetail ? sessionTaskProjection(sessionDetail) : null;
+      if (taskId) {
+        // A completed-report notification carries a task ID, while the direct
+        // owner-scoped session response already embeds the canonical task
+        // projection. Prefer that verified match so selection does not depend
+        // on a second task lookup that may be unavailable for an old session.
+        task = sessionProjection?.research_task_id === taskId
+          ? sessionProjection
+          : await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
+      } else {
         sessionDetail = sessionDetail || await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
-        const sessionProjection = sessionTaskProjection(sessionDetail);
+        sessionProjection = sessionTaskProjection(sessionDetail);
         activeTaskId = sessionProjection?.research_task_id || null;
         if (state.selectedSessionId !== sessionId) return;
         if (activeTaskId) {
@@ -3291,8 +3299,14 @@
   }
 
   async function refreshWorkspace() {
+    const selectionGeneration = state.taskGeneration;
     await conversationFromUrl();
+    if (selectionGeneration !== state.taskGeneration) return state.tasks;
     const tasks = await loadTasks();
+    // A notification or explicit selection can finish while the list response
+    // is in flight. That newer selection owns the detail and report state; a
+    // refresh that began earlier must not clear it using its stale list page.
+    if (selectionGeneration !== state.taskGeneration) return state.tasks;
     const currentSessionId = currentConversationSessionId();
     const selected = currentSessionId && tasks.find((task) => task.research_session_id === currentSessionId)
       || state.selectedTaskId && tasks.find((task) => task.research_task_id === state.selectedTaskId)

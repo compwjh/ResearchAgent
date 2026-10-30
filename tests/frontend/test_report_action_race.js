@@ -469,6 +469,92 @@ async function testCompletedSessionNotificationLoadsItsReportWithoutTaskId() {
   globalThis.setTimeout = originalSetTimeout;
 }
 
+async function testReportNotificationUsesTaskEmbeddedInOwnerScopedSessionDetail() {
+  resetState();
+  const notification = {
+    notification_id: 'notification-target', event_seq: 222,
+    research_session_id: 'session-target', research_task_id: 'task-target',
+    notification_kind: 'completed', status: 'unread', subject_version: 5,
+    payload: { report_version: 5, message_id: 'message-target', artifact_ids: ['artifact-a', 'artifact-b'] },
+  };
+  state.notifications.set(notification.notification_id, notification);
+  const originalReplaceState = globalThis.history.replaceState;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalLocation = globalThis.location;
+  const scheduled = [];
+  const requested = [];
+  const oldList = deferred();
+  const oldListStarted = deferred();
+  globalThis.location = { pathname: '/c/old-conversation', search: '', hash: '' };
+  globalThis.history.replaceState = (_state, _title, url) => {
+    const next = new URL(url, 'http://localhost');
+    globalThis.location.pathname = next.pathname;
+    globalThis.location.hash = next.hash;
+  };
+  globalThis.setTimeout = (callback) => { scheduled.push(callback); return 9922; };
+  const oldSessionIds = Array.from({ length: 100 }, (_, index) => `old-session-${index}`);
+  const fallback = reportSelectionFetch(oldSessionIds);
+  const report = qualityReport(5, 'completed', true, 'pass');
+  const sessionDetail = {
+    research_session_id: 'session-target', conversation_id: 'conversation-target',
+    status: 'completed', current_plan_version: 1,
+    task: {
+      research_task_id: 'task-target', research_session_id: 'session-target',
+      status: 'failed', current_plan_version: 1,
+    },
+    plan: { research_session_id: 'session-target', version: 1, status: 'completed' },
+    approvals: [], artifacts: [],
+  };
+  fetchImpl = async (url, options = {}) => {
+    requested.push(url);
+    if (url === '/api/research-notifications/notification-target/read' && options.method === 'POST') {
+      return response({ ...notification, status: 'read' });
+    }
+    if (url === '/api/research-sessions/session-target') return response(sessionDetail);
+    if (url === '/api/conversations/conversation-target') {
+      return response({ conversation_id: 'conversation-target', title: '当前对话', status: 'active' });
+    }
+    if (url === '/api/research-sessions?limit=100') {
+      oldListStarted.resolve();
+      return oldList.promise;
+    }
+    if (url === '/api/research-tasks/task-target') {
+      throw new Error('notification must be recoverable from the owner-scoped session detail');
+    }
+    if (url === '/api/research-tasks/task-target/evidence-matrix') return response({ error: { code: 'MATRIX_NOT_READY' } }, 404);
+    if (url === '/api/research-tasks/task-target/report') return response({ ...report, markdown: '已发布版本五', artifacts: [], selections: [], evidence: [] });
+    if (url === '/api/research-tasks/task-target/reports/5?format=json') return response(report);
+    if (url === '/api/research-sessions/session-target/artifacts') return response({ artifacts: [] });
+    if (url === '/api/research-tasks/task-target/acquisitions') return response({ status: 'completed', items: [], events: [], issues: [] });
+    return fallback(url, options);
+  };
+
+  try {
+    await api.openNotification(notification);
+    assert.equal(scheduled.length, 1, 'the session notification schedules selection after opening its conversation');
+    await oldListStarted.promise;
+    await scheduled[0]();
+    oldList.resolve(response({ research_sessions: oldSessionIds.map((research_session_id) => ({
+      research_session_id, status: 'completed', conversation_id: 'old-conversation',
+    })) }));
+    await nextTurn();
+    await nextTurn();
+
+    assert.ok(requested.includes('/api/research-sessions/session-target'), 'the notification target is loaded directly by session ID');
+    assert.ok(!requested.includes('/api/research-tasks/task-target'), 'the matching session detail supplies its nested task projection');
+    assert.equal(state.notifications.get('notification-target').status, 'read');
+    assert.equal(state.selectedTaskId, 'task-target');
+    assert.equal(state.selectedSessionId, 'session-target');
+    assert.equal(state.report.report_version, 5);
+    assert.equal(state.report.markdown, '已发布版本五');
+    assert.ok(state.tasks.some((task) => task.research_session_id === 'session-target'), 'the session outside the 100-row list stays visible');
+  } finally {
+    globalThis.history.replaceState = originalReplaceState;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.location = originalLocation;
+  }
+}
+
 async function runBootListRace(oldListOutcome) {
   resetState();
   const oldSessionIds = Array.from({ length: 100 }, (_, index) => `old-session-${index}`);
@@ -564,6 +650,7 @@ async function testLateBootListSuccessCannotDropSelectedCurrentSession() {
   await testSelectingLegacyVersionDoesNotInheritCurrentQualityFields();
   await testCurrentConversationLoadsSessionOutsideFirstHundred();
   await testCompletedSessionNotificationLoadsItsReportWithoutTaskId();
+  await testReportNotificationUsesTaskEmbeddedInOwnerScopedSessionDetail();
   await testLateBootListFailureCannotClearSelectedCurrentSession();
   await testLateBootListSuccessCannotDropSelectedCurrentSession();
   console.log('Report action race contract: PASS (task isolation, rollback, delayed response ordering)');

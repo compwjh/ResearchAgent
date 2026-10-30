@@ -21,7 +21,7 @@
 | 检查项 | 结果 | 代码依据 |
 |---|---|---|
 | DOM / CSS 契约 | PASS | 新增反馈区 ID/class 在 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:331)、[research-tasks.js](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/research-tasks.js:2761) 与 [styles.css](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/styles.css:3719) 双向对应。新增 CSS 钩子均限定在 `#research-view`。 |
-| 资源版本 | PASS | 当前脚本版本为 `research-tasks.js?v=18`，样式版本仍为 `styles.css?v=67`，见 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:8) 和 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:804)。 |
+| 资源版本 | PASS | 当前脚本版本为 `research-tasks.js?v=19`，样式版本仍为 `styles.css?v=67`，见 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:8) 和 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:804)。 |
 | XSS | PASS | `frontend/research-tasks.js` 无 `innerHTML`；新反馈字段以 `textContent` 写入（约 2753–2770 行），报告正文仍使用既有安全 Markdown / HTML 渲染路径。 |
 | CSS 作用域 | PASS | 新增样式均以 `#research-view` 开头，见 `frontend/styles.css:3719–3727`；没有裸全局选择器。 |
 
@@ -101,3 +101,22 @@ Fake DOM 探针按真实页面时序执行：`boot()` 启动的列表请求 A �
 - `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_research_report_notifications_contract.py tests/frontend/test_research_plan_cards_contract.py -q`：退出码 0，13 passed。
 
 本次只窄复核列表请求竞态，没有运行后端测试、全量测试、部署或 Git 操作，也未修改业务代码。前述初审 BLOCK 标记为已修复；最新前端增量 PASS。
+
+## 窄复审：通知真实形状与 refresh 竞态
+
+### 结论
+
+**PASS / Approve。** 通知 ID 222 的新增 fixture 覆盖根级 `research_task_id` / `research_session_id`、无 `payload.conversation_id`、仅在 payload 携带 report version/message/artifact IDs 的形状。前端先用 session ID 读取 owner-scoped session detail，从其 `conversation_id` 打开对话，并复用 detail 中匹配 task ID 的嵌套 task projection；不再依赖额外 `/research-tasks/{taskId}` 请求。报告版本 5 加载成功。
+
+`refreshWorkspace()` 在对话和列表请求 await 前捕获 `taskGeneration`，并在 await 后校验。通知选择若在旧 refresh 期间开始，旧 refresh 会直接返回当前 task list，不执行 reset/重选覆盖。新增延迟旧列表返回用例确认 target 仍在列表、task/session 仍选中且报告 v5 保留。
+
+### 验证
+
+- `node --check frontend/research-tasks.js`：退出码 0。
+- `node tests/frontend/test_report_action_race.js`：退出码 0，包含 notification #222 nested-task response 与旧列表晚回竞态。
+- `node tests/frontend/test_research_session_workspace.js`：退出码 0。
+- `node tests/frontend/test_plan_approval_select.js`：退出码 0。
+- `node tests/frontend/test_research_report_notifications.js`：退出码 0。
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_research_report_notifications_contract.py tests/frontend/test_research_plan_cards_contract.py -q`：退出码 0，13 passed。
+
+本轮只审查通知响应形状和 refresh 竞态，未运行后端测试、全量测试、部署或 Git 操作，也未修改业务代码。最新前端差异 PASS，可进入主Agent要求的浏览器通知路径复测。

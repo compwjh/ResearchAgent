@@ -67,3 +67,11 @@
 - 修复：新增 `taskListRequestGeneration`。每个列表读取和显式选择都会推进代次；旧请求在列表读取后、session hydration 后及 `catch` 中发现自己已过期时直接返回当前列表，不再写 `tasks`/`sessions` 或错误状态。
 - 新增真实 boot 流程测试：启动列表请求保持 pending；boot 定时工作区刷新加载 100 条旧列表并直达当前 session/task/report；随后分别令旧列表请求 reject 和 resolve 为空。两种情况下目标会话仍留在列表且报告 v2 保持已加载。
 - 定向回归：`node tests/frontend/test_report_action_race.js` 覆盖上述两种旧请求结果并通过；语法、Session Workspace、通知、审批选择、静态契约、test naming/layout 与差异检查也通过。
+
+## 通知目标详情与旧刷新竞态复核
+
+- 真实 API 只读核对（conversation metadata、目标 session detail、通知 #222；报告正文及其他记录未读取）：conversation metadata 没有 session ID；通知的 `research_task_id` / `research_session_id` 在顶层，payload 仅含 report version、message ID 与 artifact IDs，没有 conversation ID；session detail 的 task ID 位于嵌套 `task`，顶层同时有 `conversation_id`。真实 detail 还可同时呈现 session `completed` 与 task `failed`，前端必须用合同投影处理该形状，不从通知 payload 猜测。
+- 根因：通知路径先用 session ID 取到 owner-scoped detail，但只要通知顶层带 task ID，`selectTask` 就绕过 detail 内嵌 task 并依赖单独 task 查询；此外，通知打开时启动的旧 `refreshWorkspace` 可在通知选择完成后继续按其 100 条列表结果清空详情。前者使已有会话详情未被利用，后者与真实“短暂恢复后清空”的时间序列吻合；未读取 task endpoint，未改后端。
+- 修复：当通知 task ID 与已取 session detail 投影的 task ID 一致时，直接复用 owner-scoped session/task 投影；`refreshWorkspace` 记录开始时的任务选择代次，在 conversation/list await 前后检测代次变化，任何更晚的显式选择都阻止旧刷新清空或重选详情。
+- 新增真实响应形状回归：顶层 task/session ID、无 payload conversation ID、session 中嵌套 task、报告 v5；旧 100 条列表请求保持 pending，通知选择并加载报告后再返回旧列表。先验证旧实现发起多余 task 查询并失败，再验证目标仍选中、v5 正文保留、目标会话仍在列表。
+- 本轮验证：`node --check frontend/research-tasks.js`、`node tests/frontend/test_report_action_race.js`、`node tests/frontend/test_research_session_workspace.js`、`node tests/frontend/test_research_report_notifications.js`、`node tests/frontend/test_plan_approval_select.js` 均退出 0；两项前端静态 pytest 共 13 passed；`git diff --check` 通过。脚本资源版本升至 `research-tasks.js?v=19`。真实诊断只 GET 三项指定 API，未请求 task endpoint、未修改后端/部署/数据库。
