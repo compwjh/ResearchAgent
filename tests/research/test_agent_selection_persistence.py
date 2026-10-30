@@ -10,6 +10,8 @@ import json
 import uuid
 from types import SimpleNamespace
 
+import pytest
+
 from backend.app.memory.repository import MemoryRepository
 from backend.app.research.application.agent_runtime import AgentRunOutput
 from backend.app.research.application.orchestrator import Orchestrator
@@ -170,6 +172,44 @@ def test_persist_agent_selections_expands_aggregate_evidence_refs(tmp_path):
         assert s.relevance == 0.5
 
 
+def test_agent_path_strict_persistence_requires_per_paper_threshold_decisions(tmp_path):
+    _memory, store, task = _make_repo_and_store(tmp_path)
+    orchestrator = Orchestrator(store=store, planner=Planner(), probe=_FakeProbe())
+    output = {
+        "kept": [
+            {
+                "candidate_id": None,
+                "keep": True,
+                "relevance_score": 0.99,
+                "evidence_refs": ["catalog:paper-1", "catalog:paper-2"],
+            },
+            {
+                "candidate_id": "paper-1",
+                "keep": True,
+                "relevance_score": 0.2,
+                "evidence_refs": ["catalog:paper-1"],
+            },
+            {
+                "candidate_id": "paper-2",
+                "keep": True,
+                "relevance_score": 0.19,
+                "evidence_refs": ["catalog:paper-2"],
+            },
+        ]
+    }
+
+    orchestrator._persist_agent_selections(
+        task.research_task_id,
+        output,
+        {"paper-1", "paper-2", "paper-3"},
+        relevance_threshold=0.2,
+    )
+
+    selections = store.list_selections(task.research_task_id)
+    assert [item.catalog_paper_id for item in selections] == ["paper-1"]
+    assert selections[0].relevance == 0.2
+
+
 def test_persist_agent_selections_skips_keep_false(tmp_path):
     _memory, store, task = _make_repo_and_store(tmp_path)
     orchestrator = Orchestrator(store=store, planner=Planner(), probe=_FakeProbe())
@@ -273,11 +313,8 @@ def _planner_with_search_evaluator_synth():
     ))
 
 
-def test_batch_aggregate_evaluator_runs_synthesizer(tmp_path):
-    """端到端：真实批量聚合 evaluator（candidate_id=null, keep=False）完成且
-    recall 白名单 populated 时，synthesizer 不得因 NO_VALIDATED_EVIDENCE 被跳过，
-    且 research_paper_selections 应落库。直接复现 task 81241f3f01885e2c8f0490123f2215f3。
-    """
+def test_batch_aggregate_references_do_not_count_as_per_paper_decisions(tmp_path):
+    """Aggregate provenance refs alone must not become selected-paper decisions."""
     _memory, store, task = _make_repo_and_store(tmp_path)
     runner = _runner_for_batch_aggregate()
     planner = _planner_with_search_evaluator_synth()
@@ -290,12 +327,81 @@ def test_batch_aggregate_evaluator_runs_synthesizer(tmp_path):
     syn_items = [i for i in store.list_work_items(task.research_task_id, plan_version=1)
                  if i.role == "synthesizer"]
     assert syn_items, "synthesizer WorkItem was created"
-    assert syn_items[0].status == "completed", syn_items[0].status
-    assert result.status != "failed", (result.status, result.error_code)
+    assert syn_items[0].status == "failed", syn_items[0].status
+    assert result.status == "partial", (result.status, result.error_code)
+    assert store.list_selections(task.research_task_id) == []
 
-    # 选集落库（candidate_id=null, keep=False 不再是跳过理由）。
-    ids = {s.catalog_paper_id for s in store.list_selections(task.research_task_id)}
-    assert ids == {"paper-1", "paper-2", "paper-3"}, ids
+
+@pytest.mark.parametrize("decision_kind", ["aggregate", "below-threshold"])
+def test_memory_backed_post_run_does_not_repromote_rejected_decisions(tmp_path, decision_kind):
+    memory, store, task = _make_repo_and_store(tmp_path, target_paper_count=5)
+    candidate_ids = [f"paper-{index}" for index in range(1, 6)]
+
+    class Runner:
+        event_sink = None
+
+        def run(self, run_input):
+            if run_input.role == "search_worker":
+                output = {
+                    "schema_version": "runtime-v1",
+                    "work_item_id": run_input.work_item_id,
+                    "source": "usenix",
+                    "queries": ["authentication security"],
+                    "candidates": candidate_ids,
+                    "evidence_refs": [],
+                    "source_refs": [],
+                }
+            elif run_input.role == "paper_evaluator":
+                refs = [f"catalog:{candidate_id}" for candidate_id in candidate_ids]
+                if decision_kind == "aggregate":
+                    output = {
+                        "schema_version": "paper-evaluation-v1",
+                        "work_item_id": run_input.work_item_id,
+                        "candidate_id": None,
+                        "keep": True,
+                        "relevance_score": 0.99,
+                        "evidence_refs": refs,
+                        "source_refs": [],
+                    }
+                else:
+                    output = {
+                        "schema_version": "paper-evaluation-v1",
+                        "work_item_id": run_input.work_item_id,
+                        "candidate_id": None,
+                        "keep": True,
+                        "relevance_score": 0.19,
+                        "evidence_refs": refs,
+                        "kept": [
+                            {
+                                "candidate_id": candidate_id,
+                                "keep": True,
+                                "relevance_score": 0.19,
+                                "evidence_refs": [f"catalog:{candidate_id}"],
+                            }
+                            for candidate_id in candidate_ids
+                        ],
+                        "source_refs": [],
+                    }
+            else:
+                raise AssertionError("synthesis must not run without individual relevance decisions")
+            return AgentRunOutput(
+                "completed", output_json=output, output_hash="hash",
+                agent_run_id=run_input.agent_run_id,
+            )
+
+    orchestrator = Orchestrator(
+        store=store,
+        planner=_planner_with_search_evaluator_synth(),
+        agent_runner=Runner(),
+        probe=_FakeProbe(),
+        memory_repository=memory,
+    )
+
+    result = orchestrator.run(task.research_task_id, "owner")
+
+    assert result.status == "partial"
+    assert result.selected_count == 0
+    assert store.list_selections(task.research_task_id) == []
 
 
 def test_persist_agent_selections_drops_out_of_whitelist_ids(tmp_path):

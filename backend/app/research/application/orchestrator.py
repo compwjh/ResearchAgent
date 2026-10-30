@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -289,22 +290,41 @@ def _catalog_evidence_view(output: Mapping[str, Any], tool_results: Iterable[Map
     return evidence
 
 
+def _work_item_relevance_threshold(work_item: Any, default: float = 0.2) -> float:
+    """Read the already-approved evaluator threshold; malformed values fail to default."""
+    try:
+        params = json.loads(getattr(work_item, "input_json", "") or "{}")
+    except (TypeError, ValueError):
+        params = {}
+    raw = params.get("relevance_threshold") if isinstance(params, Mapping) else None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return default
+    threshold = float(raw)
+    return threshold if math.isfinite(threshold) and 0.0 <= threshold <= 1.0 else default
+
+
+def _passes_relevance_threshold(item: Mapping[str, Any], threshold: float) -> bool:
+    score = item.get("relevance_score", item.get("relevance"))
+    if item.get("keep") is not True or isinstance(score, bool) or not isinstance(score, (int, float)):
+        return False
+    score = float(score)
+    return math.isfinite(score) and threshold <= score <= 1.0
+
+
 def _validated_evaluator_candidates(
     outputs,
     metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None,
     *,
     recall_allowlist: set[str] | None = None,
     metadata_resolver: Callable[[str], Mapping[str, Any] | None] | None = None,
+    relevance_threshold: float | None = None,
 ) -> list[dict]:
     """Normalize evaluator evidence into one record per catalog candidate.
 
-    The evaluator contract permits an aggregate decision (``candidate_id`` may
-    be null while ``evidence_refs`` lists all retained papers).  Earlier code
-    treated that shape as having no validated evidence, so the synthesizer was
-    skipped even though the Search Workers had supplied a complete catalog
-    allowlist.  Expand only literal ``catalog:<id>`` references that are
-    present in the already-sanitized metadata index *or* have been proven
-    recalled by a Search Worker.
+    Legacy callers may normalize aggregate evaluator output as before.  Strict
+    agent-path callers pass ``relevance_threshold`` and require one explicit
+    decision per selected paper; aggregate refs then establish provenance only.
+    IDs must still be present in the Search Worker recall allowlist.
 
     ``recall_allowlist`` is the set of catalog IDs the Search Workers actually
     returned (the recall set).  It is the sole authority for whether a
@@ -354,12 +374,28 @@ def _validated_evaluator_candidates(
             effective_metadata[ref_id] = backfilled
         return backfilled
 
+    def has_relevance_decision(item: Mapping[str, Any]) -> bool:
+        if relevance_threshold is None:
+            return True
+        return _passes_relevance_threshold(item, relevance_threshold)
+
     for output in outputs:
         kept = output.get("kept") if isinstance(output.get("kept"), list) else [output]
         for item in kept:
             if not isinstance(item, dict):
                 continue
+            if not has_relevance_decision(item):
+                continue
             candidate_id = item.get("candidate_id", item.get("catalog_paper_id"))
+            if relevance_threshold is not None and not isinstance(candidate_id, str):
+                # In strict agent mode, aggregate refs establish provenance but
+                # cannot stand in for a per-paper relevance decision.
+                continue
+            if (
+                relevance_threshold is not None
+                and (recall_allowlist is None or candidate_id not in recall_allowlist)
+            ):
+                continue
             # Aggregate evaluator output (candidate_id is null) is a single
             # retained set, not a per-candidate keep/reject vote.  It is NOT
             # gated on a ``keep``/``verified`` flag: the model emits one batch
@@ -395,26 +431,32 @@ def _validated_evaluator_candidates(
             expanded_from_refs = False
             if candidate_id:
                 candidate_id = str(candidate_id)
-                # A model may emit one representative candidate_id while
-                # putting a batch of retained catalog refs in evidence_refs.
-                # Catalog refs are the durable per-paper identity; expand
-                # this shape only when every referenced ID is inside the
-                # Search Worker recall allowlist, never from arbitrary model
-                # text.
-                ref_ids = [ref.split(":", 1)[1].strip() for ref in refs if isinstance(ref, str) and ref.startswith("catalog:")]
-                if (
-                    len(ref_ids) > 1
-                    and candidate_id == ref_ids[0]
-                    and all(
-                        ref_id and (recall_allowlist is None or ref_id in recall_allowlist)
-                        for ref_id in ref_ids
-                    )
-                ):
-                    candidate_ids = ref_ids
-                    expanded_from_refs = True
-                else:
+                if relevance_threshold is not None:
+                    # A strict per-paper decision can select only its own ID;
+                    # additional refs on the same object are not decisions for
+                    # other catalog rows.
+                    if f"catalog:{candidate_id}" not in refs:
+                        continue
                     candidate_ids = [candidate_id]
+                else:
+                    # Legacy aggregate output may use one representative
+                    # candidate_id while placing a retained set in refs.
+                    ref_ids = [ref.split(":", 1)[1].strip() for ref in refs if isinstance(ref, str) and ref.startswith("catalog:")]
+                    if (
+                        len(ref_ids) > 1
+                        and candidate_id == ref_ids[0]
+                        and all(
+                            ref_id and (recall_allowlist is None or ref_id in recall_allowlist)
+                            for ref_id in ref_ids
+                        )
+                    ):
+                        candidate_ids = ref_ids
+                        expanded_from_refs = True
+                    else:
+                        candidate_ids = [candidate_id]
             else:
+                if relevance_threshold is not None:
+                    continue
                 # Aggregate evaluator output: derive IDs exclusively from
                 # catalog references.  Accept a ref when its metadata is
                 # already known OR when the ID is in the Search recall
@@ -435,7 +477,7 @@ def _validated_evaluator_candidates(
                     continue
                 candidate_refs = (
                     [f"catalog:{normalized_id}"]
-                    if expanded_from_refs
+                    if expanded_from_refs or relevance_threshold is not None
                     else (list(refs) if candidate_id else [f"catalog:{normalized_id}"])
                 )
                 record = {"candidate_id": normalized_id, "verified": True, "evidence_refs": candidate_refs}
@@ -447,6 +489,8 @@ def _validated_evaluator_candidates(
                     for field in METADATA_FIELDS:
                         if field in metadata:
                             record[field] = metadata[field]
+                if relevance_threshold is not None:
+                    record["relevance_score"] = float(item.get("relevance_score", item.get("relevance")))
                 records.append(record)
                 seen.add(normalized_id)
     return records
@@ -458,12 +502,14 @@ def _promote_catalog_floor(
     metadata_by_id: Mapping[str, Mapping[str, Any]],
     metadata_resolver: Callable[[str], Mapping[str, Any] | None] | None,
     query: str,
+    relevance_threshold: float = 0.2,
 ) -> list[dict[str, Any]]:
-    """Fill the minimum report set from the already-recalled catalog pool.
+    """Supplement from recalled rows only when the existing relevance gate passes.
 
-    This is a deterministic safety net for evaluators that return ``keep``
-    false/null or malformed batch fields.  It never searches, downloads, or
-    adds an ID outside the Search Worker recall set.
+    The report floor never overrides a candidate's relevance score.  This
+    bounded fallback reuses the existing PaperEvaluator threshold/soft-floor
+    decision and never searches or adds an ID outside the Search Worker recall
+    set.
     """
     records = [dict(item) for item in validated if isinstance(item, Mapping)]
     existing = {item.get("candidate_id") for item in records if isinstance(item.get("candidate_id"), str)}
@@ -478,12 +524,11 @@ def _promote_catalog_floor(
         if isinstance(item, str) and item and item not in seen_recall:
             ordered_ids.append(item)
             seen_recall.add(item)
-    if len(existing) >= _MIN_REPORT_CANDIDATES or len(existing) + len(ordered_ids) < _MIN_REPORT_CANDIDATES:
+    if len(existing) >= _MIN_REPORT_CANDIDATES or not ordered_ids:
         return records
-    # Evaluate the complete already-recalled pool, not only the rows missing
-    # from ``validated``.  PaperEvaluator's existing minimum floor is defined
-    # over the supplied pool; passing only one remaining row would make a
-    # five-row recalled pool look too small and leave a valid report at four.
+    # Evaluate the complete already-recalled pool, not only rows missing from
+    # ``validated``. PaperEvaluator can label below-threshold rows for its
+    # legacy count floor; those rows are filtered below and never selected.
     pool_ids = existing_order + ordered_ids
     metadata_rows: list[dict[str, Any]] = []
     metadata_lookup: dict[str, Mapping[str, Any]] = {}
@@ -499,15 +544,20 @@ def _promote_catalog_floor(
             metadata_rows.append({"catalog_paper_id": candidate_id})
     from backend.app.research.application.search_catalog_adapter import PaperEvaluator
 
-    floor = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(metadata_rows, query=query)
+    floor = PaperEvaluator(threshold=relevance_threshold, soft_floor=0.1).evaluate(metadata_rows, query=query)
     for item in floor.get("kept", ()) if isinstance(floor, Mapping) else ():
         candidate_id = item.get("candidate_id") if isinstance(item, Mapping) else None
         if not isinstance(candidate_id, str) or candidate_id in existing:
+            continue
+        # The local evaluator's soft floor helps order/report legacy results,
+        # but the agent path must keep the originally approved threshold.
+        if not isinstance(item, Mapping) or not _passes_relevance_threshold(item, relevance_threshold):
             continue
         record: dict[str, Any] = {
             "candidate_id": candidate_id,
             "verified": True,
             "evidence_refs": [f"catalog:{candidate_id}"],
+            "relevance_score": float(item.get("relevance_score", item.get("relevance"))),
         }
         metadata = metadata_lookup.get(candidate_id)
         if isinstance(metadata, Mapping):
@@ -2076,6 +2126,10 @@ class Orchestrator:
                     if item_by_id.get(work_item_id) is not None
                     and item_by_id[work_item_id].role == "paper-evaluator"
                 }
+                evaluator_threshold = min(
+                    (_work_item_relevance_threshold(item_by_id[work_item_id]) for work_item_id in evaluator_ids),
+                    default=0.2,
+                )
                 # Recall allowlist: catalog IDs the Search Workers actually
                 # returned.  This is the sole authority for expanding aggregate
                 # evaluator refs into candidates; the local catalog directory
@@ -2111,13 +2165,12 @@ class Orchestrator:
                     catalog_metadata,
                     recall_allowlist=recall_allowlist,
                     metadata_resolver=metadata_resolver,
+                    relevance_threshold=evaluator_threshold,
                 )
-                # The synthesizer must still receive a bounded evidence set
-                # when the evaluator returns an explicit null/empty decision.
-                # Promote from the same Search Worker recall pool before
-                # deciding that no evidence exists; this keeps the report
-                # floor deterministic and avoids a false NO_VALIDATED_EVIDENCE
-                # terminal state caused solely by small-model formatting.
+                # Supplement only from the same Search Worker recall pool and
+                # only when the existing evaluator threshold passes. An
+                # aggregate ref or the five-paper report floor cannot by itself
+                # turn an unscored/low-relevance row into selected evidence.
                 if len(validated) < _MIN_REPORT_CANDIDATES:
                     validated = _promote_catalog_floor(
                         validated,
@@ -2125,6 +2178,7 @@ class Orchestrator:
                         catalog_metadata,
                         metadata_resolver,
                         task.goal,
+                        relevance_threshold=evaluator_threshold,
                     )
                 # This is the single final selection set for all agent-path
                 # consumers: persistence, synthesizer input, matrix context,
@@ -2160,6 +2214,7 @@ class Orchestrator:
                             {
                                 "candidate_id": candidate["candidate_id"],
                                 "keep": True,
+                                "relevance_score": candidate.get("relevance_score"),
                                 "evidence_refs": list(candidate["evidence_refs"]),
                             }
                             for candidate in synthesis_validated_candidates
@@ -2168,6 +2223,7 @@ class Orchestrator:
                     {candidate["candidate_id"] for candidate in synthesis_validated_candidates},
                     candidate_sources=synthesis_candidate_sources,
                     target_paper_count=task.target_paper_count,
+                    relevance_threshold=evaluator_threshold,
                 )
                 work_item_input["validated_candidates"] = validated
                 work_item_input["citation_allowlist"] = [
@@ -2523,6 +2579,7 @@ class Orchestrator:
                     allowed_candidates,
                     candidate_sources,
                     target_paper_count=task.target_paper_count,
+                    relevance_threshold=_work_item_relevance_threshold(item),
                 )
             if terminal == "completed" and role == "synthesizer":
                 synthesis_run_id = getattr(result, "agent_run_id", None) or run_id
@@ -2798,109 +2855,62 @@ class Orchestrator:
                     for evidence in completed_search_evidence.values()
                     for entry in evidence
                 )
-                validated_candidates: list[dict] = []
-                # Keep this normalization identical to the synthesizer input
-                # path above.  In particular, aggregate evaluator output with
-                # a null candidate_id is expanded from catalog evidence refs,
-                # bounded by the Search Workers' recall allowlist and backfilled
-                # from the local catalog directory.  Without the allowlist this
-                # path silently yielded zero candidates whenever the Search
-                # Worker tool_results omitted catalog_metadata, so selections
-                # were never persisted even though the evaluator had retained
-                # rows (P0, spec029/030/031).
-                validated_candidates.extend(
-                    _validated_evaluator_candidates(
-                        evaluator_outputs,
-                        catalog_metadata,
-                        recall_allowlist=_recall_allowlist_from_search_outputs(
-                            output
-                            for work_item_id, output in completed_outputs.items()
-                            if item_by_id.get(work_item_id) is not None
-                            and item_by_id[work_item_id].role == "search-worker"
-                        ),
-                        metadata_resolver=self._catalog_metadata_resolver(),
+                recall_ids = [
+                    candidate_id
+                    for work_item_id, output in completed_outputs.items()
+                    if item_by_id.get(work_item_id) is not None
+                    and item_by_id[work_item_id].role == "search-worker"
+                    for candidate_id in (
+                        output.get("candidates") if isinstance(output.get("candidates"), list) else ()
                     )
+                    if isinstance(candidate_id, str)
+                    and candidate_id
+                ]
+                recall_ids = list(dict.fromkeys(recall_ids))
+                recall_allowlist = set(recall_ids)
+                evaluator_threshold = min(
+                    (
+                        _work_item_relevance_threshold(work_item)
+                        for work_item in item_by_id.values()
+                        if work_item.role == "paper-evaluator"
+                    ),
+                    default=0.2,
                 )
-                # If the real evaluator retained fewer than the report floor,
-                # promote more rows from the *same Search Worker recall set*.
-                # The previous implementation used only ``catalog_metadata``
-                # handed through the model-facing summary.  That summary is
-                # intentionally bounded/redacted, so a six-paper catalog could
-                # look like a three-row pool and the final report stopped at
-                # two evaluator picks.  Resolve the missing metadata from the
-                # existing catalog store, but never enlarge the recall set.
-                existing_ids = {item["candidate_id"] for item in validated_candidates}
-                if len(existing_ids) < _MIN_REPORT_CANDIDATES:
-                    recall_ids: list[str] = []
-                    for work_item_id, output in completed_outputs.items():
-                        if item_by_id.get(work_item_id) is None or item_by_id[work_item_id].role != "search-worker":
-                            continue
-                        for candidate_id in output.get("candidates", ()) if isinstance(output.get("candidates"), list) else ():
-                            if isinstance(candidate_id, str) and candidate_id and candidate_id not in recall_ids:
-                                recall_ids.append(candidate_id)
-                    metadata_resolver = self._catalog_metadata_resolver()
-                    catalog_rows: list[dict[str, Any]] = []
-                    metadata_by_recall_id: dict[str, Mapping[str, Any]] = {}
-                    for candidate_id in recall_ids:
-                        metadata = catalog_metadata.get(candidate_id)
-                        if not isinstance(metadata, Mapping) and metadata_resolver is not None:
-                            metadata = metadata_resolver(candidate_id)
-                        if isinstance(metadata, Mapping):
-                            metadata_by_recall_id[candidate_id] = metadata
-                            catalog_rows.append({**metadata, "catalog_paper_id": candidate_id})
-                        else:
-                            # A recalled ID remains valid evidence even when a
-                            # local row was deleted between search and report.
-                            # It is retained with explicit missing metadata.
-                            catalog_rows.append({"catalog_paper_id": candidate_id})
-                    if len(catalog_rows) >= _MIN_REPORT_CANDIDATES:
-                        from backend.app.research.application.search_catalog_adapter import PaperEvaluator
-
-                        floor_output = PaperEvaluator(threshold=0.2, soft_floor=0.1).evaluate(
-                            catalog_rows, query=task.goal
-                        )
-                        for item in floor_output["kept"]:
-                            candidate_id = item.get("candidate_id")
-                            if not isinstance(candidate_id, str) or candidate_id in existing_ids:
-                                continue
-                            record = {
-                                "candidate_id": candidate_id,
-                                "verified": True,
-                                "evidence_refs": [f"catalog:{candidate_id}"],
-                            }
-                            metadata = metadata_by_recall_id.get(candidate_id)
-                            if isinstance(metadata, Mapping):
-                                for field in (
-                                    "title", "abstract", "keywords", "summary", "method", "methods",
-                                    "topic", "topics", "facets", "year", "source", "source_id",
-                                    "source_kinds", "official_url", "official_page_url",
-                                ):
-                                    if field in metadata:
-                                        record[field] = metadata[field]
-                            validated_candidates.append(record)
-                            existing_ids.add(candidate_id)
-                            if len(existing_ids) >= _MIN_REPORT_CANDIDATES:
-                                break
-                    # Keep the durable selection projection aligned with the
-                    # report floor.  The evaluator model may have returned a
-                    # short subset, but every promoted row is still bounded by
-                    # the Search Worker allowlist and carries catalog evidence.
-                    if len(existing_ids) >= _MIN_REPORT_CANDIDATES:
-                        self._persist_agent_selections(
-                            task.research_task_id,
-                            {
-                                "kept": [
-                                    {
-                                        "candidate_id": item["candidate_id"],
-                                        "keep": True,
-                                        "evidence_refs": list(item["evidence_refs"]),
-                                    }
-                                    for item in validated_candidates
-                                ]
-                            },
-                            set(recall_ids),
-                            target_paper_count=task.target_paper_count,
-                        )
+                metadata_resolver = self._catalog_metadata_resolver()
+                validated_candidates = _validated_evaluator_candidates(
+                    evaluator_outputs,
+                    catalog_metadata,
+                    recall_allowlist=recall_allowlist,
+                    metadata_resolver=metadata_resolver,
+                    relevance_threshold=evaluator_threshold,
+                )
+                if len(validated_candidates) < _MIN_REPORT_CANDIDATES:
+                    validated_candidates = _promote_catalog_floor(
+                        validated_candidates,
+                        recall_ids,
+                        catalog_metadata,
+                        metadata_resolver,
+                        task.goal,
+                        relevance_threshold=evaluator_threshold,
+                    )
+                if validated_candidates:
+                    self._persist_agent_selections(
+                        task.research_task_id,
+                        {
+                            "kept": [
+                                {
+                                    "candidate_id": item["candidate_id"],
+                                    "keep": True,
+                                    "relevance_score": item.get("relevance_score"),
+                                    "evidence_refs": list(item["evidence_refs"]),
+                                }
+                                for item in validated_candidates
+                            ]
+                        },
+                        recall_allowlist,
+                        target_paper_count=task.target_paper_count,
+                        relevance_threshold=evaluator_threshold,
+                    )
                 if synthesis_validated_candidates is not None:
                     # The synthesizer output and its citation allowlist are
                     # authoritative for this run.  Reuse the same validated
@@ -2917,6 +2927,7 @@ class Orchestrator:
                                 {
                                     "candidate_id": candidate["candidate_id"],
                                     "keep": True,
+                                    "relevance_score": candidate.get("relevance_score"),
                                     "evidence_refs": list(candidate["evidence_refs"]),
                                 }
                                 for candidate in validated_candidates
@@ -2925,6 +2936,7 @@ class Orchestrator:
                         {candidate["candidate_id"] for candidate in validated_candidates},
                         candidate_sources=synthesis_candidate_sources,
                         target_paper_count=task.target_paper_count,
+                        relevance_threshold=evaluator_threshold,
                     )
                 validated_candidates = _bound_agent_selection(
                     validated_candidates, task.target_paper_count
@@ -3306,22 +3318,22 @@ class Orchestrator:
         allowed_candidates: set[str],
         candidate_sources: dict[str, str] | None = None,
         target_paper_count: int | None = None,
+        relevance_threshold: float | None = None,
     ) -> None:
         """把 agent 路径 evaluator 产出的真实候选落库为 research_paper_selections。
 
         只接受 ``allowed_candidates``（本 WorkItem 的 Search Worker 召回白名单）里的
-        candidate_id；模型自造的 ID 一律丢弃，绝不伪造 relevance/facets/evidence。agent
-        路径只有目录/摘要级证据，evidence_level 固定为 ``"catalog"``（绝不标 fulltext）。
+        candidate_id；模型自造的 ID 一律丢弃。传入 ``relevance_threshold`` 时，只有带有
+        单篇 candidate_id、keep=true、达标 relevance_score 和该篇 catalog 引用的决策才
+        落库；聚合 refs 仅是来源证明。未传阈值时保留旧调用契约。agent 路径只有目录/摘要
+        级证据，evidence_level 固定为 ``"catalog"``（绝不标 fulltext）。
         落库失败不能让整条流水线崩：记 logger.warning 后继续后续 WorkItem。
 
         ``candidate_sources`` 是「候选 ID -> 产出它的 search_id」映射。任务可扇出多个
         search worker，各自持有不同的 server 快照；选集必须记住自己的来源快照，导入桥
         才能按快照分别解析候选。缺失时回落到任务级 search_id（旧数据/单 worker 场景）。
 
-        evaluator 产出有两种形状，都必须覆盖：
-        - 聚合形 ``{"kept": [...]}``；
-        - 单条聚合形（``candidate_id`` 可能为 null，候选 ID 全在 ``evidence_refs`` 的
-          ``catalog:<id>`` 里，``keep`` 为 true）——实测这是当前模型最常见的产出。
+        在兼容调用中仍能读取历史聚合形；严格 agent 路径只保存逐篇 decision。
         """
         kept = evaluator_output.get("kept")
         if isinstance(kept, list):
@@ -3343,6 +3355,18 @@ class Orchestrator:
             if not isinstance(entry, dict):
                 continue
             direct = entry.get("candidate_id", entry.get("catalog_paper_id"))
+            if relevance_threshold is not None:
+                if (
+                    not isinstance(direct, str)
+                    or not _passes_relevance_threshold(entry, relevance_threshold)
+                ):
+                    continue
+                refs = entry.get("evidence_refs")
+                if not isinstance(refs, list) or f"catalog:{direct.strip()}" not in refs:
+                    continue
+                raw_ids = [direct.strip()]
+            else:
+                raw_ids = []
             # 聚合批量 evaluator（candidate_id 为 null）本身就是保留集合；其顶层
             # keep=False 只标记「这是批量容器」，并非「我拒绝了这些候选」。只有
             # 显式的 per-candidate 拒绝（candidate_id 有值且 keep=False）才跳过。
@@ -3350,15 +3374,16 @@ class Orchestrator:
             # 掉，导致 research_paper_selections 0 条（P0 spec029/030/031）。
             if direct and entry.get("keep") is False:
                 continue
-            # 一条 entry 可能携带多个候选 ID：显式 id 字段 + evidence_refs 里的 catalog:<id>。
-            raw_ids: list[str] = []
-            if isinstance(direct, str) and direct.strip():
-                raw_ids.append(direct.strip())
-            refs = entry.get("evidence_refs")
-            if isinstance(refs, list):
-                for ref in refs:
-                    if isinstance(ref, str) and ref.startswith("catalog:"):
-                        raw_ids.append(ref.split(":", 1)[1])
+            if relevance_threshold is None:
+                # Legacy compatibility: an aggregate may list several IDs in
+                # catalog refs. Strict agent selections use only direct IDs.
+                if isinstance(direct, str) and direct.strip():
+                    raw_ids.append(direct.strip())
+                refs = entry.get("evidence_refs")
+                if isinstance(refs, list):
+                    for ref in refs:
+                        if isinstance(ref, str) and ref.startswith("catalog:"):
+                            raw_ids.append(ref.split(":", 1)[1])
             raw_relevance = entry.get("relevance_score", entry.get("relevance"))
             try:
                 relevance = float(raw_relevance) if raw_relevance is not None else 0.0

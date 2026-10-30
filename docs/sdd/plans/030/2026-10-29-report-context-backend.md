@@ -286,6 +286,40 @@ TDD RED 阶段，以下新增能力反例曾全部按预期失败：安全 paper
 
 该窄切片只修改 intake 数量解析与能力测试；未部署、未写数据库、未运行全量。独立数量修复已冻结，主题查询/选集相关性修复仍是另一个切片。
 
+## 自然语言认证主题查询与逐篇相关性门禁修复（2026-10-31）
+
+修复对应上文只读诊断中的偏题自然任务。Spec030/027 的确认边界不变：至少五篇必须是真实相关且有证据的论文；不足时走现有 partial/有界流程，不能扩主题、降低相关性阈值或拿来源合法的候选凑数。本次没有新增公开 API/schema 或 semantic model checker。
+
+### 实现
+
+- `build_session_plan_output()` 将已确认 Intake 的 `topic` 作为独立 `query_topic` 传给确定性 Planner。只有搜索 WorkItem 查询使用 `topic + facet`；研究 objective、计划摘要、coverage goal、报告研究问题保持原 objective。没有 topic 的 legacy Planner 调用仍使用原 `goal + facet` 查询。
+- Agent evaluator prompt 要求逐篇输出 `candidate_id`、`keep`、`relevance_score`、理由和该篇目录证据，并引用现有 `work_item_input.relevance_threshold`。aggregate 的 catalog refs 只证明来源，不代表论文相关性决策。
+- durable Agent 路径中，`_validated_evaluator_candidates()` 和选集持久化只接受带单篇 ID、该篇 catalog ref、`keep=true`、通过已批准阈值的决策。评分也保留到持久 selection。allowlist 仍只限制来源范围，不能代替相关性判断。
+- Agent 路径的 catalog 补充仍复用现有 `PaperEvaluator`，但只保留达到原 threshold 的结果；count floor 和既有 soft-floor 不会把阈值以下候选带进正式选集。候选不够时继续走现有不足处理。legacy 调用不传 strict threshold，保留旧输入兼容；未改其公开契约或原有 WorkItem/schema。
+
+### 能力回归
+
+- 新增 `test_plan_topic_search_queries.py`：用 Intake `topic=authentication security` 与单独中文 objective 构建批准计划，断言每条 search query 都含 topic，同时 objective 与 Critic goal 不变。
+- evaluator 单测覆盖 aggregate refs 高分但没有逐篇决策、逐篇低于阈值、明确 reject、未在 Search recall allowlist 中、恰好达到阈值等情况；只有合法且达标的单篇决策进入候选。
+- floor 测试覆盖无元数据/无分数、全部无关、只一篇达阈值和仅能通过 soft-floor 的场景；不得为了凑足五篇下调阈值。
+- fake-runner Orchestrator 集成将历史 `candidate_id=null` 的 aggregate 作为唯一 evaluator 输出，验证不会持久化候选、不以报告下限启动 synthesis 成功，而是按不足情况收敛为 partial。单篇有效 decision 的既有 agent 集成仍通过。
+- legacy `test_report_synthesis_contract.py` 与 matrix bridge 测试通过，确保缺少 strict threshold 的旧调用继续保留兼容行为。
+
+### 定向验证
+
+TDD RED 曾确认：计划 query 不含独立 topic；aggregate refs 被当成选择；低相关报告 floor 带入五篇；软阈值 0.1 带入低于已批准 0.2 的候选；无效 aggregate 会使 fake-runner synthesis 完成。以上回归修复后均转绿。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py tests/research/test_plan_topic_search_queries.py tests/research/test_validated_evaluator_candidates.py tests/research/test_report_catalog_metadata.py tests/research/test_agent_selection_persistence.py tests/research/test_agent_runtime_contract.py tests/research/test_research_report_matrix_bridge.py tests/research/test_report_synthesis_contract.py -q` | 0 | 184 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/planner.py backend/app/research/application/session_plan_generation.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py tests/research/test_plan_topic_search_queries.py tests/research/test_validated_evaluator_candidates.py tests/research/test_report_catalog_metadata.py tests/research/test_agent_selection_persistence.py tests/research/test_agent_runtime_contract.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/planner.py backend/app/research/application/session_plan_generation.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py tests/research/test_plan_topic_search_queries.py` | 0 | 通过，无输出 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py` | 0 | test naming check passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+| `python -m pytest --collect-only -q` | 0 | 3,856 tests collected; no collection errors |
+
+没有运行全量测试、真实模型、线上/本地 API、数据库写入、部署或 Git 提交。真实自然语言 E2E 需要主 Agent 在审查通过后以新任务执行；原已发布报告不在本 slice 中改写。Spec030 的正式缺陷记录由架构师另行维护。
+
 ## 自然语言认证安全报告召回偏题诊断（2026-10-31，只读）
 
 检查任务 `387a5090b27550c59de86adb415eb26e`、会话 `eb423a0ae279472d9709cda75e957da3` 及 `docs/sdd/plans/030/artifacts/20261031-natural-e2e/` 中的请求、批准计划、最终报告，并只读查询本地 Research/Paper Discovery SQLite。没有改代码、数据库、选集或已发布报告，也没有重跑模型。
@@ -317,3 +351,26 @@ TDD RED 阶段，以下新增能力反例曾全部按预期失败：安全 paper
 ### 只读范围与未做事项
 
 证据限于上述自然语言 E2E artifacts、指定 task/session 的 WorkItem/selection/search metadata、安全的 evaluator aggregate 摘要，以及 `session_plan_generation.py`、`planner.py`、`search_catalog_adapter.py`、`catalog_search_graph.py`、`agent_runtime.py` 和 `orchestrator.py` 的相关实现。没有读取隐藏思维链、凭据或原始模型拒绝正文，没有写数据库/重跑/部署，也没有执行测试；本段只记录诊断和修复边界。
+
+## Memory-backed Agent 选集后置重入修复（2026-10-31）
+
+独立复审发现 `_run_agent_work_items()` 的 memory-backed post-run 路径会重新展开 evaluator aggregate refs，并在候选不足时用默认软 floor 补足；这可能把主 synthesizer 逐篇相关性门禁已拒绝的候选重新计入 `selected_count` 或持久选集。此前相关 fake-runner 测试使用 `memory_repository=None`，未覆盖此分支。
+
+### 修复与边界
+
+- 后置路径现在只通过 `_validated_evaluator_candidates(..., relevance_threshold=...)` 构建候选；catalog floor 复用 `_promote_catalog_floor()` 且传入同一已批准阈值；持久选集 `_persist_agent_selections()` 也传入相同阈值并保留逐篇 relevance score。
+- 阈值来自现有 paper-evaluator WorkItem 的 `relevance_threshold`（缺失或无效时沿用既有默认 0.2）。post-run 不再用 aggregate refs 独立扩充选择集合。主 Agent synthesis 入口的验证、floor 和持久化也已核对为传同一阈值。
+- 受影响 Agent 入口逐项核对：`_validated_evaluator_candidates` 调用（主 synthesis 与 post-run）、`_promote_catalog_floor` 调用、`_persist_agent_selections` 的 evaluator/post-run/synthesis 调用均显式传入阈值。`PaperEvaluator(threshold=0.2, soft_floor=0.1)` 的独立非-Agent legacy 路径未改。
+- 集成回归使用真实 `MemoryRepository` 实例驱动 `Orchestrator.run()`，分别注入高分 aggregate refs 和低于阈值的逐篇 decisions；断言最终 `selected_count == 0` 且 ResearchStore 持久 selections 为空。修复前两种情况都能在 post-run 变成 5 篇，测试先红后绿。
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest 'tests/research/test_agent_selection_persistence.py::test_memory_backed_post_run_does_not_repromote_rejected_decisions' -q`（修复前） | 1 | 2 failed；两组 `selected_count` 均错误变为 5 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_agent_selection_persistence.py tests/research/test_report_catalog_metadata.py tests/research/test_validated_evaluator_candidates.py tests/research/test_report_synthesis_contract.py tests/research/test_research_report_matrix_bridge.py -q` | 0 | 95 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/orchestrator.py tests/research/test_agent_selection_persistence.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/orchestrator.py tests/research/test_agent_selection_persistence.py` | 0 | 通过，无输出 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+
+未运行全量、部署、真实模型或数据库写入；未修改 legacy 独立入口。

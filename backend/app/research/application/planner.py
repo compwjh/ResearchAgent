@@ -76,6 +76,7 @@ class Planner:
         self,
         *,
         goal: str,
+        query_topic: str | None = None,
         quality_profile: str = "balanced",
         target_paper_count: int | None = None,
         language: str = "zh",
@@ -115,6 +116,7 @@ class Planner:
         work_items = self._build_work_items(
             facets, normalized, target_paper_count, language,
             source_ids=normalized_sources, scope=normalized_scope,
+            query_topic=query_topic,
         )
 
         # 5) 冻结校验器兜底：类型白名单 / 参数允许列表 / 角色 / 无环 / 预算。
@@ -185,7 +187,8 @@ class Planner:
 
     def _build_work_items(
         self, facets: list[str], goal: str, target_paper_count: int, language: str,
-        *, source_ids: tuple[str, ...] = (), scope: dict | None = None
+        *, source_ids: tuple[str, ...] = (), scope: dict | None = None,
+        query_topic: str | None = None,
     ) -> list[dict]:
         """生成四类 WorkItem（search/evaluate/coverage/synthesize），不含 replan。
 
@@ -202,6 +205,7 @@ class Planner:
         # each worker request the full target so the evaluator can apply its
         # deterministic floor; the contract cap remains 3 workers × 20 rows.
         per_search = target_paper_count
+        search_seed = query_topic.strip() if isinstance(query_topic, str) and query_topic.strip() else goal
         items: list[dict] = []
         search_ids: list[str] = []
         for index in range(search_count):
@@ -215,7 +219,7 @@ class Planner:
                     "role": "search-worker",
                     "depends_on": [],
                     "params": {
-                        "query": f"{goal} {facet}",
+                        "query": f"{search_seed} {facet}",
                         "facets": [facet],
                         "max_results": per_search,
                         "language": language,

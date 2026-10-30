@@ -81,6 +81,56 @@ def test_allowlist_prefers_allowlist_over_metadata_gap():
     assert "title" not in by_id["c2"]
 
 
+def test_agent_selection_requires_individual_keep_and_threshold_decisions():
+    outputs = [
+        {
+            "candidate_id": None,
+            "keep": True,
+            "relevance_score": 0.95,
+            "evidence_refs": ["catalog:aggregate-1", "catalog:aggregate-2"],
+        },
+        {
+            "kept": [
+                {
+                    "candidate_id": "below-threshold",
+                    "keep": True,
+                    "relevance_score": 0.19,
+                    "evidence_refs": ["catalog:below-threshold"],
+                },
+                {
+                    "candidate_id": "at-threshold",
+                    "keep": True,
+                    "relevance_score": 0.2,
+                    "evidence_refs": ["catalog:at-threshold"],
+                },
+                {
+                    "candidate_id": "explicitly-rejected",
+                    "keep": False,
+                    "relevance_score": 0.99,
+                    "evidence_refs": ["catalog:explicitly-rejected"],
+                },
+                {
+                    "candidate_id": "not-recalled",
+                    "keep": True,
+                    "relevance_score": 0.99,
+                    "evidence_refs": ["catalog:not-recalled"],
+                },
+            ],
+        },
+    ]
+
+    records = _validated_evaluator_candidates(
+        outputs,
+        recall_allowlist={
+            "aggregate-1", "aggregate-2", "below-threshold", "at-threshold", "explicitly-rejected",
+        },
+        relevance_threshold=0.2,
+    )
+
+    assert [item["candidate_id"] for item in records] == ["at-threshold"]
+    assert records[0]["relevance_score"] == 0.2
+
+
 def test_recalled_candidate_ids_uses_search_worker_candidates():
     """召回白名单来自 search-worker 的 candidates 字段，与 catalog_metadata 无关。"""
 

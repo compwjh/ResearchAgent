@@ -224,6 +224,7 @@ def build_session_plan_output(store, session, owner_id: str) -> dict[str, Any]:
     quality_profile = depth if depth in {"speed", "balanced", "quality"} else "balanced"
     draft = Planner().build_plan(
         goal=objective or "深度研究",
+        query_topic=topic or None,
         quality_profile=quality_profile,
         target_paper_count=target,
         language=language,

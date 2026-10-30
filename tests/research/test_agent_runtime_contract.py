@@ -669,12 +669,12 @@ def test_ollama_synthesizer_prompt_exposes_internal_matrix_shape_only_with_conte
     assert '"claims"' in contract and '"evidence"' in contract and '"cells"' in contract
 
 
-def test_evaluator_prompt_matches_non_empty_aggregate_contract():
+def test_evaluator_prompt_requires_per_paper_relevance_decisions():
     prompt = _role_contract_prompt("paper_evaluator", has_tool_results=False)
 
-    assert "candidate_id may be null as the aggregate container" in prompt
-    assert "even when evidence_refs is non-empty" in prompt
-    assert "otherwise candidate_id must be one of those supplied IDs" in prompt
+    assert "one per-paper decision" in prompt
+    assert "work_item_input.relevance_threshold" in prompt
+    assert "aggregate evidence_refs prove provenance only" in prompt
 
 
 def test_invalid_tool_batch_executes_nothing():

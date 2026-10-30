@@ -123,14 +123,13 @@ def test_evaluator_batch_refs_expand_when_one_representative_id_is_returned():
     assert [item["evidence_refs"] for item in records] == [[ref] for ref in refs]
 
 
-def test_catalog_floor_promotes_from_recalled_ids_when_evaluator_returns_none():
+def test_catalog_candidate_supplement_does_not_select_ids_without_metadata():
     ids = [f"paper-{index}" for index in range(1, 6)]
     records = _promote_catalog_floor([], ids, {}, None, "USENIX Security")
-    assert [item["candidate_id"] for item in records] == ids
-    assert all(item["verified"] is True for item in records)
+    assert records == []
 
 
-def test_catalog_floor_counts_existing_records_when_evaluating_remaining_pool():
+def test_catalog_candidate_supplement_does_not_fill_remaining_floor_with_irrelevant_row():
     ids = [f"paper-{index}" for index in range(1, 6)]
     existing = [
         {
@@ -149,7 +148,7 @@ def test_catalog_floor_counts_existing_records_when_evaluating_remaining_pool():
         "needle",
     )
 
-    assert [item["candidate_id"] for item in records] == ids
+    assert [item["candidate_id"] for item in records] == ids[:4]
 
 
 def test_catalog_floor_does_not_fabricate_when_recall_pool_is_short():
@@ -166,6 +165,52 @@ def test_catalog_floor_does_not_fabricate_when_recall_pool_is_short():
     records = _promote_catalog_floor(existing, ids, {}, None, "needle")
 
     assert [item["candidate_id"] for item in records] == ids
+
+
+def test_catalog_candidate_supplement_does_not_fill_floor_with_below_threshold_rows():
+    ids = [f"paper-{index}" for index in range(1, 6)]
+    metadata = {
+        candidate_id: {"title": "Unrelated systems paper", "abstract": ""}
+        for candidate_id in ids
+    }
+
+    records = _promote_catalog_floor([], ids, metadata, None, "authentication security")
+
+    assert records == []
+
+
+def test_catalog_candidate_supplement_keeps_only_rows_passing_existing_relevance_threshold():
+    ids = [f"paper-{index}" for index in range(1, 6)]
+    metadata = {
+        ids[0]: {"title": "Authentication security study", "abstract": ""},
+        **{
+            candidate_id: {"title": "Unrelated systems paper", "abstract": ""}
+            for candidate_id in ids[1:]
+        },
+    }
+
+    records = _promote_catalog_floor([], ids, metadata, None, "authentication security")
+
+    assert [item["candidate_id"] for item in records] == [ids[0]]
+    assert records[0]["relevance_score"] == 1.0
+
+
+def test_catalog_candidate_supplement_does_not_use_soft_floor_to_reach_report_minimum():
+    ids = [f"paper-{index}" for index in range(1, 6)]
+    metadata = {
+        ids[0]: {"title": "Authentication", "abstract": ""},
+        **{
+            candidate_id: {"title": "Unrelated systems paper", "abstract": ""}
+            for candidate_id in ids[1:]
+        },
+    }
+
+    records = _promote_catalog_floor(
+        [], ids, metadata, None,
+        "authentication security identity verification mechanism architecture",
+    )
+
+    assert records == []
 
 
 def test_synthesis_accepts_bounded_section_summary_for_real_report_content():
