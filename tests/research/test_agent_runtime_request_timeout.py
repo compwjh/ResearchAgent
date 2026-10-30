@@ -137,6 +137,66 @@ def test_shorter_remaining_grant_splits_proportionally_without_exceeding_cap():
     assert 40 + clock.now <= 120
 
 
+def test_long_grant_keeps_primary_timeout_at_thirty_seconds_and_reserves_the_rest_for_fallback():
+    clock = _Clock()
+    models = {}
+
+    def factory(name, _effort):
+        model = _TimeoutModel(
+            name,
+            clock,
+            timeout_after_set=name.startswith("local:"),
+            output=_output("planner"),
+        )
+        models[name] = model
+        return model
+
+    runner = ResearchAgentRunner(
+        model_router=_Router(),
+        model_factory=factory,
+        online_fallback_factory=factory,
+        online_fallback_enabled=True,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("planner")]),
+        clock=clock,
+    )
+
+    result = runner.run(
+        _run_input(budget={"max_seconds": 300, "elapsed_seconds": 0})
+    )
+
+    assert result.status == "completed"
+    assert models["local:qwen"].request_timeouts == [30]
+    assert models["deepseek:flash"].request_timeouts == [270]
+    assert sum(models["local:qwen"].request_timeouts + models["deepseek:flash"].request_timeouts) == 300
+
+
+def test_schema_retries_consume_one_run_deadline_instead_of_resetting_it():
+    clock = _Clock()
+
+    class InvalidSchemaModel(_TimeoutModel):
+        def invoke(self, _context, _tools=()):
+            self.clock.now += min(0.4, self.request_timeouts[-1])
+            return {"output_json": {}}
+
+    model = InvalidSchemaModel("local:qwen", clock)
+    runner = ResearchAgentRunner(
+        model=model,
+        online_fallback_enabled=False,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("planner")]),
+        clock=clock,
+    )
+
+    result = runner.run(
+        _run_input(budget={"max_seconds": 1.0, "elapsed_seconds": 0})
+    )
+
+    assert result.status == "limit_reached"
+    assert result.error_code == "TASK_TIME_LIMIT_REACHED"
+    assert result.usage["model_loops"] == 3
+    assert model.request_timeouts == pytest.approx([1.0, 0.6, 0.2])
+    assert clock.now == pytest.approx(1.0)
+
+
 def test_disabled_fallback_gets_all_remaining_run_time():
     clock = _Clock()
     model = _TimeoutModel("local:qwen", clock, timeout_after_set=True, output=_output("planner"))

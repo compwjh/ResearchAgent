@@ -41,13 +41,14 @@ def _seed_report_context(
     fulltext_summary: str | None = None, trusted_paper_count: int = 5,
     approved_facets: list[str] | None = None, research_question: str | None = None,
     abstract_template: str | None = None,
+    soft_budget_seconds: int = 300,
 ):
     store = ResearchStore(tmp_path / "research.sqlite3")
     catalog_store = PaperDiscoveryStore(database_path=tmp_path / "paper-search.sqlite3")
     task = ResearchTask(
         "task-report-context", "owner", "conversation",
         research_question or "分析五篇论文的方法与局限",
-        "zh", "balanced", False, 5, 300, "running", 1, "", "",
+        "zh", "balanced", False, 5, soft_budget_seconds, "running", 1, "", "",
     )
     approved_facets = approved_facets or ["研究方法"]
     store.create_task(task)
@@ -1362,9 +1363,11 @@ def test_startup_recovery_finalizes_published_canonical_from_terminal_work_item(
     [(1, False, "generating"), (2, False, "generating"), (2, True, "draft")],
 )
 def test_report_quality_body_claims_budget_revises_and_saves_with_reserved_report_version(
-    tmp_path, failed_drafts, keep_failing, expected_status,
+    tmp_path, monkeypatch, failed_drafts, keep_failing, expected_status,
 ):
-    store, catalog_store, task, _work_item, candidates = _seed_report_context(tmp_path)
+    store, catalog_store, task, _work_item, candidates = _seed_report_context(
+        tmp_path, soft_budget_seconds=1500,
+    )
     # Advance the report sequence so it cannot be confused with plan_version.
     first = store.reserve_report_generation(
         task.research_task_id, "owner", plan_version=1,
@@ -1399,6 +1402,14 @@ def test_report_quality_body_claims_budget_revises_and_saves_with_reserved_repor
     low_quality = _quality_report_content(papers, cjk_repetitions=10)
     passing = _quality_report_content(papers)
     run_inputs = []
+    requested_seconds = []
+    original_claim = store.claim_report_generation_budget
+
+    def capture_claim(*args, **kwargs):
+        requested_seconds.append(kwargs["requested_seconds"])
+        return original_claim(*args, **kwargs)
+
+    monkeypatch.setattr(store, "claim_report_generation_budget", capture_claim)
 
     draft_runs = 0
 
@@ -1453,6 +1464,7 @@ def test_report_quality_body_claims_budget_revises_and_saves_with_reserved_repor
     else:
         assert result["rendered"]["report"]["report_content"] == passing
     assert len(run_inputs) == failed_drafts + 2
+    assert requested_seconds == [300] * len(run_inputs)
     assert [item.attempt for item in run_inputs] == [1] * len(run_inputs)
     assert len({item.agent_run_id for item in run_inputs}) == len(run_inputs)
     comparison_context = run_inputs[0].work_item_input["report_quality_context"]
@@ -1490,6 +1502,92 @@ def test_report_quality_body_claims_budget_revises_and_saves_with_reserved_repor
     assert all(run_input.budget_snapshot["tool_calls"] == 0 for run_input in run_inputs)
     if keep_failing:
         assert canonical_json["reason_codes"] == ["CJK_COUNT_BELOW_MINIMUM"]
+
+
+def test_report_quality_body_requests_up_to_three_hundred_seconds_and_clamps_to_remaining(
+    tmp_path, monkeypatch,
+):
+    store, catalog_store, task, _work_item, candidates = _seed_report_context(
+        tmp_path, soft_budget_seconds=1500,
+    )
+    reservation, running = _reserve_running_report(
+        store, task,
+        request_key="c5b06cd7-7e8e-40ec-88d2-21c066d6bd7a",
+        request_payload={"plan_version": 1, "purpose": "remaining-budget-clamp"},
+    )
+
+    held_claim = store.claim_report_generation_budget(
+        task.research_task_id, "owner", reservation.report.report_version,
+        claim_id=str(uuid4()), agent_run_id="held-matrix-run",
+        requested_model_loops=40, requested_tool_calls=160, requested_seconds=1413,
+    )
+    assert held_claim["allowed"] is True
+    assert held_claim["grant"]["seconds"] == 1413
+    assert store.get_report_generation_budget(
+        task.research_task_id, "owner", reservation.report.report_version,
+    )["remaining"]["seconds"] == 87
+
+    class _MemoryReferences:
+        @staticmethod
+        def get_conversation(_conversation_id, _owner_id):
+            return SimpleNamespace(owner_id="owner")
+
+        @staticmethod
+        def get_message(_message_id, _owner_id):
+            return SimpleNamespace(conversation_id="conversation")
+
+    store.create_session(ResearchSession(
+        "session-report-budget-clamp", "owner", "conversation", "trigger-message",
+        "intake-report-budget-clamp", "running", current_plan_version=1,
+        research_task_id=task.research_task_id,
+    ), memory_repository=_MemoryReferences())
+
+    requested_seconds = []
+    original_claim = store.claim_report_generation_budget
+
+    def capture_claim(*args, **kwargs):
+        requested_seconds.append(kwargs["requested_seconds"])
+        return original_claim(*args, **kwargs)
+
+    monkeypatch.setattr(store, "claim_report_generation_budget", capture_claim)
+    content = _quality_report_content([item["paper_id"] for item in candidates])
+
+    def fake_runner(run_input):
+        store.create_agent_run(AgentRun(
+            run_input.agent_run_id, run_input.research_session_id, run_input.attempt,
+            "synthesizer", "research-report-synthesis", "1", "probe-hash", "probe-model",
+            "off", "[]", provider="test", status="completed",
+            research_task_id=task.research_task_id, work_item_id=running.work_item_id,
+            started_at="2026-10-29T00:00:00Z", ended_at="2026-10-29T00:00:01Z",
+            owner_id="owner",
+        ), owner_id="owner")
+        return SimpleNamespace(
+            status="completed",
+            output_json={
+                "schema_version": "runtime-v1",
+                "report_version": run_input.work_item_input["report_version"],
+                "report_content": content,
+            },
+            model_metadata={"provider": "test", "model": "probe-model"},
+            agent_run_id=run_input.agent_run_id,
+        )
+
+    orchestrator = Orchestrator(
+        store=store, search_adapter=SimpleNamespace(_store=catalog_store),
+        probe=object(), agent_runner=SimpleNamespace(run=fake_runner),
+    )
+    result = orchestrator._generate_report_quality_body(
+        task=task, owner_id="owner", work_item=running,
+        selected_candidates=_selected_candidates(candidates),
+        reservation=reservation, session_id="session-report-budget-clamp",
+    )
+
+    assert result["status"] == "generating"
+    assert requested_seconds == [87, 86]
+    progress = store.get_report_generation_budget(
+        task.research_task_id, "owner", reservation.report.report_version,
+    )
+    assert progress["remaining"]["seconds"] == 85
 
 
 @pytest.mark.parametrize(

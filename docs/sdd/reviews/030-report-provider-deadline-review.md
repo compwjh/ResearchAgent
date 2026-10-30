@@ -89,3 +89,19 @@ Runtime 在 provider 返回后识别到请求超时，会抛 `MODEL_TIMEOUT`。�
 | Independent sub-4ms remainder probe | 0 | 0.5ms remainder rounded to 1ms request; late output rejected at 1.0005s; no fallback |
 
 本次仅复核 reserve 比例、无 fallback 兼容、预算守恒和小 grant 行为；未重审其它已通过实现，也未运行全量测试、部署或真实报告生成。
+
+## Follow-up review — 2026-10-30 report-stage grant and schema-retry deadline
+
+**Current verdict: PASS.** The report stages now request up to 300 seconds, bounded by the reservation's remaining seconds; this is a per-stage claim request, not a new task cap. The confirmed quality contract limits cumulative seconds by the task's effective soft/profile budget and carries prior AgentRun usage forward; it does not impose a 120-second per-stage ceiling. The store independently clamps each claim against the durable remaining amount and existing task limit.
+
+- [orchestrator.py:6140](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:6140) and [orchestrator.py:6340](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/orchestrator.py:6340) request `min(300, int(remaining_seconds))` for comparison and drafting/revision. A zero-second result stops before creating a claim. Each subsequent stage re-reads durable progress, so spent time reduces the next request.
+- [research_store.py:7854](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/infrastructure/research_store.py:7854) clamps granted seconds to requested seconds, durable remaining seconds, and the effective task cap. `_collect_report_generation_usage` includes settled AgentRun durations, active claims, and preserved prior totals when computing remaining time.
+- [agent_runtime.py:2670](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/agent_runtime.py:2670) recomputes remaining run time before each model invocation. Schema retries stay inside the same AgentRun loop and use the same `start` and granted `max_seconds`; an output that arrives after the grant is rejected.
+- When an online fallback is available, the existing split uses `min(30s, remaining * 25%)` for the primary and leaves the rest for the one fallback. Tests cover 300s → 30s + 270s, 120s → 30s + 90s, and 80s → 20s + 60s; with fallback disabled the primary receives all remaining time. The budget regression seeds a durable 87s remainder and asserts successive claim requests of 87s and 86s as one-second fake AgentRuns settle, with 85s remaining afterward.
+- No new budget extension, task cap increase, or claim per schema retry was found. Sub-second integer rounding is conservative at the stage-claim boundary; the prior non-blocking provider scheduling precision note remains applicable to sub-millisecond request timeout floors.
+
+| Command | Exit code | Result |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_quality_context.py -q` | 0 | `55 passed in 6.11s` |
+
+本轮只复核阶段预算请求、store 夹限、fallback 分配和同一 run 的 schema 重试 deadline；未运行全量测试、部署或真实报告生成。

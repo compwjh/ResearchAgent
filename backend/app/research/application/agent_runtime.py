@@ -54,8 +54,8 @@ TASK_MODEL_LOOP_HARD_CAP = 640
 TASK_TOOL_CALL_HARD_CAP = 2560
 TASK_TIME_HARD_CAP = 6 * 60 * 60
 MAX_EXTENSIONS = 3
-_ONLINE_FALLBACK_RESERVE_MAX_SECONDS = 90.0
-_ONLINE_FALLBACK_RESERVE_RATIO = 0.75
+_ONLINE_PRIMARY_TIMEOUT_MAX_SECONDS = 30.0
+_ONLINE_PRIMARY_TIMEOUT_RATIO = 0.25
 
 
 @dataclass(frozen=True)
@@ -2690,11 +2690,10 @@ class ResearchAgentRunner:
                     and self._online_choice() is not None
                 )
                 if fallback_possible:
-                    fallback_reserve = min(
-                        _ONLINE_FALLBACK_RESERVE_MAX_SECONDS,
-                        remaining_seconds * _ONLINE_FALLBACK_RESERVE_RATIO,
+                    request_timeout = min(
+                        _ONLINE_PRIMARY_TIMEOUT_MAX_SECONDS,
+                        remaining_seconds * _ONLINE_PRIMARY_TIMEOUT_RATIO,
                     )
-                    request_timeout = max(0.001, remaining_seconds - fallback_reserve)
                 try:
                     if callable(set_request_timeout):
                         set_request_timeout(request_timeout)

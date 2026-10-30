@@ -156,3 +156,19 @@ Store 的 successor 接口允许 reservation 原先绑定的旧 synthesis WorkIt
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest --collect-only -q tests/research/test_report_quality_context.py` | 0 | 23 tests collected，无收集错误 |
 
 新增入口测试覆盖可信证据不足不调用 Runtime 且失败原因持久化、同一 reservation successor 使用真实 Runtime 完成交付并保留 Task `interrupted`、历史 completed checkpoint 复用，以及已发布 canonical 从 terminal WorkItem 幂等完成 Artifact/message。未调用真实模型、部署或全量回归。
+
+## v3 正文预算与 provider deadline 修正（2026-10-30）
+
+本次只读实际运行记录及合同核对见 [report v3 budget/AgentRun diagnosis](./artifacts/20261030-report-v3/03-budget-diagnosis.md)。报告 v3 的 Task 累计耗时为 380/1500 秒，仍有 1120 秒；失败发生在 comparison 单个 120 秒 grant 内，未进入 drafting。该固定 120 秒是代码策略，不是报告合同上限。
+
+- comparison、drafting 与 targeted revision 现在分别按 `min(300, int(progress["remaining"]["seconds"]))` 申请 grant。剩余不足 1 秒时在 claim 前以 `REPORT_BUDGET_EXHAUSTED` 收束；既有 Store 事务继续按真实余额和 per-run/task cap 原子裁剪。矩阵准备阶段仍保持原有申请，不属于此次正文改动。
+- 启用现有 online fallback 时，primary provider 的每次同步请求 deadline 设为 `min(30, remaining_seconds * 0.25)`，同一 run grant 的其余时间留给既有 fallback；因此 300 秒分配为 30+270，120 秒为 30+90，80 秒为 20+60。fallback 未启用或不可用时 primary 保留全部剩余 grant。
+- Schema retry 仍使用同一 AgentRun deadline；Runtime 按已耗 wall time 递减剩余时间，不能通过 retry 重置。Task 1500 秒上限、per-run 40 loops/160 calls 和 task 160 loops/640 calls 均未提高；claims 仍由 Store 原子处理。
+
+### 本轮定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_quality_context.py -q` | 0 | 55 passed |
+
+另新增精确反例：300 秒 grant 的 primary/fallback 为 30/270 秒；报告 stage 剩余 87 秒后按 87、86 秒申请；禁用 fallback 的既有路径不变；schema retry 在 1 秒总 grant 下使用递减的 1.0/0.6/0.2 秒请求并于预算耗尽停止。未调用线上模型、修改部署或运行全量回归。

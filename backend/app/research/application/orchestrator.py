@@ -6137,6 +6137,9 @@ class Orchestrator:
                     f"{work_item.work_item_id}:report-{report_version}:comparison-{uuid4().hex}"
                 )
                 comparison_claim_id = str(uuid4())
+                comparison_requested_seconds = min(300, int(progress["remaining"]["seconds"]))
+                if comparison_requested_seconds <= 0:
+                    return fail_report("REPORT_BUDGET_EXHAUSTED")
                 comparison_claim = self._store.claim_report_generation_budget(
                     task_id,
                     owner_id,
@@ -6145,7 +6148,7 @@ class Orchestrator:
                     agent_run_id=comparison_run_id,
                     requested_model_loops=40,
                     requested_tool_calls=160,
-                    requested_seconds=min(120, int(progress["limits"]["max_seconds"])),
+                    requested_seconds=comparison_requested_seconds,
                 )
             except Exception:
                 return fail_report("REPORT_COMPARISON_BUDGET_CLAIM_FAILED")
@@ -6334,6 +6337,9 @@ class Orchestrator:
                     f"{run_stage}-{uuid4().hex}"
                 )
                 claim_id = str(uuid4())
+                requested_seconds = min(300, int(progress["remaining"]["seconds"]))
+                if requested_seconds <= 0:
+                    return fail_report("REPORT_BUDGET_EXHAUSTED")
                 try:
                     claim = self._store.claim_report_generation_budget(
                         task_id,
@@ -6343,7 +6349,7 @@ class Orchestrator:
                         agent_run_id=run_id,
                         requested_model_loops=40,
                         requested_tool_calls=160,
-                        requested_seconds=min(120, int(progress["limits"]["max_seconds"])),
+                        requested_seconds=requested_seconds,
                     )
                 except Exception:
                     return fail_report("REPORT_BUDGET_CLAIM_FAILED")
