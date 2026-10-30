@@ -63,7 +63,16 @@ function resetState() {
   localStorageValues.clear();
   state.document = fakeDocument;
   state.selectedTaskId = null;
+  state.selectedSessionId = null;
   state.selectedTask = null;
+  state.conversationId = null;
+  state.conversation = null;
+  state.tasks = [];
+  state.sessions = [];
+  state.taskListRequestGeneration = 0;
+  state.booted = false;
+  state.notifications = new Map();
+  state.selectTaskInFlight = null;
   state.taskGeneration = 0;
   state.reportVersionRequest = 0;
   state.report = null;
@@ -365,6 +374,187 @@ async function testSelectingLegacyVersionDoesNotInheritCurrentQualityFields() {
   assert.deepEqual(api.reportQualityMetrics(state.report), []);
 }
 
+function reportSelectionFetch(oldSessionIds = []) {
+  const canonical = qualityReport(2, 'completed', true, 'pass');
+  return async (url, options = {}) => {
+    if (url === '/api/conversations/conversation-target') {
+      return response({ conversation_id: 'conversation-target', title: '当前对话' });
+    }
+    if (url === '/api/research-sessions?limit=100') {
+      return response({ research_sessions: oldSessionIds.map((research_session_id) => ({
+        research_session_id, status: 'completed', conversation_id: 'old-conversation',
+        conversation: { conversation_id: 'old-conversation', title: '旧对话' },
+      })) });
+    }
+    if (oldSessionIds.some((id) => url === `/api/research-sessions/${id}`)) {
+      const research_session_id = oldSessionIds.find((id) => url === `/api/research-sessions/${id}`);
+      return response({ research_session_id, status: 'completed', conversation_id: 'old-conversation', conversation: { conversation_id: 'old-conversation', title: '旧对话' } });
+    }
+    if (url === '/api/research-sessions/session-target') {
+      return response({
+        research_session_id: 'session-target', conversation_id: 'conversation-target', status: 'completed',
+        current_plan_version: 2,
+        task: { research_task_id: 'task-target', research_session_id: 'session-target', status: 'completed', current_plan_version: 2 },
+      });
+    }
+    if (url === '/api/research-tasks/task-target') {
+      return response({ research_task_id: 'task-target', research_session_id: 'session-target', status: 'completed', current_plan_version: 2 });
+    }
+    if (url === '/api/research-tasks/task-target/evidence-matrix') return response({ error: { code: 'MATRIX_NOT_READY' } }, 404);
+    if (url === '/api/research-tasks/task-target/report') return response({ ...canonical, markdown: '当前对话中的已发布报告正文', artifacts: [], selections: [], evidence: [] });
+    if (url === '/api/research-tasks/task-target/reports/2?format=json') return response(canonical);
+    if (url === '/api/research-sessions/session-target/artifacts') return response({ artifacts: [] });
+    if (url === '/api/research-tasks/task-target/acquisitions') return response({ status: 'completed', items: [], events: [], issues: [] });
+    if (url === '/api/research-notifications/n-target/read' && options.method === 'POST') {
+      return response({ notification_id: 'n-target', event_seq: 221, research_session_id: 'session-target', notification_kind: 'completed', status: 'read', payload: { conversation_id: 'conversation-target' } });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+}
+
+async function testCurrentConversationLoadsSessionOutsideFirstHundred() {
+  resetState();
+  const oldSessionIds = Array.from({ length: 100 }, (_, index) => `old-session-${index}`);
+  globalThis.location.pathname = '/c/conversation-target';
+  globalThis.location.hash = '#research-view';
+  const originalQuerySelectorAll = fakeDocument.querySelectorAll;
+  fakeDocument.querySelectorAll = (selector) => selector.includes('.conversation-research-plan')
+    ? [{ dataset: { researchSessionId: 'session-target' } }] : [];
+  const requested = [];
+  const fetch = reportSelectionFetch(oldSessionIds);
+  fetchImpl = async (url, options) => { requested.push(url); return fetch(url, options); };
+
+  await api.refreshWorkspace();
+
+  assert.ok(requested.includes('/api/research-sessions/session-target'), 'current conversation session must be read by owner-scoped detail ID');
+  assert.equal(state.tasks.length, 101, 'the selected session outside the page is surfaced in the existing task list');
+  assert.equal(state.selectedTaskId, 'task-target');
+  assert.equal(state.selectedSessionId, 'session-target');
+  assert.equal(state.report.report_version, 2);
+  assert.equal(state.report.markdown, '当前对话中的已发布报告正文');
+  fakeDocument.querySelectorAll = originalQuerySelectorAll;
+}
+
+async function testCompletedSessionNotificationLoadsItsReportWithoutTaskId() {
+  resetState();
+  const notification = {
+    notification_id: 'n-target', event_seq: 221, research_session_id: 'session-target', research_task_id: '',
+    notification_kind: 'completed', status: 'unread', payload: { conversation_id: 'conversation-target', report_version: 2 },
+  };
+  state.notifications.set(notification.notification_id, notification);
+  globalThis.location.pathname = '/c/old-conversation';
+  globalThis.location.hash = '';
+  const originalReplaceState = globalThis.history.replaceState;
+  const originalSetTimeout = globalThis.setTimeout;
+  const scheduled = [];
+  globalThis.history.replaceState = (_state, _title, url) => {
+    const next = new URL(url, 'http://localhost');
+    globalThis.location.pathname = next.pathname;
+    globalThis.location.hash = next.hash;
+  };
+  globalThis.setTimeout = (callback) => { scheduled.push(callback); return 9901; };
+  fetchImpl = reportSelectionFetch(Array.from({ length: 100 }, (_, index) => `old-session-${index}`));
+
+  await api.openNotification(notification);
+  assert.equal(scheduled.length, 1, 'session notification schedules direct workspace selection');
+  await scheduled[0]();
+
+  assert.equal(state.notifications.get('n-target').status, 'read');
+  assert.ok(state.tasks.some((task) => task.research_session_id === 'session-target'), 'notification target remains visible when the paged list omits it');
+  assert.equal(state.selectedTaskId, 'task-target');
+  assert.equal(state.selectedSessionId, 'session-target');
+  assert.equal(state.report.report_version, 2);
+  assert.equal(state.report.markdown, '当前对话中的已发布报告正文');
+  globalThis.history.replaceState = originalReplaceState;
+  globalThis.setTimeout = originalSetTimeout;
+}
+
+async function runBootListRace(oldListOutcome) {
+  resetState();
+  const oldSessionIds = Array.from({ length: 100 }, (_, index) => `old-session-${index}`);
+  const oldList = deferred();
+  const originalGetElementById = fakeDocument.getElementById;
+  const originalQuerySelectorAll = fakeDocument.querySelectorAll;
+  const originalLocation = globalThis.location;
+  const originalHistory = globalThis.history;
+  const originalEventSource = globalThis.EventSource;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timeouts = [];
+  const requested = [];
+  const bootNodes = new Map();
+  let listReads = 0;
+  fakeDocument.getElementById = (id) => {
+    if (!bootNodes.has(id)) bootNodes.set(id, fakeElement());
+    return bootNodes.get(id);
+  };
+  fakeDocument.querySelectorAll = () => [];
+  globalThis.location = { pathname: '/c/conversation-target', hash: '#research-view' };
+  globalThis.history = { pushState() {}, replaceState() {} };
+  globalThis.EventSource = class { addEventListener() {} close() {} };
+  globalThis.setTimeout = (callback, delay = 0) => { timeouts.push({ callback, delay }); return 9900 + timeouts.length; };
+  globalThis.clearTimeout = () => {};
+  const pagedFetch = reportSelectionFetch(oldSessionIds);
+  fetchImpl = async (url, options = {}) => {
+    requested.push(url);
+    if (url.startsWith('/api/research-notifications?')) return response({ notifications: [] });
+    if (url === '/api/conversations/conversation-target') {
+      return response({ conversation_id: 'conversation-target', title: '当前对话', research_session_id: 'session-target' });
+    }
+    if (url === '/api/research-sessions?limit=100') {
+      listReads += 1;
+      return listReads === 1 ? oldList.promise : pagedFetch(url, options);
+    }
+    return pagedFetch(url, options);
+  };
+
+  try {
+    api.boot(fakeDocument);
+    assert.equal(listReads, 1, 'boot starts its independent paged-list request');
+    const refreshBoot = timeouts.find((item) => item.delay === 0);
+    assert.ok(refreshBoot, 'boot schedules the normal current-workspace refresh');
+    await refreshBoot.callback();
+    assert.equal(state.selectedTaskId, 'task-target');
+    assert.equal(state.selectedSessionId, 'session-target');
+    assert.equal(state.report?.report_version, 2, `boot refresh should load the current report; status=${bootNodes.get('research-report-state')?.textContent}; requests=${JSON.stringify(requested)}`);
+    assert.ok(state.tasks.some((task) => task.research_session_id === 'session-target'));
+
+    if (oldListOutcome === 'reject') oldList.reject(new Error('late boot list failure'));
+    else oldList.resolve(response({ research_sessions: [] }));
+    await nextTurn();
+    await nextTurn();
+
+    assert.equal(state.selectedTaskId, 'task-target');
+    assert.equal(state.selectedSessionId, 'session-target');
+    assert.equal(state.report.report_version, 2);
+    assert.ok(state.tasks.some((task) => task.research_session_id === 'session-target'), 'late boot result cannot erase the page-out current session');
+  } finally {
+    state.notificationEventSource?.close?.();
+    state.eventSource?.close?.();
+    [state.reportPollTimer, state.reconnectTimer, state.notificationReconnectTimer, state.acquisition?.pollTimer]
+      .filter(Boolean).forEach((timer) => originalClearTimeout(timer));
+    fakeDocument.getElementById = originalGetElementById;
+    fakeDocument.querySelectorAll = originalQuerySelectorAll;
+    globalThis.location = originalLocation;
+    globalThis.history = originalHistory;
+    globalThis.EventSource = originalEventSource;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    state.booted = false;
+    state.notificationLoading = false;
+    state.notificationEventSource = null;
+    state.eventSource = null;
+  }
+}
+
+async function testLateBootListFailureCannotClearSelectedCurrentSession() {
+  await runBootListRace('reject');
+}
+
+async function testLateBootListSuccessCannotDropSelectedCurrentSession() {
+  await runBootListRace('resolve');
+}
+
 (async () => {
   await testLateGenerationResponseCannotWriteTheNextTask();
   await testLateUploadResponseCannotCreateTheNextTaskButton();
@@ -372,6 +562,10 @@ async function testSelectingLegacyVersionDoesNotInheritCurrentQualityFields() {
   await testReportSubmissionUsesIdempotencyKeyAndTreats202AsPending();
   await testAsyncPollCannotPublishMalformedQualitySchema();
   await testSelectingLegacyVersionDoesNotInheritCurrentQualityFields();
+  await testCurrentConversationLoadsSessionOutsideFirstHundred();
+  await testCompletedSessionNotificationLoadsItsReportWithoutTaskId();
+  await testLateBootListFailureCannotClearSelectedCurrentSession();
+  await testLateBootListSuccessCannotDropSelectedCurrentSession();
   console.log('Report action race contract: PASS (task isolation, rollback, delayed response ordering)');
 })().catch((error) => {
   console.error(error);

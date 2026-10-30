@@ -16,11 +16,12 @@
 ## 变更文件
 
 - `frontend/research-tasks.js`
-- `frontend/index.html`（资源版本升至 `research-tasks.js?v=17`、`styles.css?v=67`）
+- `frontend/index.html`（资源版本升至 `research-tasks.js?v=18`、`styles.css?v=67`）
 - `frontend/styles.css`
 - `tests/frontend/test_evidence_report_frontend_contract.py`
 - `tests/frontend/test_research_session_workspace.js`
 - `tests/frontend/test_report_action_race.js`
+- `tests/frontend/test_plan_approval_select.js`（修正两处既有错误相对导入，并清理测试尾部轮询 timer）
 
 ## 前端自查
 
@@ -34,7 +35,7 @@
 |---|---:|---|
 | `node --check frontend/research-tasks.js` | 0 | 语法通过 |
 | `node tests/frontend/test_research_session_workspace.js` | 0 | 质量指标、正式/草稿/旧版状态、事件阶段/耗时、原因码及未发布/错误质量元数据下载门禁通过 |
-| `node tests/frontend/test_report_action_race.js` | 0 | 任务/版本竞态通过；新增网络重试同 key、202 pending、GET 追踪至发布、malformed quality async poll 与 v2→legacy v1 隔离场景通过 |
+| `node tests/frontend/test_report_action_race.js` | 0 | 任务/版本竞态通过；新增报告幂等、202 跟踪、质量 schema、v2→legacy 隔离、页外当前会话/通知及 boot 旧列表成功/失败竞态场景通过 |
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_evidence_report_frontend_contract.py -q` | 0 | 3 项静态契约测试通过 |
 | `git diff --check` 及 CSS class、缓存版本、`innerHTML` 核对 | 0 | 无空白错误；样式/版本/XSS 自查通过 |
 
@@ -51,3 +52,18 @@
 - 版本选择只使用目标版本的 canonical JSON、Markdown 与 artifact 结果构造 `state.report`，不再把当前版本对象 spread 到另一版本；这样旧版缺少质量/发布字段时显示未核验并清空质量指标。
 - 增加恶意/陈旧 schema 的异步 poll 断言、v2→legacy v1 版本隔离断言；保留并发版本请求迟到响应不覆盖当前版本的测试。
 - legacy 下载兼容现在只适用于完全没有 `quality_validation` 字段的 completed 旧报告；只要质量字段存在，就必须由 `isQualityValidated` 验证，不能因 `published` 缺失而走旧版回退。新增质量通过但发布字段缺失、malformed quality 且发布字段缺失、显式 `quality_validation: undefined` 均不可下载，同时保留纯旧版下载断言。
+
+## 真实浏览器复现跟进
+
+- 根因在前端：`loadTasks` 只读取 `/api/research-sessions?limit=100`，`refreshWorkspace` 只从这页列表选当前会话；列表没有目标 session 时会清空详情。通知点击只有同时带 task ID 才会触发任务选择；session-only 通知虽然标记已读，却只打开对话。即使直接按 session ID 调用选择，旧路径也不会从 session detail 恢复 task ID 并加载报告。
+- 修复：当前会话优先从会话详情元数据、当前对话最后一个 Research Plan/Intake 卡片或同一对话通知恢复 session ID；列表没有目标 session 时直接 GET `/api/research-sessions/{id}`。session-only 选择从 owner-scoped detail 取 task ID，尝试读取 task 详情，继续用现有 report API 加载报告，并把该会话插回现有列表。通知携带 session ID 时也直接打开研究工作区并选择它。
+- 新增回归覆盖：目标 session 不在前 100 条列表时从当前对话卡片直达已发布 v2；completed 通知没有 task ID 时仍从 session ID 恢复并加载 v2。两项测试已先在旧实现上复现失败，再在修复后通过。
+- 本轮验证：`node --check frontend/research-tasks.js`、`node tests/frontend/test_report_action_race.js`、`node tests/frontend/test_research_session_workspace.js`、`node tests/frontend/test_research_report_notifications.js`、`node tests/frontend/test_plan_approval_select.js`、两个静态契约文件（13 passed）、test naming/layout 检查与 `git diff --check` 均通过；脚本缓存版本升至 `research-tasks.js?v=18`。
+- `test_plan_approval_select.js` 原有两处相对导入指向不存在的 `tests/frontend/frontend/`；已改为项目内真实 frontend 路径，并清理该测试的轮询 timer，以便精准脚本自然退出。修复后 Task12 的三项审批/重选 race 断言全部通过。
+
+## boot 列表请求竞态评审跟进
+
+- 根因：`boot()` 会不等待地启动一次列表请求，工作区正常恢复又启动另一请求。旧请求缺少代际校验，其晚到的成功响应可覆盖新列表，拒绝响应会清空 `tasks`/`sessions`，即使目标 session、task 和 report 已由 owner-scoped 详情恢复成功。
+- 修复：新增 `taskListRequestGeneration`。每个列表读取和显式选择都会推进代次；旧请求在列表读取后、session hydration 后及 `catch` 中发现自己已过期时直接返回当前列表，不再写 `tasks`/`sessions` 或错误状态。
+- 新增真实 boot 流程测试：启动列表请求保持 pending；boot 定时工作区刷新加载 100 条旧列表并直达当前 session/task/report；随后分别令旧列表请求 reject 和 resolve 为空。两种情况下目标会话仍留在列表且报告 v2 保持已加载。
+- 定向回归：`node tests/frontend/test_report_action_race.js` 覆盖上述两种旧请求结果并通过；语法、Session Workspace、通知、审批选择、静态契约、test naming/layout 与差异检查也通过。

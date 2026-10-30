@@ -118,7 +118,7 @@ globalThis.EventSource = class {
   set onerror(_fn) {}
   close() { this.closed = true; }
 };
-globalThis.ResearchSessionUI = require('../frontend/research-session-ui.js');
+globalThis.ResearchSessionUI = require('../../frontend/research-session-ui.js');
 globalThis.location = { hash: '', href: '' };
 globalThis.addEventListener = () => {};
 globalThis.removeEventListener = () => {};
@@ -128,9 +128,13 @@ globalThis.PopStateEvent = class {};
 globalThis.setTimeout = globalThis.setTimeout || ((fn) => fn());
 globalThis.clearTimeout = globalThis.clearTimeout || (() => {});
 
-const { mergeSessionCommandResult, selectTask, refreshWorkspace, state } = require('../frontend/research-tasks.js');
+const { mergeSessionCommandResult, selectTask, refreshWorkspace, state } = require('../../frontend/research-tasks.js');
 
 function resetState() {
+  [state.reportPollTimer, state.reconnectTimer, state.notificationReconnectTimer, state.acquisition?.pollTimer]
+    .filter(Boolean).forEach((timer) => clearTimeout(timer));
+  state.eventSource?.close?.();
+  state.notificationEventSource?.close?.();
   state.selectedTaskId = null;
   state.selectedSessionId = null;
   state.selectedTask = null;
@@ -207,6 +211,8 @@ const approveResult = {
   console.log('Task12 scenario2b race(re-select) -> unique SSE pipe: PASS');
 
   console.log('Task12 approval -> Task auto-select / report / events (race-safe): ALL PASS');
+  [state.reportPollTimer, state.reconnectTimer, state.notificationReconnectTimer, state.acquisition?.pollTimer]
+    .filter(Boolean).forEach((timer) => clearTimeout(timer));
 })().catch((err) => {
   console.error('Task12 approval probe FAILED:', err && err.message);
   console.error('  fetches:', JSON.stringify(FETCH_URLS));

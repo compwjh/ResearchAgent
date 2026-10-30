@@ -161,6 +161,7 @@
     triggerMessageId: null,
     taskActionInFlight: false,
     selectTaskInFlight: null,
+    taskListRequestGeneration: 0,
     taskGeneration: 0,
     reportVersionRequest: 0,
     reportPollTimer: null,
@@ -741,15 +742,29 @@
     let conversationId = typeof payload.conversation_id === 'string' ? payload.conversation_id : '';
     const taskId = item?.research_task_id || (typeof payload.research_task_id === 'string' ? payload.research_task_id : '');
     const sessionId = item?.research_session_id || (typeof payload.research_session_id === 'string' ? payload.research_session_id : '');
+    let sessionDetail = null;
     if (!conversationId && sessionId) {
       try {
-        const session = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
-        conversationId = typeof session?.conversation_id === 'string' ? session.conversation_id : '';
+        sessionDetail = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
+        conversationId = typeof sessionDetail?.conversation_id === 'string' ? sessionDetail.conversation_id : '';
       } catch (_) { /* keep the notification visible if its target was removed */ }
     }
-    if (conversationId && taskId) {
+    if (conversationId && (taskId || sessionId)) {
       openForConversation(conversationId);
-      root.setTimeout(() => { if (state.selectedTaskId !== taskId) selectTask(taskId); }, 0);
+      root.setTimeout(() => {
+        const alreadySelected = taskId ? state.selectedTaskId === taskId
+          : Boolean(sessionId && state.selectedSessionId === sessionId && state.selectedTaskId);
+        const sameSelectionInFlight = Boolean(state.selectTaskInFlight
+          && ((taskId && state.selectedTaskId === taskId) || (sessionId && state.selectedSessionId === sessionId)));
+        if (!alreadySelected && !sameSelectionInFlight) {
+          return selectTask(taskId || null, sessionId || null, sessionDetail);
+        }
+        return null;
+      }, 0);
+      return;
+    }
+    if (taskId || sessionId) {
+      await selectTask(taskId || null, sessionId || null, sessionDetail);
       return;
     }
     if (conversationId && typeof root.openConversation === 'function') {
@@ -948,6 +963,40 @@
     return selected?.closest?.('.project-item')?.dataset?.projectId || state.conversation?.project_id || null;
   }
 
+  function currentConversationSessionId() {
+    const validId = (value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{1,240}$/.test(value) ? value : '';
+    const conversation = state.conversation || {};
+    const direct = validId(conversation.research_session_id)
+      || validId(conversation.latest_research_session_id)
+      || validId(conversation.research_session?.research_session_id)
+      || validId(conversation.latest_research_session?.research_session_id);
+    if (direct) return direct;
+
+    const panels = state.document?.querySelectorAll?.('.conversation-research-plan[data-research-session-id], .conversation-intake[data-research-session-id]') || [];
+    for (let index = panels.length - 1; index >= 0; index -= 1) {
+      const sessionId = validId(panels[index]?.dataset?.researchSessionId);
+      if (sessionId) return sessionId;
+    }
+
+    const notification = [...(state.notifications?.values?.() || [])]
+      .filter((item) => item?.payload?.conversation_id === state.conversationId
+        && validId(item.research_session_id || item.payload?.research_session_id))
+      .sort((a, b) => b.event_seq - a.event_seq)[0];
+    return validId(notification?.research_session_id || notification?.payload?.research_session_id) || '';
+  }
+
+  function upsertSessionTask(task, sessionId) {
+    const projected = sessionTaskProjection({ ...task, ...(sessionId ? { research_session_id: sessionId } : {}) });
+    if (!projected) return null;
+    const merged = { ...(state.tasks.find((item) => item.research_task_id === projected.research_task_id
+      || item.research_session_id === projected.research_session_id) || {}), ...projected };
+    state.tasks = [merged, ...state.tasks.filter((item) => item.research_task_id !== merged.research_task_id
+      && item.research_session_id !== merged.research_session_id)];
+    state.sessions = state.tasks;
+    renderTaskList();
+    return merged;
+  }
+
   function createTaskCard(task) {
     const doc = state.document;
     const item = doc.createElement('div');
@@ -1022,16 +1071,27 @@
   }
 
   async function loadTasks() {
+    const requestGeneration = ++state.taskListRequestGeneration;
     setText('research-list-status', '正在加载研究会话…');
     try {
       const data = await requestJson('/api/research-sessions?limit=100');
+      if (requestGeneration !== state.taskListRequestGeneration) return state.tasks;
       const values = data?.research_sessions || data?.sessions || data?.items;
       const listed = (Array.isArray(values) ? values : []).filter(Boolean);
-      state.sessions = (await Promise.all(listed.map(hydrateSession))).filter(Boolean);
+      const hydrated = (await Promise.all(listed.map(hydrateSession))).filter(Boolean);
+      if (requestGeneration !== state.taskListRequestGeneration) return state.tasks;
+      state.sessions = hydrated;
+      const currentSessionId = currentConversationSessionId();
+      if (currentSessionId && state.selectedSessionId === currentSessionId
+        && state.selectedTask?.research_session_id === currentSessionId
+        && !state.sessions.some((item) => item.research_session_id === currentSessionId)) {
+        state.sessions.unshift(state.selectedTask);
+      }
       state.tasks = state.sessions;
       renderTaskList();
       return state.tasks;
     } catch (error) {
+      if (requestGeneration !== state.taskListRequestGeneration) return state.tasks;
       state.tasks = []; state.sessions = [];
       renderTaskList();
       setText('research-list-status', userError(error, '任务列表加载失败。'));
@@ -3133,9 +3193,12 @@
     };
   }
 
-  async function selectTask(taskId, sessionId = null) {
+  async function selectTask(taskId, sessionId = null, knownSession = null) {
     const target = taskId || sessionId;
     if (!taskId && !sessionId) return;
+    // A selected session/task is newer than any list request already in flight.
+    // Its late success or failure must not replace this selection's list state.
+    state.taskListRequestGeneration += 1;
     state.taskGeneration += 1;
     state.reportVersionRequest += 1;
     cancelReportPoll();
@@ -3168,11 +3231,25 @@
     setText('research-summary-text', '正在恢复研究会话详情…');
     try {
       let task;
+      let sessionDetail = knownSession?.research_session_id === sessionId ? knownSession : null;
+      let activeTaskId = taskId;
       if (taskId) task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
-      else task = sessionTaskProjection(await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`));
-      if (state.selectedTaskId !== taskId && state.selectedSessionId !== sessionId) return;
+      else {
+        sessionDetail = sessionDetail || await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
+        const sessionProjection = sessionTaskProjection(sessionDetail);
+        activeTaskId = sessionProjection?.research_task_id || null;
+        if (state.selectedSessionId !== sessionId) return;
+        if (activeTaskId) {
+          state.selectedTaskId = activeTaskId;
+          upsertSessionTask(sessionProjection, sessionId);
+          let taskDetail = null;
+          try { taskDetail = await requestJson(`/api/research-tasks/${encodeURIComponent(activeTaskId)}`); } catch (_) { /* the owner-scoped session projection can still identify its report */ }
+          task = { ...sessionProjection, ...(taskDetail || {}) };
+        } else task = sessionProjection;
+      }
+      if (state.selectedTaskId !== activeTaskId && state.selectedSessionId !== sessionId) return;
       if (!task) throw new Error('研究会话不存在');
-      const listed = state.tasks.find((item) => item.research_task_id === taskId || item.research_session_id === sessionId) || {};
+      const listed = state.tasks.find((item) => item.research_task_id === activeTaskId || item.research_session_id === sessionId) || {};
       state.selectedTask = { ...listed, ...task };
       renderTaskHeader(task);
       renderPlan(task.plan);
@@ -3180,8 +3257,10 @@
       const resolvedSessionId = task.research_session_id || task.session_id || task.research_session?.research_session_id || sessionId;
       if (resolvedSessionId) {
         try {
-          const session = task.research_session?.research_session_id === resolvedSessionId ? task.research_session : await requestJson(`/api/research-sessions/${encodeURIComponent(resolvedSessionId)}`);
-          if (state.selectedTaskId !== taskId && state.selectedSessionId !== resolvedSessionId) { return; }
+          const session = task.research_session?.research_session_id === resolvedSessionId ? task.research_session
+            : sessionDetail?.research_session_id === resolvedSessionId ? sessionDetail
+              : await requestJson(`/api/research-sessions/${encodeURIComponent(resolvedSessionId)}`);
+          if (state.selectedTaskId !== activeTaskId && state.selectedSessionId !== resolvedSessionId) { return; }
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
           state.selectedTask = { ...state.selectedTask, ...(canonical || {}), research_session_id: resolvedSessionId, research_session: session, session_plan: session.plan, session_approvals: session.approvals || [], status: canonical?.status || state.selectedTask.status, conversation_id: session.conversation_id || state.selectedTask.conversation_id };
@@ -3192,11 +3271,12 @@
           renderSessionPlan(task.session_plan || task.research_plan || task.plan || null, task.session_approvals || task.approvals || task.approval || [], task.research_session || (sessionId ? { research_session_id: sessionId, current_plan_version: task.current_plan_version } : null));
         }
       }
+      upsertSessionTask(state.selectedTask, resolvedSessionId);
       setDetailVisibility(true);
       renderBenchmarkSummary();
-      if (taskId) {
-        await Promise.all([loadMatrix(taskId), loadReport(taskId)]);
-        if (state.selectedTaskId !== taskId) return;
+      if (activeTaskId) {
+        await Promise.all([loadMatrix(activeTaskId), loadReport(activeTaskId)]);
+        if (state.selectedTaskId !== activeTaskId) return;
         connectStream();
       } else {
         setText('research-report-state', '任务批准并完成后显示报告。');
@@ -3213,7 +3293,9 @@
   async function refreshWorkspace() {
     await conversationFromUrl();
     const tasks = await loadTasks();
-    const selected = state.selectedTaskId && tasks.find((task) => task.research_task_id === state.selectedTaskId)
+    const currentSessionId = currentConversationSessionId();
+    const selected = currentSessionId && tasks.find((task) => task.research_session_id === currentSessionId)
+      || state.selectedTaskId && tasks.find((task) => task.research_task_id === state.selectedTaskId)
       || state.selectedSessionId && tasks.find((task) => task.research_session_id === state.selectedSessionId)
       || tasks.find((task) => task.conversation_id === state.conversationId);
     // A selectTask is currently in flight loading a specific task/session. Do not
@@ -3223,7 +3305,8 @@
     // / connectStream never run), and a re-select here would open a duplicate SSE
     // pipe after approval.
     if (state.selectTaskInFlight) return;
-    if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
+    if (currentSessionId && !tasks.some((task) => task.research_session_id === currentSessionId)) await selectTask(null, currentSessionId);
+    else if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
     else {
       state.taskGeneration += 1;
       state.reportVersionRequest += 1;
@@ -3412,7 +3495,7 @@
     bindModeGuard(); bindNavigation(); bindNotifications();
     conversationFromUrl();
     loadTasks();
-    if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); refreshWorkspace(); }, 0);
+    if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); return refreshWorkspace(); }, 0);
   }
 
   const api = {
@@ -3435,6 +3518,7 @@
     api.selectReportVersion = selectReportVersion;
     api.generateReportVersion = generateReportVersion;
     api.uploadIssue = uploadIssue;
+    api.openNotification = openNotification;
   }
   return api;
 }));
