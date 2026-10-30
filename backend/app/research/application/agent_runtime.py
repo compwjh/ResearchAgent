@@ -29,7 +29,11 @@ from backend.app.research.application.matrix_contract import (
     matrix_validation_diagnostic,
     validate_synthesis_matrix_payload,
 )
-from backend.app.research.application.plan_authoring import PlanOutputInvalid, validate_safe_scope
+from backend.app.research.application.plan_authoring import (
+    PlanOutputInvalid,
+    is_safe_scope_diagnostic_path,
+    validate_safe_scope,
+)
 from backend.app.research.application.report_quality import (
     QUALITY_SCHEMA_VERSION,
     REPORT_CONTENT_SCHEMA_VERSION,
@@ -554,6 +558,9 @@ _OUTPUT_CONTRACT_PATHS = frozenset({
     "report_version", "sections", "citation_manifest", "artifact_ids", "evidence_matrix", "report_content",
     "research_task_id", "research_session_id", "owner_id",
 })
+_SAFE_OUTPUT_SAFETY_CLASSIFICATIONS = frozenset({
+    "forbidden_key", "url_value", "credential_pattern", "size_limit", "depth_limit", "shape_invalid", "unknown",
+})
 _REPORT_CONTENT_FIELD_PATH = re.compile(
     r"^report_content(?:\.[a-z][a-z0-9_]*(?:\[\])?)*$"
 )
@@ -571,6 +578,7 @@ def _output_contract_error(
     stage: str,
     *,
     field_paths: tuple[str, ...] = (),
+    safety_classification: str | None = None,
     message: str = "",
 ) -> AgentRuntimeError:
     """Create a stable output-contract error without retaining provider text."""
@@ -582,10 +590,18 @@ def _output_contract_error(
     # model-derived values cannot be persisted.
     safe_paths = tuple(
         path for path in field_paths
-        if path in _OUTPUT_CONTRACT_PATHS or _is_safe_report_content_path(path)
+        if path in _OUTPUT_CONTRACT_PATHS
+        or _is_safe_report_content_path(path)
+        or (stage == "safety" and is_safe_scope_diagnostic_path(path))
     )
     if safe_paths:
         error.output_contract_field_paths = safe_paths
+    if (
+        stage == "safety"
+        and isinstance(safety_classification, str)
+        and safety_classification in _SAFE_OUTPUT_SAFETY_CLASSIFICATIONS
+    ):
+        error.output_contract_safety_classification = safety_classification
     return error
 
 
@@ -631,10 +647,18 @@ def _output_contract_feedback(
         },
     }
     if safe is not None:
-        feedback["failure"] = {
+        failure = {
             "rule_id": safe[0],
             "field_paths": list(observed_paths) if observed_paths else list(safe[1]),
         }
+        if stage == "safety":
+            classification = getattr(validation_error, "output_contract_safety_classification", None)
+            failure["safety_classification"] = (
+                classification
+                if isinstance(classification, str) and classification in _SAFE_OUTPUT_SAFETY_CLASSIFICATIONS
+                else "unknown"
+            )
+        feedback["failure"] = failure
     paper_ids_path = "report_content.synthesis_findings[].paper_ids"
     if role == "synthesizer" and paper_ids_path in observed_paths:
         feedback["paper_ids_constraint"] = {
@@ -692,6 +716,13 @@ def _validation_diagnostic(
             diagnostic["rule_id"], paths = safe
             observed_paths = getattr(validation_error, "output_contract_field_paths", ())
             diagnostic["field_paths"] = list(observed_paths) if observed_paths else list(paths)
+            if stage == "safety":
+                classification = getattr(validation_error, "output_contract_safety_classification", None)
+                diagnostic["safety_classification"] = (
+                    classification
+                    if isinstance(classification, str) and classification in _SAFE_OUTPUT_SAFETY_CLASSIFICATIONS
+                    else "unknown"
+                )
     quality_failure_code = getattr(validation_error, "report_quality_failure_code", None)
     if isinstance(quality_failure_code, str) and quality_failure_code in _REPORT_QUALITY_FAILURE_CODES:
         diagnostic["failure_code"] = quality_failure_code
@@ -736,8 +767,9 @@ def _role_contract_prompt(
         "aggregate evidence_refs prove provenance only and cannot select papers. Each "
         "candidate_id must be one of the supplied IDs, and evidence_refs must cite only supplied "
         "catalog:<candidate_id> evidence. When an abstract is missing, a directly matching title "
-        "may support a title-only score; missing detail alone is not a reason to reject every "
-        "candidate. Do not invent abstract/content claims."
+        "may support a title-only score, but that decision is metadata-only rather than abstract "
+        "or full-text evidence; missing detail alone is not a reason to reject every candidate. "
+        "Do not invent abstract/content claims."
     )
     synthesis_boundary = (
         " For synthesizer, use validated_candidates from the user context and emit only the bounded report contract: "
@@ -2276,8 +2308,14 @@ class ResearchAgentRunner:
             raise _output_contract_error(output_observation or "provider_content")
         try:
             validate_safe_scope(dict(output))
-        except PlanOutputInvalid:
-            raise _output_contract_error("safety") from None
+        except PlanOutputInvalid as exc:
+            safe_field_path = getattr(exc, "safe_field_path", ())
+            field_path = ".".join(("output", *safe_field_path)) if safe_field_path else "output"
+            raise _output_contract_error(
+                "safety",
+                field_paths=(field_path,),
+                safety_classification=getattr(exc, "safety_classification", None),
+            ) from None
         source_refs = output.get("source_refs", [])
         if not isinstance(source_refs, list) or any(not isinstance(ref, str) or not ref.strip() or not all(char.isalnum() or char in ":_-" for char in ref) for ref in source_refs):
             raise _output_contract_error("structure", field_paths=("source_refs",))

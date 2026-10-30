@@ -125,7 +125,7 @@ _EVENT_SAFE_KEYS = {
     "attempt", "event_type", "from_tier", "to_tier", "granted", "source_ref", "facets_by_paper",
     "reason_code", "from_provider", "to_provider", "from_model", "to_model",
     "validation_diagnostic", "matrix_error_code", "rule_id", "field_paths",
-    "feedback_classification", "feedback_sent",
+    "feedback_classification", "feedback_sent", "safety_classification",
 }
 _EVENT_SENSITIVE_PARTS = ("prompt", "cot", "reasoning", "credential", "password", "secret", "token", "authorization", "cookie", "api_key", "access_key")
 

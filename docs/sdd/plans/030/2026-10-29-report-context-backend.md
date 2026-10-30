@@ -374,3 +374,31 @@ TDD RED 曾确认：计划 query 不含独立 topic；aggregate refs 被当成�
 | `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
 
 未运行全量、部署、真实模型或数据库写入；未修改 legacy 独立入口。
+
+## Agent 输出 safety 拒绝的安全诊断（2026-10-31）
+
+为调查自然语言 E2E 中 `agent.output.safety` 的重复拒绝，本 slice 为现有递归安全校验增加固定原因分类和 schema 白名单路径。拒绝谓词、阈值和执行顺序保持原意；不保存、回显或日志记录命中值、URL、未知原始键名或模型输出正文。classification 只通过既有 `validation_diagnostic` / retry feedback 传递，不增加 endpoint 或业务 schema。
+
+### 实现
+
+- `_walk_safe()` 的原拒绝分支附加闭集分类：`forbidden_key`、`url_value`、`credential_pattern`、`size_limit`、`depth_limit`；`validate_safe_scope()` 根值形状错误标为 `shape_invalid`。字符串长度、URL、credential marker、敏感/可执行键、对象/数组大小及深度限制均保持拒绝。
+- 安全路径只允许静态 schema 字段名与 `[]`；不在白名单的字段名统一折叠为 `unknown`。`PlanOutputInvalid` 的 message 保持固定安全字符串，不携带 offending key/value。AgentRuntime 再次校验路径与 classification 后，写入当前 `agent.output.safety` 的 field_paths/classification，并把相同信息传给下一次有界 retry；checkpoint/event 只存这些清理后元数据。
+- ResearchStore 的 event 安全键白名单只增加 `safety_classification`，保留诊断分类；没有改变事件顶层形状或公开请求/响应 schema。
+- evaluator 仍要求逐篇 `candidate_id`、`keep`、`relevance_score` 与本篇 catalog refs 并达到既有阈值；补回提示：title-only decision 属于 metadata-only，不代表 abstract/full-text evidence。`Do not invent abstract/content claims` 保留。
+
+### 回归与验收
+
+- 新增 runtime contract 覆盖 forbidden dynamic key、URL、credential assignment、超长值、超长列表和超深对象；断言拒绝依旧发生，classification/path 落在闭集内，未知键折叠成 `unknown`，value/URL/key marker 不进入 exception、feedback、checkpoint 或事件 JSON。
+- 集成 fake model 先返回安全拒绝输出、再返回合法输出，验证 retry feedback 接收安全分类与白名单路径；使用临时 ResearchStore 验证事件投影保存分类和安全路径，不含 URL 原文。
+- 原 `test_ollama_adapter_evaluator_allows_title_only_catalog_evidence` 的 `metadata-only` 断言保持，未删除或放宽逐篇评分要求。
+- RED 阶段新安全诊断用例与既有 metadata-only 用例共 8 项失败；实现后定向领域测试通过。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_agent_runtime_contract.py tests/research/test_research_agent_approval_contract.py tests/research/test_research_plan_approval_contract.py tests/research/test_intake_plan_repair.py -q` | 0 | 114 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/plan_authoring.py backend/app/research/application/agent_runtime.py backend/app/research/infrastructure/research_store.py tests/research/test_agent_runtime_contract.py tests/research/test_research_agent_approval_contract.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/plan_authoring.py backend/app/research/application/agent_runtime.py backend/app/research/infrastructure/research_store.py tests/research/test_agent_runtime_contract.py tests/research/test_research_agent_approval_contract.py` | 0 | 通过，无输出 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py` | 0 | test naming check passed |
+
+未运行全量、真实模型、线上 E2E、生产/本机主数据库写入、部署或 Git 操作。安全分类只能定位拒绝类型及安全路径；要确定自然语言 E2E 中具体命中的值类型，仍需下次运行版本产生该闭集诊断。

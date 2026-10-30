@@ -23,6 +23,7 @@ from backend.app.research.application.agent_runtime import (
 )
 from backend.app.research.application.approval_service import PlanApprovalService
 from backend.app.research.application.orchestrator import Orchestrator
+from backend.app.research.application.plan_authoring import PlanOutputInvalid, validate_safe_scope
 from backend.app.research.application.report_synthesis import report_output_hash
 from backend.app.research.domain.models import AgentCheckpoint, ResearchSession, ResearchTask, ResearchWorkItem
 from backend.app.research.infrastructure.research_store import AgentRunWriteDiscarded, ResearchStore
@@ -734,6 +735,178 @@ def test_nested_unsafe_output_is_rejected_before_checkpoint():
     result = _runner(model=FakeModel({"output_json": bad})).run(AgentRunInput("run-7", "session-1", "planner", skill_snapshot=_skill("planner")))
     assert result.status == "failed" and result.error_code == "AGENT_OUTPUT_INVALID"
     assert result.checkpoint_ref is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "classification", "field_path", "sensitive_marker"),
+    [
+        ({"private_prompt_blob": "do-not-copy"}, "forbidden_key", "unknown", "private_prompt_blob"),
+        ({"safe_summary": {"notes": "https://private.example/path"}}, "url_value", "safe_summary.notes", "private.example"),
+        ({"safe_summary": {"notes": "api_key=never-persist-this"}}, "credential_pattern", "safe_summary.notes", "never-persist-this"),
+        ({"safe_summary": {"notes": "x" * 4001}}, "size_limit", "safe_summary.notes", "x" * 40),
+        ({"source_refs": [str(index) for index in range(65)]}, "size_limit", "source_refs", ""),
+    ],
+)
+def test_safe_scope_rejections_have_closed_classification_and_schema_paths(
+    payload, classification, field_path, sensitive_marker,
+):
+    with pytest.raises(PlanOutputInvalid) as caught:
+        validate_safe_scope(payload)
+
+    error = caught.value
+    assert error.safety_classification == classification
+    assert ".".join(error.safe_field_path) == field_path
+    if sensitive_marker:
+        assert sensitive_marker not in str(error)
+        assert sensitive_marker not in json.dumps(error.safe_field_path)
+
+
+def test_safe_scope_depth_rejection_uses_unknown_path_segments_without_echoing_keys():
+    nested = "value"
+    for _ in range(8):
+        nested = {"private_data_branch": nested}
+
+    with pytest.raises(PlanOutputInvalid) as caught:
+        validate_safe_scope({"safe_summary": nested})
+
+    assert caught.value.safety_classification == "depth_limit"
+    assert caught.value.safe_field_path[0] == "safe_summary"
+    assert set(caught.value.safe_field_path[1:]) == {"unknown"}
+    assert "private_data_branch" not in str(caught.value)
+    assert "private_data_branch" not in json.dumps(caught.value.safe_field_path)
+
+
+def test_safety_classification_flows_to_retry_feedback_and_checkpoint_without_values():
+    marker = "api_key=do-not-persist-this"
+    invalid = _output("planner")
+    invalid["safe_summary"] = {"notes": marker}
+    model = FakeModel([
+        {"output_json": invalid},
+        {"output_json": _output("planner")},
+    ])
+    runner = _runner(model=model)
+
+    result = runner.run(AgentRunInput("safe-diagnostic", "session-1", "planner", skill_snapshot=_skill("planner")))
+
+    assert result.status == "completed"
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["rule_id"] == "agent.output.safety"
+    assert diagnostic["safety_classification"] == "credential_pattern"
+    assert diagnostic["field_paths"] == ["output.safe_summary.notes"]
+    feedback = model.calls[1][0]["validation_feedback"]["failure"]
+    assert feedback["safety_classification"] == "credential_pattern"
+    assert feedback["field_paths"] == ["output.safe_summary.notes"]
+    assert marker not in json.dumps(result.model_metadata)
+    assert marker not in json.dumps(feedback)
+    checkpoint_json = json.dumps(list(runner._checkpoints.values()), ensure_ascii=False)
+    assert marker not in checkpoint_json
+    assert "credential_pattern" in checkpoint_json
+
+
+def test_forbidden_dynamic_key_is_redacted_in_retry_feedback_and_checkpoint():
+    key_marker = "private_prompt_branch_with_secret"
+    value_marker = "provider-private-content"
+    invalid = _output("planner")
+    invalid[key_marker] = value_marker
+    model = FakeModel([
+        {"output_json": invalid},
+        {"output_json": _output("planner")},
+    ])
+    runner = _runner(model=model)
+
+    result = runner.run(AgentRunInput("safe-key-diagnostic", "session-1", "planner", skill_snapshot=_skill("planner")))
+
+    assert result.status == "completed"
+    diagnostic = result.model_metadata["validation_diagnostics"][0]
+    assert diagnostic["rule_id"] == "agent.output.safety"
+    assert diagnostic["safety_classification"] == "forbidden_key"
+    assert diagnostic["field_paths"] == ["output.unknown"]
+    feedback = model.calls[1][0]["validation_feedback"]["failure"]
+    assert feedback["safety_classification"] == "forbidden_key"
+    assert feedback["field_paths"] == ["output.unknown"]
+    safe_records = json.dumps({
+        "metadata": result.model_metadata,
+        "feedback": feedback,
+        "checkpoints": list(runner._checkpoints.values()),
+    })
+    assert key_marker not in safe_records
+    assert value_marker not in safe_records
+
+
+def test_safety_classification_persists_in_safe_event_projection(tmp_path):
+    marker = "https://private.example/path"
+    memory = MemoryRepository(tmp_path / "memory.sqlite3")
+    conversation, user, _ = memory.create_conversation_messages("owner-a", "q", None, "m", "normal")
+    session = ResearchSession(
+        uuid.uuid4().hex, "owner-a", conversation.conversation_id, user.message_id,
+        uuid.uuid4().hex, "intake_pending",
+    )
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    store.create_session(session, memory_repository=memory)
+    task_id = "task-safety-diagnostic"
+    store.create_task(ResearchTask(
+        research_task_id=task_id,
+        owner_id="owner-a",
+        conversation_id=conversation.conversation_id,
+        goal="q",
+        language="zh",
+        quality_profile="balanced",
+        review_plan_first=False,
+        target_paper_count=1,
+        soft_budget_seconds=900,
+        status="draft",
+        current_plan_version=1,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    ))
+    store.update_session_links(session.research_session_id, "owner-a", research_task_id=task_id)
+    work_item_id = "work-safety-diagnostic"
+    store.create_work_items(task_id, [ResearchWorkItem(
+        work_item_id=work_item_id,
+        research_task_id=task_id,
+        plan_version=1,
+        task_type="evaluate_papers",
+        role="paper-evaluator",
+        depends_on_json="[]",
+        input_json="{}",
+        status="queued",
+        attempt=1,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )])
+    invalid = {**_output("paper_evaluator"), "work_item_id": work_item_id}
+    invalid["safe_summary"] = {"notes": marker}
+    valid = {**_output("paper_evaluator"), "work_item_id": work_item_id}
+    model = FakeModel([{"output_json": invalid}, {"output_json": valid}])
+    runner = ResearchAgentRunner(
+        store=store,
+        model=model,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("paper_evaluator")]),
+    )
+
+    result = runner.run(AgentRunInput(
+        "safety-diagnostic-persist",
+        session.research_session_id,
+        "paper_evaluator",
+        skill_snapshot=_skill("paper_evaluator"),
+        owner_id="owner-a",
+        research_task_id=task_id,
+        work_item_id=work_item_id,
+    ))
+
+    assert result.status == "completed"
+    event_payloads = [event.safe_payload_json for event in store.list_events(task_id)]
+    diagnostics = [
+        json.loads(payload)["validation_diagnostic"]
+        for payload in event_payloads
+        if "validation_diagnostic" in json.loads(payload)
+    ]
+    assert diagnostics
+    assert diagnostics[0]["rule_id"] == "agent.output.safety"
+    assert diagnostics[0]["safety_classification"] == "url_value"
+    assert diagnostics[0]["field_paths"] == ["output.safe_summary.notes"]
+    assert all(marker not in payload for payload in event_payloads)
+    assert all("private.example" not in payload for payload in event_payloads)
 
 
 def test_tool_exception_is_stable_failure():

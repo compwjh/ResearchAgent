@@ -44,6 +44,29 @@ _FORBIDDEN_KEYS = frozenset({
     "password", "api_key", "authorization", "token", "cookie", "credential", "credentials",
 })
 _URL_RE = re.compile(r"(?:https?://|ftp://|www\.|localhost(?::\d+)?(?:/|$)|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:/|$))", re.IGNORECASE)
+_SAFE_DIAGNOSTIC_CLASSIFICATIONS = frozenset({
+    "forbidden_key", "url_value", "credential_pattern", "size_limit", "depth_limit", "shape_invalid",
+})
+_SAFE_DIAGNOSTIC_FIELDS = frozenset({
+    "schema_version", "plan_version", "output_hash", "objective", "scope", "work_items",
+    "capabilities", "budget", "report_structure", "safe_summary", "source_refs", "decision",
+    "notes", "constraints", "degraded", "id", "task_type", "role", "depends_on", "params",
+    "catalog_paper_ids", "relevance_threshold", "facets", "language", "query", "source",
+    "sources", "source_ids", "years", "from_year", "to_year", "limit", "max_results",
+    "target_paper_count", "minimum_paper_count", "work_item_id", "research_task_id",
+    "research_session_id", "owner_id", "candidate_id", "catalog_paper_id", "paper_id",
+    "candidate_ids", "catalog_evidence", "kept", "keep", "relevance_score", "reason",
+    "evidence_refs", "title", "abstract", "keywords", "summary", "year", "source_id",
+    "source_kinds", "publication_year", "coverage", "gaps", "recommendations", "bounded_replan",
+    "report_version", "sections", "citation_manifest", "artifact_ids", "evidence_matrix",
+    "report_content", "heading", "citation_ref", "paper_ids", "claim_id", "dimension_id",
+    "statement", "confidence", "status", "topic", "evidence_ids", "evidence_level", "stance",
+    "quote_digest", "locator", "catalog_snapshot_id", "abstract_ref", "abstract_digest",
+    "cells", "claims", "evidence", "label", "definition", "display_order", "missing_reason",
+    "skill", "name", "version", "enabled", "tools", "source_ref", "content_hash", "tool_name",
+    "allowed_params", "required_params", "parameters", "properties", "type", "enum", "items",
+    "description", "format", "citations", "title_only", "metadata_only", "verified",
+})
 
 
 class ResearchPlanOutput(BaseModel):
@@ -74,6 +97,41 @@ class ResearchPlanOutput(BaseModel):
 class PlanOutputInvalid(ValueError):
     code = "AGENT_OUTPUT_INVALID"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        safety_classification: str | None = None,
+        safe_field_path: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.safety_classification = (
+            safety_classification
+            if safety_classification in _SAFE_DIAGNOSTIC_CLASSIFICATIONS
+            else None
+        )
+        self.safe_field_path = tuple(
+            part for part in safe_field_path
+            if part in _SAFE_DIAGNOSTIC_FIELDS or part == "unknown" or part == "[]"
+        )
+
+
+def _safe_diagnostic_segment(key: Any) -> str:
+    normalized = str(key).casefold().replace("-", "_")
+    return normalized if normalized in _SAFE_DIAGNOSTIC_FIELDS else "unknown"
+
+
+def is_safe_scope_diagnostic_path(path: str) -> bool:
+    """Check a generated output path against the same static schema-name allowlist."""
+    if not isinstance(path, str) or len(path) > 256:
+        return False
+    parts = path.split(".")
+    return (
+        bool(parts)
+        and parts[0] == "output"
+        and all(part in _SAFE_DIAGNOSTIC_FIELDS or part in {"unknown", "[]"} for part in parts[1:])
+    )
+
 
 def _canonical_without_hash(payload: dict[str, Any]) -> bytes:
     value = {key: item for key, item in payload.items() if key != "output_hash"}
@@ -85,36 +143,79 @@ def plan_output_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical_without_hash(payload)).hexdigest()
 
 
-def _walk_safe(value: Any, *, depth: int = 0) -> None:
+def _walk_safe(value: Any, *, depth: int = 0, safe_path: tuple[str, ...] = ()) -> None:
     if depth > 6:
-        raise PlanOutputInvalid("plan nesting exceeds limit")
+        raise PlanOutputInvalid(
+            "plan nesting exceeds limit",
+            safety_classification="depth_limit",
+            safe_field_path=safe_path,
+        )
     if isinstance(value, dict):
         if len(value) > 64:
-            raise PlanOutputInvalid("plan object has too many fields")
+            raise PlanOutputInvalid(
+                "plan object has too many fields",
+                safety_classification="size_limit",
+                safe_field_path=safe_path,
+            )
         for key, child in value.items():
             normalized = str(key).casefold().replace("-", "_")
+            child_path = (*safe_path, _safe_diagnostic_segment(key))
             if normalized in _FORBIDDEN_KEYS or any(token in normalized for token in ("prompt", "cot", "chainofthought", "chain_of_thought", "url")):
-                raise PlanOutputInvalid("reasoning fields are not allowed")
+                raise PlanOutputInvalid(
+                    "reasoning fields are not allowed",
+                    safety_classification="forbidden_key",
+                    safe_field_path=child_path,
+                )
             if any(token in normalized for token in ("shell", "python", "code", "exec", "eval")):
-                raise PlanOutputInvalid("executable capability is not allowed")
-            _walk_safe(child, depth=depth + 1)
+                raise PlanOutputInvalid(
+                    "executable capability is not allowed",
+                    safety_classification="forbidden_key",
+                    safe_field_path=child_path,
+                )
+            _walk_safe(child, depth=depth + 1, safe_path=child_path)
     elif isinstance(value, list):
         if len(value) > 64:
-            raise PlanOutputInvalid("plan list is too large")
+            raise PlanOutputInvalid(
+                "plan list is too large",
+                safety_classification="size_limit",
+                safe_field_path=safe_path,
+            )
         for child in value:
-            _walk_safe(child, depth=depth + 1)
+            _walk_safe(child, depth=depth + 1, safe_path=(*safe_path, "[]"))
     elif isinstance(value, str):
         lowered = value.casefold()
-        if len(value) > 4000 or _URL_RE.search(value) or any(
-            marker in lowered for marker in ("authorization:", "bearer ", "api_key=", "password=", "cookie:", "token=")
-        ):
-            raise PlanOutputInvalid("unsafe or oversized plan value")
+        if len(value) > 4000:
+            raise PlanOutputInvalid(
+                "unsafe or oversized plan value",
+                safety_classification="size_limit",
+                safe_field_path=safe_path,
+            )
+        if _URL_RE.search(value):
+            raise PlanOutputInvalid(
+                "unsafe or oversized plan value",
+                safety_classification="url_value",
+                safe_field_path=safe_path,
+            )
+        if any(marker in lowered for marker in ("authorization:", "bearer ", "api_key=", "password=", "cookie:", "token=")):
+            raise PlanOutputInvalid(
+                "unsafe or oversized plan value",
+                safety_classification="credential_pattern",
+                safe_field_path=safe_path,
+            )
 
 
 def validate_safe_scope(value: Any) -> None:
     """Apply the plan's recursive safety policy to command scope payloads."""
-    if not isinstance(value, dict) or len(value) > 32:
-        raise PlanOutputInvalid("scope_json must be a finite object")
+    if not isinstance(value, dict):
+        raise PlanOutputInvalid(
+            "scope_json must be a finite object",
+            safety_classification="shape_invalid",
+        )
+    if len(value) > 32:
+        raise PlanOutputInvalid(
+            "scope_json must be a finite object",
+            safety_classification="size_limit",
+        )
     _walk_safe(value)
 
 
