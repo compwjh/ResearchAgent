@@ -8,6 +8,7 @@ from backend.app.research.application.agent_runtime import (
     ResearchAgentRunner,
     RoleCapabilityRegistry,
     _hash,
+    _OllamaRunnerAdapter,
     _role_contract_prompt,
 )
 from backend.app.research.application.report_quality import count_report_content_cjk
@@ -248,6 +249,65 @@ def test_drafting_prompt_targets_final_bounds_without_asking_model_to_count_or_h
     assert "three" in prompt.casefold()
     assert "do not calculate" in prompt.casefold()
     assert "sha-256" not in prompt.casefold()
+
+
+def test_report_prompt_carries_scope_and_evidence_fidelity_rules_for_mixed_authentication_examples():
+    """Prompt regression only; a fake chat model captures instructions, not semantic output quality."""
+    context = _quality_context()
+    context["research_question"] = "口令登录安全面临哪些威胁？"
+    context["evidence"] = [
+        {
+            "evidence_id": "evidence-1", "paper_id": "paper-1", "evidence_level": "abstract",
+            "excerpt": "Browser fingerprint replication can deceive website risk authentication.",
+        },
+        {
+            "evidence_id": "evidence-2", "paper_id": "paper-2", "evidence_level": "abstract",
+            "excerpt": "MIGP reduced a simulated 1,000-guess attack by 94%; the authors also collaborated with Cloudflare on a practical deployment.",
+        },
+        {
+            "evidence_id": "evidence-3", "paper_id": "paper-3", "evidence_level": "abstract",
+            "excerpt": "PAL uses ARM Pointer Authentication for kernel control-flow integrity.",
+        },
+        {
+            "evidence_id": "evidence-4", "paper_id": "paper-4", "evidence_level": "abstract",
+            "excerpt": "The study measures DANE misconfiguration in SMTP and TLSA certificate operations.",
+        },
+        {
+            "evidence_id": "evidence-5", "paper_id": "paper-5", "evidence_level": "abstract",
+            "excerpt": "The study evaluates deepfake attacks against facial liveness verification.",
+        },
+    ]
+
+    class CapturingChatModel:
+        def invoke(self, messages):
+            self.messages = messages
+            return "{}"
+
+    model = CapturingChatModel()
+    adapter = _OllamaRunnerAdapter(model, model_name="test-model", effort="off")
+    adapter.invoke({
+        "role": "synthesizer",
+        "server_work_item_id": "work-1",
+        "work_item_input": {"report_version": 4, "report_quality_context": context},
+    })
+
+    system_prompt = model.messages[0]["content"].casefold()
+    supplied_context = json.loads(model.messages[1]["content"])["work_item_input"]["report_quality_context"]
+    assert supplied_context["evidence"][1]["excerpt"].endswith("a practical deployment.")
+    assert supplied_context["evidence"][2]["excerpt"].startswith("PAL uses ARM Pointer Authentication")
+    assert supplied_context["evidence"][3]["excerpt"].startswith("The study measures DANE")
+    assert "direct, adjacent, or cross-domain" in system_prompt
+    assert "what is authenticated or protected" in system_prompt
+    assert "do not classify by keyword overlap" in system_prompt
+    assert "simulation result" in system_prompt and "deployment fact" in system_prompt
+    assert "do not say deployment is absent or unverified" in system_prompt
+    assert "label reviewer-derived gaps as inferences" in system_prompt
+    assert "do not invent" in system_prompt and "full-text" in system_prompt
+    assert "paper_analyses:[{paper_id,method,findings,limitations}]" in system_prompt
+    assert all(
+        term.casefold() not in system_prompt
+        for term in ("cloudflare", "migp", "pointer authentication", "dane", "smtp")
+    )
 
 
 def test_legacy_synthesizer_context_still_accepts_missing_report_content():
