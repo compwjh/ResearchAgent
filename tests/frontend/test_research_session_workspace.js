@@ -6,6 +6,12 @@ const {
   sessionProgressText,
   sessionApprovalText,
   sessionAgentToolText,
+  reportPublicationText,
+  reportQualityMetrics,
+  reportProgressText,
+  reportReasonCodes,
+  reportDownloadAllowed,
+  isQualityValidated,
 } = require('../../frontend/research-tasks.js');
 
 const session = sessionTaskProjection({
@@ -63,4 +69,63 @@ assert.equal(sessionTaskProjection({
   research_session_id: 'stale-session', status: 'queued',
   task: { research_task_id: 'terminal-task', status: 'partial' },
 }).status, 'partial');
+
+const publishedReport = {
+  report_version: 4,
+  status: 'completed',
+  reason_codes: [],
+  quality_validation: {
+    schema_version: 'report-quality-v1', count_method: 'report-quality-v1', status: 'pass',
+    cjk_count: 1604, paper_count: 5, comparison_count: 2, supported_finding_count: 3,
+    revision_count: 1, failure_codes: [],
+  },
+  generation: { published: true, budget: { report_totals: { elapsed_seconds: 42.5 } } },
+  limitations: { evidence_level: 'abstract' },
+};
+assert.equal(reportPublicationText(publishedReport), '正式发布');
+assert.deepEqual(reportQualityMetrics(publishedReport), [
+  { label: '正文 CJK', value: '1,604 / 1,500' },
+  { label: '有效逐篇', value: '5 / 5' },
+  { label: '有效比较', value: '2 / 1' },
+  { label: '支持发现', value: '3 / 3' },
+  { label: '定向改写', value: '1 / 2' },
+  { label: '证据等级', value: '摘要证据' },
+]);
+assert.equal(reportProgressText(publishedReport, [{ stage: 'published', elapsed_seconds: 42.5 }]), '报告已发布 · 已用 42.5 秒');
+assert.equal(reportReasonCodes({ reason_codes: ['CJK_COUNT_BELOW_MINIMUM', 'CJK_COUNT_BELOW_MINIMUM'] }).join(', '), 'CJK_COUNT_BELOW_MINIMUM');
+assert.equal(reportPublicationText({ status: 'draft', quality_validation: { status: 'fail' }, generation: { published: false } }), '未发布草稿');
+assert.equal(reportPublicationText({ status: 'completed' }), '旧版，未按本质量合同核验');
+assert.equal(reportProgressText({ status: 'generating' }, [{ stage: 'targeted_revision', elapsed_seconds: 18 }]), '定向补写 · 已用 18 秒');
+assert.equal(reportDownloadAllowed({ status: 'draft', generation: { published: false } }), false);
+assert.equal(reportDownloadAllowed({ status: 'generating', published: false }), false);
+assert.equal(reportDownloadAllowed({ ...publishedReport, status: 'generating' }), false);
+assert.equal(reportDownloadAllowed({ ...publishedReport, quality_validation: { ...publishedReport.quality_validation, status: 'fail' } }), false);
+assert.equal(reportDownloadAllowed(publishedReport), true);
+assert.equal(reportDownloadAllowed({ status: 'completed' }), true, 'legacy published-version download behavior remains available');
+assert.equal(reportDownloadAllowed({ status: 'completed', published: true }), true, 'published legacy versions remain downloadable');
+assert.equal(isQualityValidated(publishedReport), true);
+const malformedQualityReport = {
+  ...publishedReport,
+  quality_validation: { ...publishedReport.quality_validation, schema_version: 'report-quality-v0', count_method: 'legacy-counter' },
+};
+assert.equal(isQualityValidated(malformedQualityReport), false);
+assert.equal(reportPublicationText(malformedQualityReport), '旧版，未按本质量合同核验');
+assert.deepEqual(reportQualityMetrics(malformedQualityReport), []);
+assert.equal(reportDownloadAllowed(malformedQualityReport), false);
+const malformedUnpublishedMetadata = {
+  ...malformedQualityReport,
+  published: undefined,
+  generation: { ...malformedQualityReport.generation, published: undefined },
+};
+assert.equal(reportDownloadAllowed(malformedUnpublishedMetadata), false, 'malformed quality cannot use the legacy download fallback');
+const qualityWithoutPublication = {
+  ...publishedReport,
+  published: undefined,
+  generation: { ...publishedReport.generation, published: undefined },
+};
+assert.equal(reportDownloadAllowed(qualityWithoutPublication), false, 'quality-v1 reports require an explicit published=true signal');
+const missingQualityReport = { ...publishedReport, quality_validation: undefined };
+assert.equal(reportPublicationText(missingQualityReport), '旧版，未按本质量合同核验');
+assert.deepEqual(reportQualityMetrics(missingQualityReport), []);
+assert.equal(reportDownloadAllowed(missingQualityReport), false, 'a present but missing quality field is not a pure legacy version');
 console.log('Task09 frontend Session/Fake-DOM contract: PASS');

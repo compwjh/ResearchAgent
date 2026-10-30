@@ -37,3 +37,30 @@ def test_report_workspace_uses_text_dom_boundaries_and_responsive_styles():
     assert "textContent" in RESEARCH
     for marker in ("research-matrix-table", "research-citation-button", "research-report-format-tab", "max-width: 760px"):
         assert marker in STYLES
+
+
+def test_report_quality_feedback_exposes_publication_metrics_progress_and_retry():
+    for marker in (
+        'id="research-report-feedback"',
+        'id="research-report-publication"',
+        'id="research-report-progress"',
+        'id="research-report-quality-metrics"',
+        'id="research-report-reasons"',
+        'id="research-report-retry"',
+    ):
+        assert marker in INDEX
+    for marker in (
+        "report-quality-v1",
+        "Idempotency-Key",
+        "report_url",
+        "quality_validation",
+        "elapsed_seconds",
+        "renderReportFeedback",
+        "scheduleReportPoll",
+        "reportDownloadAllowed",
+        "isQualityValidated",
+    ):
+        assert marker in RESEARCH
+    for marker in ("research-report-feedback", "research-report-quality-metric", "research-report-retry"):
+        assert marker in STYLES
+    assert "innerHTML" not in RESEARCH

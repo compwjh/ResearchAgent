@@ -20,7 +20,7 @@
     waiting_approval: '等待审批', interrupted: '研究已中断',
   };
   const STATUS_TEXT = {
-    draft: '草稿', intake_pending: '等待补充研究参数', plan_generating: '生成计划中', plan_pending_approval: '等待计划审核',
+    draft: '草稿', generating: '生成中', intake_pending: '等待补充研究参数', plan_generating: '生成计划中', plan_pending_approval: '等待计划审核',
     queued: '排队中', waiting_retry: '等待重试', planning: '规划中', running: '执行中', paused: '已暂停', waiting_approval: '等待审批', recovery_required: '需要恢复',
     partial: '部分完成', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
   };
@@ -51,6 +51,11 @@
     completed: '已完成', rejected: '已拒绝',
   };
   const EVIDENCE_TEXT = { catalog: '目录证据', abstract: '摘要证据', fulltext: '全文证据' };
+  const REPORT_STAGE_TEXT = Object.freeze({
+    evidence_review: '证据整理', comparison: '论文比较', drafting: '报告写作',
+    quality_check: '质量校验', targeted_revision: '定向补写', published: '报告已发布',
+    draft_saved: '草稿已保存', failed: '生成失败',
+  });
   const ACQUISITION_STATUS_TEXT = {
     existing: '已有知识库', pending: '待导入', queued: '排队中', downloading: '下载中', processing: '处理中',
     indexing: '索引中', completed: '已完成', partial_success: '部分完成', waiting_login: '等待登录',
@@ -158,12 +163,15 @@
     selectTaskInFlight: null,
     taskGeneration: 0,
     reportVersionRequest: 0,
+    reportPollTimer: null,
+    reportPoll: null,
     paperDisplays: new Map(),
     paperDisplaysPending: new Set(),
     acquisition: {
       preview: [], status: null, links: [], items: [], events: [], evidence: [], selectionVersion: null,
       selectedIds: new Set(), searchId: null, loading: false, confirming: false,
       issues: [], reportActionMessage: '', reportActionTaskIds: [], reportActionStatus: '', reportActionVersion: null,
+      reportActionRequestKey: null, reportActionRequestTaskId: null, reportActionRetryMode: null,
       reportActionInFlight: false, retrying: new Set(), issueActions: new Set(), pollTimer: null, generation: 0,
     },
   };
@@ -289,6 +297,123 @@
   }
 
   function statusLabel(status) { return STATUS_TEXT[status] || '未知状态'; }
+
+  function isReportQualityV1(report) {
+    const quality = report?.quality_validation;
+    return Boolean(quality && typeof quality === 'object' && !Array.isArray(quality)
+      && quality.schema_version === 'report-quality-v1'
+      && quality.count_method === 'report-quality-v1');
+  }
+
+  function reportIsPublished(report) {
+    return report?.published === true || report?.generation?.published === true;
+  }
+
+  function isQualityValidated(report) {
+    return Boolean(report && report.status === 'completed' && reportIsPublished(report)
+      && isReportQualityV1(report) && report.quality_validation.status === 'pass');
+  }
+
+  function reportDownloadAllowed(report) {
+    if (!report || explicitlyUnpublished(report)) return false;
+    const hasQualityValidation = Object.prototype.hasOwnProperty.call(report, 'quality_validation');
+    if (hasQualityValidation) return isQualityValidated(report);
+    if (report.status !== 'completed') return false;
+    return reportIsPublished(report)
+      || (report.published === undefined && report.generation?.published === undefined);
+  }
+
+  function reportPublicationText(report) {
+    if (!report || typeof report !== 'object') return '';
+    const status = String(report.status || '');
+    const qualityStatus = report.quality_validation?.status || report.quality_status;
+    if (status === 'generating' || qualityStatus === 'pending') return '生成中 · 尚未发布';
+    if (!isReportQualityV1(report)) {
+      if (report.generation?.path === 'matrix_api') return '草稿 · 未按本质量合同核验';
+      if (status === 'draft') return '未发布草稿';
+      if (status === 'partial') return '部分完成 · 未发布';
+      if (status === 'failed') return '生成失败 · 未发布';
+      return '旧版，未按本质量合同核验';
+    }
+    if (isQualityValidated(report)) return '正式发布';
+    if (status === 'partial') return '部分完成 · 未发布';
+    if (status === 'draft') return '未发布草稿';
+    if (status === 'failed') return '生成失败 · 未发布';
+    if (status === 'completed' && reportIsPublished(report)) return '发布状态与质量核验不一致';
+    return '未发布';
+  }
+
+  function reportQualityMetrics(report) {
+    if (!isReportQualityV1(report)) return [];
+    const quality = report.quality_validation;
+    const count = (value, target) => Number.isInteger(value) && value >= 0 ? `${value.toLocaleString('en-US')} / ${target}` : `未知 / ${target}`;
+    const directEvidenceLevel = report.limitations?.evidence_level || report.evidence_level
+      || report.evidence_summary?.evidence_level || report.generation?.evidence_level;
+    const citationLevels = Array.isArray(report.citation_manifest?.citations)
+      ? report.citation_manifest.citations.map((citation) => citation?.source_level) : [];
+    const selectionLevels = Array.isArray(report.selections)
+      ? report.selections.map((selection) => selection?.evidence_level) : [];
+    const evidenceLevels = [...new Set([directEvidenceLevel, ...citationLevels, ...selectionLevels].filter((level) => EVIDENCE_TEXT[level]))];
+    const evidenceText = evidenceLevels.map((level) => EVIDENCE_TEXT[level]).join(' + ');
+    return [
+      { label: '正文 CJK', value: count(quality.cjk_count, '1,500') },
+      { label: '有效逐篇', value: count(quality.paper_count, '5') },
+      { label: '有效比较', value: count(quality.comparison_count, '1') },
+      { label: '支持发现', value: count(quality.supported_finding_count, '3') },
+      { label: '定向改写', value: count(quality.revision_count, '2') },
+      { label: '证据等级', value: evidenceText || '—' },
+    ];
+  }
+
+  function reportReasonCodes(report) {
+    if (!report || typeof report !== 'object') return [];
+    const candidates = [
+      ...(Array.isArray(report.reason_codes) ? report.reason_codes : []),
+      ...(Array.isArray(report.quality_validation?.failure_codes) ? report.quality_validation.failure_codes : []),
+      report.generation?.fallback_reason_code,
+    ];
+    return [...new Set(candidates.filter((code) => typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(code)))].slice(0, 32);
+  }
+
+  function reportStageText(stage) { return REPORT_STAGE_TEXT[String(stage || '')] || ''; }
+
+  function reportElapsedText(seconds) {
+    if (seconds === null || seconds === undefined || seconds === '') return '';
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) return '';
+    const formatted = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
+    return `已用 ${formatted} 秒`;
+  }
+
+  function reportProgressText(report, events = []) {
+    const version = safePositiveInteger(report?.report_version);
+    const matching = (Array.isArray(events) ? events : []).filter((event) => {
+      const payload = event?.payload && typeof event.payload === 'object' ? event.payload : event;
+      const eventVersion = safePositiveInteger(payload?.report_version);
+      return (!event?.type || event.type === 'report') && (!version || !eventVersion || eventVersion === version);
+    });
+    const event = matching[matching.length - 1];
+    const payload = event?.payload && typeof event.payload === 'object' ? event.payload : event;
+    const stage = reportStageText(payload?.stage) || (report?.status === 'generating'
+      ? '等待报告阶段事件' : report?.status === 'failed' ? '生成失败' : report?.status === 'draft' ? '草稿已保存' : '');
+    const elapsed = reportElapsedText(payload?.elapsed_seconds)
+      || reportElapsedText(report?.generation?.budget?.report_totals?.elapsed_seconds);
+    return [stage, elapsed].filter(Boolean).join(' · ');
+  }
+
+  function reportEventText(payload) {
+    if (!payload || typeof payload !== 'object') return '收到报告进度事件';
+    const parts = [reportStageText(payload.stage) || '报告进度已更新'];
+    const version = safePositiveInteger(payload.report_version);
+    const revision = Number.isInteger(payload.revision_count) && payload.revision_count >= 0 ? payload.revision_count : null;
+    if (version) parts.push(`版本 v${version}`);
+    if (revision !== null) parts.push(`定向改写 ${revision}/2`);
+    const elapsed = reportElapsedText(payload.elapsed_seconds);
+    if (elapsed) parts.push(elapsed);
+    const reason = typeof payload.reason_code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(payload.reason_code) ? payload.reason_code : '';
+    if (reason) parts.push(`原因码：${reason}`);
+    return parts.join(' · ');
+  }
 
   function retryInsightText(task) {
     if (!task || typeof task !== 'object') return '';
@@ -1393,7 +1518,7 @@
       const item = state.document.createElement('li'); item.className = 'research-event';
       const title = state.document.createElement('div'); title.className = 'research-event-title'; title.textContent = `#${event.seq} · ${eventTitle(event.type)}`;
       const meta = state.document.createElement('div'); meta.className = 'research-event-meta'; meta.textContent = text(event.timestamp || event.created_at, '事件时间未知');
-      const summary = state.document.createElement('p'); summary.className = 'research-event-summary'; summary.textContent = payloadText(event.payload);
+      const summary = state.document.createElement('p'); summary.className = 'research-event-summary'; summary.textContent = event.type === 'report' ? reportEventText(event.payload) : payloadText(event.payload);
       item.append(title, meta, summary); list.appendChild(item);
     });
     const hasRealTerminal = events.some((event) => event.type === 'terminal');
@@ -1742,44 +1867,188 @@
       || safePositiveInteger(state.report?.plan_version) || 1;
   }
 
-  async function readGeneratedReportVersion(taskId, version, requestGeneration = state.taskGeneration) {
+  function reportGenerationStorageKey(taskId) { return `research-report-request:${taskId}`; }
+
+  function createReportRequestUuid() {
+    if (typeof root.crypto?.randomUUID === 'function') return root.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    if (typeof root.crypto?.getRandomValues === 'function') root.crypto.getRandomValues(bytes);
+    else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  function validReportRequestUuid(value) {
+    return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  function getReportGenerationKey(taskId) {
+    if (state.acquisition.reportActionRequestTaskId === taskId && validReportRequestUuid(state.acquisition.reportActionRequestKey)) {
+      return state.acquisition.reportActionRequestKey;
+    }
+    const storageKey = reportGenerationStorageKey(taskId);
+    let existing = '';
+    try { existing = root.localStorage?.getItem(storageKey) || ''; } catch (_) { /* storage may be disabled */ }
+    const key = validReportRequestUuid(existing) ? existing : createReportRequestUuid();
+    state.acquisition.reportActionRequestKey = key;
+    state.acquisition.reportActionRequestTaskId = taskId;
+    try { root.localStorage?.setItem(storageKey, key); } catch (_) { /* in-memory retry still reuses the key */ }
+    return key;
+  }
+
+  function storedReportGenerationKey(taskId) {
+    if (state.acquisition.reportActionRequestTaskId === taskId && validReportRequestUuid(state.acquisition.reportActionRequestKey)) {
+      return state.acquisition.reportActionRequestKey;
+    }
+    try {
+      const key = root.localStorage?.getItem(reportGenerationStorageKey(taskId)) || '';
+      return validReportRequestUuid(key) ? key : '';
+    } catch (_) { return ''; }
+  }
+
+  function clearReportGenerationKey(taskId) {
+    if (state.acquisition.reportActionRequestTaskId === taskId) {
+      state.acquisition.reportActionRequestKey = null;
+      state.acquisition.reportActionRequestTaskId = null;
+    }
+    try { root.localStorage?.removeItem(reportGenerationStorageKey(taskId)); } catch (_) { /* storage may be disabled */ }
+  }
+
+  function reportJsonUrl(taskId, version, candidate = '') {
+    const expected = versionedReportUrl(taskId, version, 'json');
+    return expected && candidate === expected ? candidate : expected;
+  }
+
+  function explicitlyUnpublished(report) {
+    return report?.published === false || report?.generation?.published === false;
+  }
+
+  async function reportArtifactsForVersion(taskId, version, report) {
+    if (explicitlyUnpublished(report)) return [];
+    const sessionId = state.selectedTask?.research_session_id || state.selectedTask?.research_session?.research_session_id;
+    if (!sessionId) return Array.isArray(report?.artifacts) ? report.artifacts : [];
+    const data = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}/artifacts?report_version=${encodeURIComponent(version)}`);
+    return Array.isArray(data?.artifacts) ? data.artifacts : [];
+  }
+
+  function cancelReportPoll() {
+    if (state.reportPollTimer) root.clearTimeout(state.reportPollTimer);
+    state.reportPollTimer = null;
+    state.reportPoll = null;
+  }
+
+  function scheduleReportPoll(taskId, version, reportUrl, requestGeneration = state.taskGeneration, delay = 1800) {
+    const safeTaskId = normalizeReportActionTaskId(taskId);
+    const safeVersion = safePositiveInteger(version);
+    const url = reportJsonUrl(safeTaskId, safeVersion, reportUrl);
+    if (!safeTaskId || !safeVersion || !url || !isCurrentTaskGeneration(safeTaskId, requestGeneration)) return;
+    if (state.reportPollTimer) root.clearTimeout(state.reportPollTimer);
+    const poll = { taskId: safeTaskId, version: safeVersion, reportUrl: url, requestGeneration };
+    state.reportPoll = poll;
+    state.reportPollTimer = root.setTimeout(() => {
+      state.reportPollTimer = null;
+      return pollReportVersion(poll);
+    }, delay);
+  }
+
+  async function pollReportVersion(poll) {
+    if (!poll || state.reportPoll !== poll || !isCurrentTaskGeneration(poll.taskId, poll.requestGeneration)) return null;
+    try {
+      const canonical = await requestJson(poll.reportUrl);
+      if (state.reportPoll !== poll || !isCurrentTaskGeneration(poll.taskId, poll.requestGeneration)) return null;
+      if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical) || safePositiveInteger(canonical.report_version) !== poll.version) {
+        const error = new Error('报告版本响应无效'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      }
+      if (safePositiveInteger(state.report?.report_version) === poll.version) {
+        await readGeneratedReportVersion(poll.taskId, poll.version, poll.requestGeneration, {
+          requestId: state.reportVersionRequest, reportUrl: poll.reportUrl, canonical,
+        });
+      }
+      if (canonical.status === 'generating' && !reportIsPublished(canonical)) {
+        scheduleReportPoll(poll.taskId, poll.version, poll.reportUrl, poll.requestGeneration, 1800);
+        return canonical;
+      }
+      if (state.reportPoll === poll) {
+        state.reportPoll = null;
+        if (isQualityValidated(canonical)) {
+          state.acquisition.reportActionStatus = 'completed';
+          state.acquisition.reportActionRetryMode = null;
+          state.acquisition.reportActionMessage = `报告 v${poll.version} 已正式发布。`;
+          setAcquisitionStatus(state.acquisition.reportActionMessage, 'completed');
+        } else {
+          state.acquisition.reportActionStatus = 'available';
+          state.acquisition.reportActionRetryMode = null;
+          const outcome = explicitlyUnpublished(canonical)
+            ? '未通过正式发布校验，保留为未发布版本。'
+            : '状态或质量合同字段不完整，未标记为正式发布。';
+          state.acquisition.reportActionMessage = `报告 v${poll.version} ${outcome} 可重试生成新版本。${reportReasonCodes(canonical).join(' · ')}`;
+          setAcquisitionStatus(state.acquisition.reportActionMessage, 'failed');
+        }
+        renderAcquisition();
+        renderReportFeedback();
+      }
+      return canonical;
+    } catch (_) {
+      if (state.reportPoll === poll && isCurrentTaskGeneration(poll.taskId, poll.requestGeneration)) {
+        scheduleReportPoll(poll.taskId, poll.version, poll.reportUrl, poll.requestGeneration, 4000);
+      }
+      return null;
+    }
+  }
+
+  async function readGeneratedReportVersion(taskId, version, requestGeneration = state.taskGeneration, options = {}) {
     const safeTaskId = normalizeReportActionTaskId(taskId);
     const safeVersion = safePositiveInteger(version);
     if (!safeTaskId || !safeVersion) return null;
-    if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+    const isCurrent = () => isCurrentTaskGeneration(safeTaskId, requestGeneration)
+      && (options.requestId === undefined || state.reportVersionRequest === options.requestId);
+    if (!isCurrent()) return null;
     const previousReport = state.report;
     const previousReportVersions = [...(state.reportVersions || [])];
     const previousReportViews = new Map(state.reportViews || []);
     const previousReportFormat = state.reportFormat;
     try {
-      const canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(safeTaskId)}/reports/${safeVersion}?format=json`);
-      if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+      const reportUrl = reportJsonUrl(safeTaskId, safeVersion, options.reportUrl);
+      const canonical = options.canonical || await requestJson(reportUrl);
+      if (!isCurrent()) return null;
       if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical) || safePositiveInteger(canonical.report_version) !== safeVersion) {
         const error = new Error('报告版本响应无效'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
       }
-      const markdown = await requestText(`/api/research-tasks/${encodeURIComponent(safeTaskId)}/reports/${safeVersion}?format=markdown`);
-      if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
-      if (typeof markdown !== 'string' || !markdown.trim()) {
-        const error = new Error('报告正文为空'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+      let markdown = '';
+      if (canonical.status !== 'generating') {
+        try { markdown = await requestText(`/api/research-tasks/${encodeURIComponent(safeTaskId)}/reports/${safeVersion}?format=markdown`); }
+        catch (error) { if (reportIsPublished(canonical)) throw error; }
+        if (reportIsPublished(canonical) && (typeof markdown !== 'string' || !markdown.trim())) {
+          const error = new Error('报告正文为空'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
+        }
       }
+      if (!isCurrent()) return null;
+      let artifacts = [];
+      try { artifacts = await reportArtifactsForVersion(safeTaskId, safeVersion, canonical); }
+      catch (_) { artifacts = previousReportViews.get(`${safeVersion}:artifacts`) || []; }
+      if (!isCurrent()) return null;
       state.reportVersions = [...new Set([...previousReportVersions, safeVersion].map(safePositiveInteger).filter(Boolean))].sort((a, b) => b - a);
       state.reportViews = new Map(previousReportViews);
       state.reportViews.set(`${safeVersion}:json`, canonical);
-      state.reportViews.set(`${safeVersion}:markdown`, markdown);
-      state.report = { ...canonical, markdown, artifacts: [], report_version: safeVersion };
+      state.reportViews.set(`${safeVersion}:artifacts`, artifacts);
+      if (markdown.trim()) state.reportViews.set(`${safeVersion}:markdown`, markdown);
+      state.report = { ...canonical, markdown, artifacts, report_version: safeVersion };
       state.reportFormat = 'markdown';
-      const requestGuard = () => isCurrentTaskGeneration(safeTaskId, requestGeneration);
+      const requestGuard = () => isCurrent();
       renderReportCitations(state.report.citation_manifest, requestGuard);
-      renderReportArtifacts([]);
+      renderReportArtifacts(artifacts);
       renderReportFormatTabs();
       renderMatrix(state.matrix, requestGuard);
       renderSummary();
+      renderReportFeedback();
       setText('research-report-state', `报告 v${text(safeVersion)} · ${statusLabel(state.report.status)}`);
       const limitations = limitationText(state.report.limitations) || safeList(state.report.limitations).join(' · ');
       setText('research-report-limitations', limitations ? `限制：${limitations}` : '');
       return state.report;
     } catch (error) {
-      if (!isCurrentTaskGeneration(safeTaskId, requestGeneration)) return null;
+      if (!isCurrent()) return null;
       state.report = previousReport;
       state.reportVersions = previousReportVersions;
       state.reportViews = previousReportViews;
@@ -1787,6 +2056,7 @@
       renderReportCitations(state.report?.citation_manifest || []);
       renderReportArtifacts(state.report?.artifacts || []);
       renderReportFormatTabs();
+      renderReportFeedback();
       renderMatrix(state.matrix);
       renderSummary();
       throw error;
@@ -1798,24 +2068,29 @@
     const requestGeneration = state.taskGeneration;
     if (!taskId || state.acquisition.reportActionInFlight) return null;
     const isCurrent = () => isCurrentTaskGeneration(taskId, requestGeneration);
+    const requestId = ++state.reportVersionRequest;
     const previousReport = state.report;
     const previousReportViews = new Map(state.reportViews || []);
     const previousReportVersions = [...(state.reportVersions || [])];
     const previousReportFormat = state.reportFormat;
-    const retryVersion = state.acquisition.reportActionStatus === 'retryable'
+    const retryVersion = state.acquisition.reportActionRetryMode === 'read'
       ? safePositiveInteger(state.acquisition.reportActionVersion) : null;
     state.acquisition.reportActionInFlight = true;
-    state.acquisition.reportActionStatus = retryVersion ? 'reading' : 'generating';
-    state.acquisition.reportActionMessage = retryVersion ? `正在读取报告 v${retryVersion}…` : '正在生成报告新版本…';
+    state.acquisition.reportActionStatus = retryVersion ? 'reading' : 'submitting';
+    state.acquisition.reportActionRetryMode = retryVersion ? 'read' : state.acquisition.reportActionRetryMode;
+    state.acquisition.reportActionMessage = retryVersion ? `正在读取报告 v${retryVersion}…` : '正在提交报告新版本…';
     renderAcquisition();
+    renderReportFeedback();
     try {
       let result = null;
       let version = retryVersion;
+      let reportUrl = '';
       if (!version) {
         const planVersion = reportActionPlanVersion(taskId);
+        const requestKey = getReportGenerationKey(taskId);
         result = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/reports`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
           body: JSON.stringify({ plan_version: planVersion }),
         });
         if (!isCurrent()) return null;
@@ -1823,22 +2098,71 @@
         if (!version) {
           const error = new Error('生成报告未返回版本号'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
         }
+        clearReportGenerationKey(taskId);
         state.acquisition.reportActionVersion = version;
+        state.acquisition.reportActionRetryMode = null;
+        state.acquisition.reportActionStatus = 'generating';
+        state.acquisition.reportActionMessage = `报告 v${version} 已受理；202 只表示受理，正在跟踪发布状态。`;
+        setAcquisitionStatus(state.acquisition.reportActionMessage, 'queued');
+        reportUrl = reportJsonUrl(taskId, version, result?.report_url);
+        state.reportVersions = [...new Set([...(state.reportVersions || []), version])].sort((a, b) => b - a);
+        state.report = {
+          ...result,
+          report_version: version,
+          status: result?.status || 'generating',
+          quality_status: result?.quality_status || 'pending',
+          published: result?.published === true,
+          generation: { report_version: version, published: result?.published === true },
+          artifacts: [],
+          markdown: '',
+        };
+        state.reportViews.set(`${version}:json`, state.report);
+        state.reportFormat = 'markdown';
+        renderReportCitations([]);
+        renderReportArtifacts([]);
+        renderReportFormatTabs();
+        setText('research-report-state', `报告 v${version} · ${statusLabel(state.report.status)}`);
+        renderAcquisition();
+        renderReportFeedback();
       }
       try {
-        const loaded = await readGeneratedReportVersion(taskId, version, requestGeneration);
-        if (!isCurrent() || !loaded) return null;
+        const loaded = await readGeneratedReportVersion(taskId, version, requestGeneration, { requestId, reportUrl });
+        if (!isCurrent()) return null;
+        if (!loaded) {
+          scheduleReportPoll(taskId, version, reportUrl, requestGeneration);
+          return result;
+        }
+        if (loaded.status === 'generating' && !reportIsPublished(loaded)) {
+          state.acquisition.reportActionStatus = 'generating';
+          state.acquisition.reportActionMessage = `报告 v${version} 已受理，当前阶段和耗时会随报告事件更新。`;
+          setAcquisitionStatus(state.acquisition.reportActionMessage, 'queued');
+          scheduleReportPoll(taskId, version, reportUrl, requestGeneration);
+        } else if (isQualityValidated(loaded)) {
+          state.acquisition.reportActionStatus = 'completed';
+          state.acquisition.reportActionMessage = `报告 v${version} 已正式发布。`;
+          setAcquisitionStatus(state.acquisition.reportActionMessage, 'completed');
+        } else {
+          state.acquisition.reportActionStatus = 'available';
+          const outcome = explicitlyUnpublished(loaded)
+            ? '未通过正式发布校验，保留为未发布版本。'
+            : '状态或质量合同字段不完整，未标记为正式发布。';
+          state.acquisition.reportActionMessage = `报告 v${version} ${outcome} 可重试生成新版本。${reportReasonCodes(loaded).join(' · ')}`;
+          setAcquisitionStatus(state.acquisition.reportActionMessage, 'failed');
+        }
+        state.acquisition.reportActionRetryMode = null;
+        renderReportFeedback();
+        renderAcquisition();
       } catch (error) {
         if (!isCurrent()) return null;
         state.acquisition.reportActionStatus = 'retryable';
+        state.acquisition.reportActionRetryMode = 'read';
         state.acquisition.reportActionVersion = version;
-        state.acquisition.reportActionMessage = `报告 v${version} 已生成但读取失败，可重试读取；旧报告保持不变。${userError(error, '报告暂时不可用。')}`;
+        state.acquisition.reportActionMessage = `报告 v${version} 已受理，但读取失败；可重试读取同一版本。${userError(error, '报告暂时不可用。')}`;
         setAcquisitionStatus(state.acquisition.reportActionMessage, 'failed');
+        scheduleReportPoll(taskId, version, reportUrl, requestGeneration, 4000);
+        renderReportFeedback();
         return result;
       }
-      state.acquisition.reportActionStatus = 'completed';
-      state.acquisition.reportActionMessage = `报告 v${version} 已生成；当前入口未返回 canonical artifact 或会话通知，旧报告保持不变。`;
-      setAcquisitionStatus('报告新版本已生成，旧报告保持不变。', 'completed');
       return result;
     } catch (error) {
       if (!isCurrent()) return null;
@@ -1849,17 +2173,28 @@
       renderReportCitations(state.report?.citation_manifest || []);
       renderReportArtifacts(state.report?.artifacts || []);
       renderReportFormatTabs();
+      renderReportFeedback();
       renderMatrix(state.matrix);
       renderSummary();
-      state.acquisition.reportActionStatus = 'available';
-      state.acquisition.reportActionVersion = null;
-      state.acquisition.reportActionMessage = `报告新版本生成失败，可重试；旧报告保持不变。${userError(error, '报告生成失败。')}`;
+      if (error.code === 'REPORT_GENERATION_IN_PROGRESS') {
+        clearReportGenerationKey(taskId);
+        state.acquisition.reportActionStatus = 'generating';
+        state.acquisition.reportActionRetryMode = null;
+        state.acquisition.reportActionMessage = '已有报告版本正在生成，正在恢复该版本状态。';
+        setAcquisitionStatus(state.acquisition.reportActionMessage, 'queued');
+        await loadReport(taskId);
+        return null;
+      }
+      state.acquisition.reportActionStatus = 'retryable';
+      state.acquisition.reportActionRetryMode = 'post';
+      state.acquisition.reportActionMessage = `提交结果尚未确认；重试会沿用同一请求标识，避免创建重复版本。${userError(error, '报告生成失败。')}`;
       setAcquisitionStatus(state.acquisition.reportActionMessage, 'failed');
       return null;
     } finally {
       if (isCurrent()) {
         state.acquisition.reportActionInFlight = false;
         renderAcquisition();
+        renderReportFeedback();
       }
     }
   }
@@ -1992,15 +2327,21 @@
         const actionItem = state.document.createElement('li'); actionItem.className = 'research-issue-item'; actionItem.dataset.action = 'report-version';
         const actions = state.document.createElement('div'); actions.className = 'research-issue-actions';
         const button = state.document.createElement('button'); button.type = 'button'; button.className = 'secondary-button';
-        const version = safePositiveInteger(state.acquisition.reportActionVersion);
+        const version = safePositiveInteger(state.acquisition.reportActionVersion || state.report?.report_version);
         button.textContent = state.acquisition.reportActionInFlight
-          ? (state.acquisition.reportActionStatus === 'reading' ? '读取报告…' : '生成报告…')
+          ? (state.acquisition.reportActionStatus === 'reading' ? '读取报告…' : '提交报告…')
+          : state.acquisition.reportActionStatus === 'generating'
+            ? `报告 v${version || ''} 生成中…`.trim()
           : state.acquisition.reportActionStatus === 'completed'
-            ? `已生成报告 v${version || '新版本'}`
+            ? `已发布报告 v${version || '新版本'}`
             : state.acquisition.reportActionStatus === 'retryable'
-              ? `重试读取报告 v${version || ''}`.trim()
+              ? state.acquisition.reportActionRetryMode === 'read'
+                ? `重试读取报告 v${version || ''}`.trim()
+                : '重试提交报告'
               : '生成报告新版本';
-        button.disabled = state.acquisition.reportActionInFlight || state.acquisition.reportActionStatus === 'completed';
+        button.disabled = state.acquisition.reportActionInFlight
+          || state.acquisition.reportActionStatus === 'generating'
+          || state.acquisition.reportActionStatus === 'completed';
         button.addEventListener('click', () => generateReportVersion(taskId));
         actions.appendChild(button); actionItem.appendChild(actions); list.appendChild(actionItem);
       }
@@ -2381,6 +2722,8 @@
     const host = byId('research-report-artifacts');
     if (!host) return;
     clearNode(host); host.hidden = true;
+    const report = state.report;
+    if (!reportDownloadAllowed(report)) return;
     const labels = { markdown: '下载 Markdown', html: '打开 HTML', citation_manifest: '下载引用 manifest' };
     ['markdown', 'html', 'citation_manifest'].forEach((kind) => {
       const artifact = (Array.isArray(artifacts) ? artifacts : []).map(normalizeArtifact).find((item) => item?.artifact_type === kind);
@@ -2392,10 +2735,56 @@
       if (kind === 'html') link.target = '_blank'; else link.download = '';
       host.appendChild(link);
     });
-    if (!host.childNodes.length && state.report && versionedReportUrl(state.selectedTaskId, state.report.report_version, 'markdown')) {
+    const legacyCompleted = report?.status === 'completed' && report?.published === undefined && report?.generation?.published === undefined;
+    if (!host.childNodes.length && report && (reportIsPublished(report) || legacyCompleted) && versionedReportUrl(state.selectedTaskId, report.report_version, 'markdown')) {
       ['markdown', 'json'].forEach((format) => { const link = state.document.createElement('a'); link.className = 'research-report-artifact'; link.href = versionedReportUrl(state.selectedTaskId, state.report.report_version, format); link.textContent = format === 'markdown' ? '下载 Markdown' : '下载 JSON'; link.download = ''; link.rel = 'noopener noreferrer'; host.appendChild(link); });
     }
     host.hidden = host.childNodes.length === 0;
+  }
+
+  function renderReportFeedback() {
+    const section = byId('research-report-feedback');
+    if (!section) return;
+    const report = state.report;
+    section.hidden = !report;
+    if (!report) return;
+    const quality = report.quality_validation;
+    const publication = reportPublicationText(report);
+    setText('research-report-publication', publication);
+    const reportEvents = [...state.events.values()]
+      .filter((event) => event.type === 'report')
+      .sort((left, right) => Number(left.seq || 0) - Number(right.seq || 0));
+    setText('research-report-progress', reportProgressText(report, reportEvents));
+    const metrics = byId('research-report-quality-metrics');
+    clearNode(metrics);
+    reportQualityMetrics(report).forEach(({ label, value }) => {
+      const item = state.document.createElement('div'); item.className = 'research-report-quality-metric';
+      const term = state.document.createElement('dt'); term.textContent = label;
+      const detail = state.document.createElement('dd'); detail.textContent = value;
+      item.append(term, detail); metrics.appendChild(item);
+    });
+    const reasons = reportReasonCodes(report);
+    const failure = quality?.status === 'fail' || report.quality_status === 'fail';
+    setText('research-report-reasons', reasons.length
+      ? `质量原因码：${reasons.join(' · ')}`
+      : failure ? '质量原因码：暂未提供' : '');
+    const retry = byId('research-report-retry');
+    if (retry) {
+      const retryableStatus = new Set(['draft', 'partial', 'failed']).has(String(report.status || ''))
+        || report.quality_validation?.status === 'fail' || report.quality_status === 'fail';
+      const invalidPublishedContract = report.status === 'completed' && reportIsPublished(report)
+        && Boolean(report.quality_validation) && !isQualityValidated(report);
+      const retryableRelease = explicitlyUnpublished(report) || invalidPublishedContract;
+      retry.hidden = !(retryableStatus || invalidPublishedContract) || !retryableRelease;
+      retry.disabled = state.acquisition.reportActionInFlight;
+      retry.textContent = state.acquisition.reportActionInFlight
+        ? '正在提交重试…'
+        : state.acquisition.reportActionRetryMode === 'post'
+          ? '重试提交报告'
+          : state.acquisition.reportActionRetryMode === 'read'
+            ? `重试读取报告 v${safePositiveInteger(state.acquisition.reportActionVersion) || ''}`.trim()
+            : '重试生成新版本';
+    }
   }
 
   function renderReportCitations(citations, requestGuard = null) {
@@ -2462,7 +2851,7 @@
         ? await requestJson(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/reports/${version}?format=json`)
         : await requestText(`/api/research-tasks/${encodeURIComponent(state.selectedTaskId)}/reports/${version}?format=${format}`);
       state.reportViews.set(key, value); if (format === 'json' && value && typeof value === 'object') state.report = { ...state.report, ...value, report_version: version };
-      renderReportCitations(state.report.citation_manifest); renderMatrix(state.matrix); renderReportFormatTabs();
+      renderReportCitations(state.report.citation_manifest); renderMatrix(state.matrix); renderReportFormatTabs(); renderReportFeedback();
       return value;
     } catch (error) {
       setText('research-report-state', userError(error, `${format.toUpperCase()} 报告暂时不可用。`)); return null;
@@ -2489,23 +2878,37 @@
       if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical) || safePositiveInteger(canonical.report_version) !== targetVersion) {
         const error = new Error('报告版本响应无效'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
       }
-      const markdown = await requestText('/api/research-tasks/' + encodeURIComponent(taskId) + '/reports/' + targetVersion + '?format=markdown');
+      let markdown = '';
+      if (canonical.status !== 'generating') {
+        try { markdown = await requestText('/api/research-tasks/' + encodeURIComponent(taskId) + '/reports/' + targetVersion + '?format=markdown'); }
+        catch (error) { if (reportIsPublished(canonical)) throw error; }
+      }
       if (!isCurrent()) return null;
-      if (typeof markdown !== 'string' || !markdown.trim()) {
+      if (reportIsPublished(canonical) && (typeof markdown !== 'string' || !markdown.trim())) {
         const error = new Error('报告正文为空'); error.code = 'REPORT_SCHEMA_INVALID'; throw error;
       }
+      let artifacts = state.reportViews.get(`${targetVersion}:artifacts`) || [];
+      try { artifacts = await reportArtifactsForVersion(taskId, targetVersion, canonical); }
+      catch (_) { /* preserve cached published artifacts if the list is temporarily unavailable */ }
+      if (!isCurrent()) return null;
       const requestGuard = () => isCurrent();
-      state.report = { ...previousReport, ...canonical, markdown, report_version: targetVersion };
+      state.report = { ...canonical, markdown, artifacts, report_version: targetVersion };
       state.reportViews = new Map(previousReportViews);
       state.reportViews.set(String(targetVersion) + ':json', canonical);
-      state.reportViews.set(String(targetVersion) + ':markdown', markdown);
+      state.reportViews.set(`${targetVersion}:artifacts`, artifacts);
+      if (markdown.trim()) state.reportViews.set(String(targetVersion) + ':markdown', markdown);
       state.reportFormat = 'markdown';
       renderReportCitations(state.report.citation_manifest, requestGuard);
+      renderReportArtifacts(artifacts);
       renderMatrix(state.matrix, requestGuard);
       renderReportFormatTabs();
+      renderReportFeedback();
       setText('research-report-state', '报告 v' + text(targetVersion) + ' · ' + statusLabel(state.report.status));
       const limitations = limitationText(state.report.limitations) || safeList(state.report.limitations).join(' · ');
       setText('research-report-limitations', limitations ? '限制：' + limitations : '');
+      if (state.report.status === 'generating' && !reportIsPublished(state.report)) {
+        scheduleReportPoll(taskId, targetVersion, '', taskGeneration);
+      }
       return state.report;
     } catch (error) {
       if (!isCurrent()) return null;
@@ -2513,6 +2916,8 @@
       state.reportViews = previousReportViews;
       state.reportFormat = previousReportFormat;
       renderReportFormatTabs();
+      renderReportArtifacts(state.report?.artifacts || []);
+      renderReportFeedback();
       setText('research-report-state', userError(error, '该报告版本暂时不可用。'));
       return null;
     }
@@ -2532,6 +2937,8 @@
   }
 
   async function loadReport(taskId) {
+    const requestGeneration = state.taskGeneration;
+    cancelReportPoll();
     const stateNode = byId('research-report-state');
     const reportNode = byId('research-report-markdown');
     if (stateNode) stateNode.textContent = '正在读取报告…';
@@ -2543,24 +2950,29 @@
     renderSelection();
     try {
       const report = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/report`);
-      let artifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
+      let allArtifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
       const sessionId = state.selectedTask?.research_session_id || state.selectedTask?.research_session?.research_session_id;
       if (sessionId) {
         try {
-          const artifactData = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}/artifacts?report_version=${encodeURIComponent(report.plan_version || report.report_version || 1)}`);
-          artifacts = Array.isArray(artifactData?.artifacts) ? artifactData.artifacts : artifacts;
+          const artifactData = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}/artifacts`);
+          allArtifacts = Array.isArray(artifactData?.artifacts) ? artifactData.artifacts : allArtifacts;
         } catch (_) { /* legacy report remains readable when artifact metadata is unavailable */ }
       }
       const version = safePositiveInteger(report.report_version || report.plan_version);
-      state.report = { ...report, artifacts, report_version: version };
+      let canonical = null;
       if (version) {
-        state.reportVersions = [version];
+        state.reportVersions = [...new Set([version, ...allArtifacts.map((artifact) => safePositiveInteger(artifact?.report_version))].filter(Boolean))].sort((a, b) => b - a);
         try {
-          const canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/reports/${version}?format=json`);
-          if (canonical && typeof canonical === 'object') state.report = { ...state.report, ...canonical, artifacts, report_version: version };
+          canonical = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}/reports/${version}?format=json`);
+          if (canonical && typeof canonical === 'object') canonical = { ...canonical, report_version: version };
           state.reportViews.set(`${version}:json`, canonical);
         } catch (_) { /* legacy report remains readable while the versioned seam is unavailable */ }
       }
+      const activeReport = { ...report, ...(canonical || {}), report_version: version };
+      const artifacts = explicitlyUnpublished(activeReport)
+        ? [] : allArtifacts.filter((artifact) => safePositiveInteger(artifact?.report_version) === version);
+      state.report = { ...activeReport, artifacts };
+      if (version) state.reportViews.set(`${version}:artifacts`, artifacts);
       state.reportSelections = Array.isArray(report.selections) ? report.selections : [];
       state.reportSelections.forEach((selection) => {
         const normalized = normalizeSelectionProjection(selection);
@@ -2575,10 +2987,26 @@
       if (report.markdown) state.reportViews.set(`${version}:markdown`, report.markdown);
       renderReportFormatTabs();
       renderReportArtifacts(artifacts); renderReportCitations(state.report.citation_manifest);
+      renderReportFeedback();
       renderMatrix(state.matrix);
       if (stateNode) stateNode.textContent = `报告 v${text(version || report.plan_version)} · ${statusLabel(state.report.status)}`;
       const limitations = limitationText(state.report.limitations) || safeList(state.report.limitations).join(' · ');
       setText('research-report-limitations', limitations ? `限制：${limitations}` : '');
+      if (state.report.status === 'generating' && !reportIsPublished(state.report) && version) {
+        scheduleReportPoll(taskId, version, state.report.report_url || '', requestGeneration);
+      }
+      const pendingKey = storedReportGenerationKey(taskId);
+      if (pendingKey && state.report.generation?.request_key === pendingKey) clearReportGenerationKey(taskId);
+      else if (pendingKey && state.report.status !== 'generating' && state.selectedTaskId === taskId) {
+        state.acquisition.reportActionRequestKey = pendingKey;
+        state.acquisition.reportActionRequestTaskId = taskId;
+        state.acquisition.reportActionRetryMode = 'post';
+        state.acquisition.reportActionStatus = 'retryable';
+        state.acquisition.reportActionMessage = '恢复未确认的报告提交；重试会沿用原请求标识。';
+        root.setTimeout(() => {
+          if (isCurrentTaskGeneration(taskId, requestGeneration) && state.acquisition.reportActionRetryMode === 'post') generateReportVersion(taskId);
+        }, 0);
+      }
       return report;
     } catch (error) {
       // A report can lag behind the durable acquisition record. Reconcile the
@@ -2598,7 +3026,14 @@
       renderSummary();
       if (stateNode) stateNode.textContent = error.code === 'REPORT_NOT_READY' ? ERROR_TEXT.REPORT_NOT_READY : userError(error, '报告暂时不可用。');
       setText('research-report-limitations', '');
-      renderReportArtifacts([]); renderReportCitations([]); renderReportFormatTabs();
+      renderReportArtifacts([]); renderReportCitations([]); renderReportFormatTabs(); renderReportFeedback();
+      if (storedReportGenerationKey(taskId) && state.selectedTaskId === taskId) {
+        state.acquisition.reportActionRetryMode = 'post';
+        state.acquisition.reportActionStatus = 'retryable';
+        root.setTimeout(() => {
+          if (isCurrentTaskGeneration(taskId, requestGeneration) && state.acquisition.reportActionRetryMode === 'post') generateReportVersion(taskId);
+        }, 0);
+      }
       return null;
     }
   }
@@ -2643,6 +3078,7 @@
     }
     renderPlan(state.selectedTask?.plan);
     renderTimeline();
+    renderReportFeedback();
     renderSelection();
     renderSummary();
     renderTaskList();
@@ -2702,13 +3138,14 @@
     if (!taskId && !sessionId) return;
     state.taskGeneration += 1;
     state.reportVersionRequest += 1;
+    cancelReportPoll();
     state.selectTaskInFlight = target;
     closeStream();
     state.selectedTaskId = taskId || null;
     state.selectedSessionId = sessionId || state.tasks.find((item) => item.research_task_id === taskId)?.research_session_id || null;
     stopAcquisitionPoll();
     state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = [];
-    state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
+    state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.reportActionRequestKey = null; state.acquisition.reportActionRequestTaskId = null; state.acquisition.reportActionRetryMode = null; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set();
     state.acquisition.searchId = null; state.acquisition.idempotencyKey = null; state.acquisition.confirming = false; state.acquisition.retrying = new Set(); state.acquisition.issueActions = new Set();
     state.selectedTask = null;
     state.events = new Map();
@@ -2790,14 +3227,15 @@
     else {
       state.taskGeneration += 1;
       state.reportVersionRequest += 1;
+      cancelReportPoll();
       closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
-      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
+      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.reportActionRequestKey = null; state.acquisition.reportActionRequestTaskId = null; state.acquisition.reportActionRetryMode = null; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
       renderTaskHeader(null); setDetailVisibility(false); renderSummary();
       state.report = null; state.matrix = null; state.terminal = null; state.reportViews = new Map(); state.reportVersions = []; renderMatrix(null); renderReportFormatTabs();
       const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
       setText('research-report-state', '任务完成后显示报告。');
       setText('research-report-limitations', '');
-      renderReportArtifacts([]); renderReportCitations([]);
+      renderReportArtifacts([]); renderReportCitations([]); renderReportFeedback();
       renderAcquisition();
     }
   }
@@ -2919,6 +3357,7 @@
     byId('research-acquisition-refresh')?.addEventListener('click', () => loadAcquisitionStatus(state.selectedTaskId));
     state.document.querySelectorAll('[data-report-format]').forEach((button) => button.addEventListener('click', () => selectReportFormat(button.dataset.reportFormat)));
     byId('research-report-version-select')?.addEventListener('change', (event) => selectReportVersion(event.target.value));
+    byId('research-report-retry')?.addEventListener('click', () => generateReportVersion(state.selectedTaskId));
 
     // Chat approval commands publish the same backend result.  Reconcile it
     // through this Tab's canonical Session/Task state instead of maintaining a
@@ -2978,6 +3417,7 @@
 
   const api = {
     boot, parseConversationId, statusLabel, userError, renderSafeMarkdown,
+    reportPublicationText, reportQualityMetrics, reportProgressText, reportReasonCodes, reportDownloadAllowed, isQualityValidated,
     mergeSessionCommandResult, selectTask, refreshWorkspace, state,
     safeArtifactUrl, artifactActionUrl, normalizeArtifact, normalizeNotification, mergeNotifications,
     notificationKindLabel, notificationPayloadText, applyNotification, loadNotifications, markNotificationRead,

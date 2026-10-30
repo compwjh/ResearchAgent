@@ -3716,6 +3716,15 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #research-view .research-report-markdown pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 #research-view .research-report-markdown a { color: var(--accent); }
 #research-view .research-report-artifacts { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0; }
+#research-view .research-report-feedback { margin: 9px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #fff); }
+#research-view .research-report-publication { margin: 0; color: var(--ink); font-size: 12px; font-weight: 700; }
+#research-view .research-report-progress,
+#research-view .research-report-reasons { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+#research-view .research-report-quality-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px; margin: 8px 0 0; }
+#research-view .research-report-quality-metric { min-width: 0; padding: 6px 7px; border-radius: 6px; background: var(--accent-soft, #f3f6fb); }
+#research-view .research-report-quality-metric dt { color: var(--muted); font-size: 10px; }
+#research-view .research-report-quality-metric dd { margin: 2px 0 0; color: var(--ink); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+#research-view .research-report-retry { margin-top: 8px; }
 #research-view .research-report-artifact { display: inline-flex; align-items: center; min-height: 28px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--accent); font: 10px 'DM Mono', monospace; text-decoration: none; }
 #research-view .research-report-artifact:hover, #research-view .research-report-artifact:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
 #research-view .research-report-citations { margin-top: 9px; color: var(--muted); font: 10px/1.5 'DM Mono', monospace; }
