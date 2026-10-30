@@ -239,3 +239,81 @@ TDD RED 阶段，以下新增能力反例曾全部按预期失败：安全 paper
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/agent_runtime.py backend/app/research/infrastructure/research_store.py tests/research/test_report_content_runtime.py tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_generation_state.py` | 0 | 通过，无输出 |
 
 结算用例用两个并发调用竞争同一 claim，并核对只有一个首次结算、二次读取一致的 report/task totals 与 AgentRun list；失败终态的重放不能增加 usage；已发布状态后重复 settlement 不改 report JSON、Artifact 列表或 terminal Task 状态。该用例通过 Store 的 published 状态和 Artifact fixture 验证不可变边界，没有执行真实 canonical 投递。没有运行全量回归、部署、真实模型或生产数据库操作；v6 已用预算未重置。
+
+## 自然语言 Intake 字数误判为论文数量（2026-10-31）
+
+真实 API 样本位于 `docs/sdd/plans/030/artifacts/20261031-natural-e2e/request.json`。请求同时明确目标论文数 5、至少 5 篇，以及“正文至少 1500 个中文字符”。对应 `01-intake.sse` 正确抽到了 `target_paper_count:5` 和 `min_paper_count:5`，但又错误追加 `paper_count_constraint:unparsed`，使唯一缺项变成 `constraints` 并重复询问篇数。
+
+根因在 `session_plan_generation.py` 的 `_COUNT_MARKER_RE`：数量前缀“至少”后以宽泛的 12 字符 lookahead 搜索“篇/论文/paper”，因此跨过“1500个中文字符”并把后面的“逐篇分析”识别为该数量的论文单位。现改为只有数字后立即跟论文单位（篇、论文、paper）时才将该数量标记为未解析。明确的 1–2 位篇数仍由现有 extractor 解析；超出支持位数但紧邻论文单位的数量仍产生 `paper_count_constraint:unparsed` 并走已有澄清，不更改 target/min/max 冲突处理、数量上限或 Intake 接口。
+
+新增两项能力回归：直接验证目标/最小篇数与字符长度混写只提取篇数；真实 `ResearchIntakeCoordinator.handle_message` 接缝验证同类自然语言输入持久化 target/min 且不产生 missing 字段。新增样例先 RED（2 failed），修复后连同超范围篇数旧用例通过。
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py -q` | 0 | 27 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/session_plan_generation.py tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/session_plan_generation.py tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py` | 0 | 通过，无输出 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+
+本 slice 未部署、未调用模型、未修改真实 API 数据或提交 Git。主 Agent 后续应在同一会话通过自然语言补充后继续案例，验证 Intake 不再追问论文数且后续状态推进正常；该真实端到端续接尚未在此 slice 执行。
+
+### 复审补充：文字数量仍需保守澄清（2026-10-31）
+
+独立 review 指出，若数量单位是明确的论文单位，但数量本身写为文字（例如“至少五篇论文”“at least five papers”）或模糊表达（例如“至少几篇论文”“no fewer than several papers”），当前仅识别数字的抽取器会返回空列表，随后可能静默使用质量档位默认篇数。修复仅扩展未解析 marker：它能识别常见中文数词/模糊量词、英文 one–twenty 与 few/several/some 等数量词，但只在其后紧跟“篇/论文/paper”单位时追加既有 `paper_count_constraint:unparsed`，并由原 Intake 流程请求澄清；未把词数量转换成数字，也未增加新的公开字段或澄清机制。
+
+原始字符数反例保持不变：`1500个中文字符` 后接 `逐篇分析` 不构成“数量词 + 紧邻论文单位”，不会触发论文数约束。对确切请求的 Intake coordinator 回归仍确认 target/min 两项都存储、`missing=[]`。文字数量回归覆盖中文“五篇”、英文“five papers”、中文“几篇/若干篇”、英文“several papers”，均要求澄清。新增测试先 RED（文字数量用例失败，字符数反例通过）；修复后两个 Intake 领域测试文件共 28 passed。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py -q` | 0 | 28 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/session_plan_generation.py tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/session_plan_generation.py tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py` | 0 | 通过，无输出 |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+
+仍未部署/提交或执行自然语言 API 同会话续接；该续接步骤由主 Agent 后续完成。
+
+### 复审补充：选择意图连接词（2026-10-31）
+
+复审指出 `至少要选5篇论文` 中的“要选”未命中数值 parser，也未命中 unparsed marker，导致 Intake 丢失显式最小篇数。parser 的数字数量模式和未解析 marker 现都接受可选的中文 `要/需要` 前缀，仍要求数字后紧邻论文单位；没有增加词数解析或改变仅有最小值时的既有目标篇数策略。精确测试同时包含“正文至少1500个中文字符”，确认长度要求不被识别为论文数。TDD RED 时结果为空；修复后 `min_paper_count:5` 得到保留。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_intake_plan_repair.py tests/research/test_research_intake_contract.py -q` | 0 | 29 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/session_plan_generation.py tests/research/test_intake_plan_repair.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/session_plan_generation.py tests/research/test_intake_plan_repair.py` | 0 | 通过，无输出 |
+
+该窄切片只修改 intake 数量解析与能力测试；未部署、未写数据库、未运行全量。独立数量修复已冻结，主题查询/选集相关性修复仍是另一个切片。
+
+## 自然语言认证安全报告召回偏题诊断（2026-10-31，只读）
+
+检查任务 `387a5090b27550c59de86adb415eb26e`、会话 `eb423a0ae279472d9709cda75e957da3` 及 `docs/sdd/plans/030/artifacts/20261031-natural-e2e/` 中的请求、批准计划、最终报告，并只读查询本地 Research/Paper Discovery SQLite。没有改代码、数据库、选集或已发布报告，也没有重跑模型。
+
+### 观察到的结果
+
+- 用户主题字段是 `authentication security`。请求目标还要求比较 USENIX Security 2022 的认证安全论文，并列出密码凭证、网页风险认证、指针认证、TLS 服务器身份和生物活体认证等方向。
+- 已批准计划的 `objective` 是中文比较目标；scope facets 只有“研究方法”“安全问题”“主要发现与证据边界”。三条搜索 query 全部重复完整 objective 加一个 facet，均未包含 Intake 中独立保存的英文 topic，也没有保留上述五类认证方向。
+- 三路实际检索都限定了 USENIX Security 2022，每路请求 5 个结果。返回候选集中出现 ML 安全评估、Web Cache Deception、LGBTQ+ 安全建议、Linux 内核堆利用可靠性和 RPKI 降级攻击；它们不是用户要比较的认证机制主题。Search Worker 的安全摘要记为从 catalog tool results 恢复候选 ID，因为其结构化输出格式失败。候选 ID 仍绑定到真实目录检索结果；没有证据显示系统在空结果后另行伪造或切换到未请求来源。
+- Evaluator 的持久化 aggregate decision 明确说明，可见标题/摘要不能直接建立 authentication-security 相关性，却以低置信度和缺少详情为理由保留了 catalog 引用集合。该 aggregate 的 `candidate_id` 为空，`keep=true`，`relevance_score=0.2`；候选被展开后，最终 selection 投影中的每条 relevance 为 `0.0`、facets 为空。
+- 报告最终以 `completed` / `published=true` 保存，quality validation 为 `pass`，包含 5 篇和 2,920 个中文字符。正文诚实标明这些论文是跨域或相邻类比，不能据此推断认证论文的方法分布。因此结构、引用和篇数门槛通过了，但用户的主题覆盖目标没有实现。
+
+### 最短根因链
+
+1. `session_plan_generation.build_session_plan_output()` 同时读取 Intake `topic` 与 `objective`，但创建计划时只把 `objective` 传给 `Planner.build_plan(goal=...)`。主题字段没有传到 Planner。Planner `_split_facets()` 仅按标点拆分 objective；`_build_work_items()` 对每个 facet 生成 `query=f"{goal} {facet}"`，因此长中文目标重复进入每次检索，主题和用户给出的认证子方向没有进入计划查询。
+2. `CatalogSearchAdapter` 复用本地目录和既有 RAG 排序返回 top-N，不在返回前要求最小相关性分数。当前跨语言词表有“身份认证”映射，但这里的计划查询没有该词，也没有原 Intake 英文 topic `authentication security`。实际 search snapshots 的 rerank score 为空，retrieval score 较低；成功返回 top-N 只证明来源、年份和目录身份，不证明命中用户主题。
+3. Search Worker 格式恢复只保留真实 catalog tool result 中的候选 ID，绕过的是 Worker 的结构化输出缺陷，不是空结果后的新检索路径。Evaluator 随后的 aggregate refs 通过 `_validate_evaluator_scope()` 的来源/引用 allowlist 检查；该检查不计算或强制每篇的 relevance threshold。`_validated_evaluator_candidates()` 又会将 aggregate 中已在 recall allowlist 的 `catalog:<id>` 展开为候选，没有要求逐篇 `keep=true` 或 relevance 达标。因此该路径直接得到足够候选，不会调用 `_promote_catalog_floor()`；后者在候选不足时从同一 recall pool 凑到最低 5 篇，是另一个会掩盖相关性不足的风险，但不是本次直接触发点。
+4. 报告质量门禁确认了正文结构、真实 Evidence 引用、覆盖形状和最低篇数/字数等要求，没有核验每篇 selected paper 是否真正回答 `research_question`。正文自己指出跨域范围，但该说明不阻止以 `pass` 发布。
+
+所以这不是“无结果之后退化为无关论文”，而是**主题没有进入搜索 query → 本地 top-N 召回低相关项 → aggregate evaluator 引用绑定被当成相关性确认 → selection/report gate 没有阻止偏题候选发布**。Search Worker formatting recovery是放大风险的一环，不是根因。
+
+### 最小修复边界与临时输入约束
+
+1. 计划生成应保留独立的 Intake topic，并将 topic 与用户批准的细粒度认证 facets 明确带入搜索 WorkItem；搜索 query 用精简的 topic/facet 术语，长 objective 继续作为研究目标和报告上下文，不要在每条 query 里重复整段自然语言。优先复用现有 Planner、Search WorkItem 和 catalog RAG，不引入新检索系统。
+2. Evaluator 的 aggregate catalog refs 只能证明候选来自本轮受限召回，不能替代逐篇相关性判定。进入正式 selection 前，应对每篇候选要求与主题相符的 decision/score；不达标时返回真实短缺或请求用户扩大范围，禁止为满足五篇下限从不相关候选中凑数。相关性规则仍以用户批准范围为准，不按单个关键词把 RPKI 的 validation 或 Web 页面认证门背景视作用户认证研究。
+3. 报告质量通过前加一道基于已批准 research question/facets 的选集一致性校验；不能仅因为正文诚实称作“跨域类比”就把偏题研究作为用户请求的正式报告发布。
+4. 当前版本临时使用时，可把英文主题和关键认证子类直接写进 objective/facets，并在批准前逐条检查 plan preview 的 query 是否实际含有这些术语；若 query 缺主题词或召回候选只是相邻背景，应拒绝该计划/结果并调整范围，而不要批准后期待报告生成阶段自行纠偏。这只能降低风险，不替代上面两个服务器端门禁。
+
+### 只读范围与未做事项
+
+证据限于上述自然语言 E2E artifacts、指定 task/session 的 WorkItem/selection/search metadata、安全的 evaluator aggregate 摘要，以及 `session_plan_generation.py`、`planner.py`、`search_catalog_adapter.py`、`catalog_search_graph.py`、`agent_runtime.py` 和 `orchestrator.py` 的相关实现。没有读取隐藏思维链、凭据或原始模型拒绝正文，没有写数据库/重跑/部署，也没有执行测试；本段只记录诊断和修复边界。

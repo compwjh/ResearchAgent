@@ -111,6 +111,47 @@ def test_oversized_paper_count_is_unparsed_instead_of_raising_or_defaulting():
     assert resolved["reason"] == "paper count constraint is not parseable"
 
 
+def test_character_length_requirement_does_not_create_unparsed_paper_count():
+    request = "目标论文数为5篇，至少5篇。正文至少1500个中文字符，逐篇分析。"
+
+    extracted = extract_paper_count_constraints(request)
+
+    assert extracted == ["target_paper_count:5", "min_paper_count:5"]
+    resolved = resolve_paper_count_constraints(extracted)
+    assert resolved["valid"] is True
+    assert resolved["target_count"] == 5
+    assert resolved["min_count"] == 5
+
+
+def test_unsupported_word_counts_with_paper_units_require_clarification():
+    requests = (
+        "至少五篇论文",
+        "at least five papers",
+        "至少几篇论文",
+        "至少数篇论文",
+        "目标论文数为若干篇",
+        "no fewer than several papers",
+    )
+
+    for request in requests:
+        extracted = extract_paper_count_constraints(request)
+        assert extracted == ["paper_count_constraint:unparsed"], request
+        resolved = resolve_paper_count_constraints(extracted)
+        assert resolved["valid"] is False, request
+        assert resolved["reason"] == "paper count constraint is not parseable", request
+
+
+def test_minimum_count_with_selection_intent_preserves_the_explicit_lower_bound():
+    request = "至少要选5篇论文，正文至少1500个中文字符，逐篇分析。"
+
+    extracted = extract_paper_count_constraints(request)
+
+    assert extracted == ["min_paper_count:5"]
+    resolved = resolve_paper_count_constraints(extracted)
+    assert resolved["valid"] is True
+    assert resolved["min_count"] == 5
+
+
 def test_maximum_only_constraints_cap_the_default_budget():
     assert _target_count(["max_paper_count:20"]) == 12
     assert _target_count(["max_paper_count:20", "min_paper_count:5"]) == 12

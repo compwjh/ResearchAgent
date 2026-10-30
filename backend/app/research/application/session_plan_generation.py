@@ -37,7 +37,7 @@ _COUNT_PATTERNS = (
         "max",
         re.compile(
             rf"(?:max(?:imum)?[_ -]?paper[_ -]?count|最多|至多|不超过|上限(?:为|是)?|at\s+most|no\s+more\s+than)"
-            rf"\s*[:：=]?\s*(?:选择|选取|选|保留|为|是|select(?:ing)?|choose)?\s*{_COUNT_NUMBER}{_COUNT_CONTEXT}",
+            rf"\s*[:：=]?\s*(?:(?:需要|要)\s*)?(?:选择|选取|选|保留|为|是|select(?:ing)?|choose)?\s*{_COUNT_NUMBER}{_COUNT_CONTEXT}",
             re.IGNORECASE,
         ),
     ),
@@ -45,7 +45,7 @@ _COUNT_PATTERNS = (
         "min",
         re.compile(
             rf"(?:min(?:imum)?[_ -]?paper[_ -]?count|至少|不少于|最少|下限(?:为|是)?|at\s+least|no\s+fewer\s+than)"
-            rf"\s*[:：=]?\s*(?:选择|选取|选|保留|比较|为|是|select(?:ing)?|choose)?\s*{_COUNT_NUMBER}{_COUNT_CONTEXT}",
+            rf"\s*[:：=]?\s*(?:(?:需要|要)\s*)?(?:选择|选取|选|保留|比较|为|是|select(?:ing)?|choose)?\s*{_COUNT_NUMBER}{_COUNT_CONTEXT}",
             re.IGNORECASE,
         ),
     ),
@@ -58,13 +58,24 @@ _COUNT_PATTERNS = (
         ),
     ),
 )
+_COUNT_WORD_VALUE = (
+    r"(?:[零〇一二三四五六七八九十百千万两几多少若干数]+(?:来|多)?|"
+    r"a\s+(?:few|couple(?:\s+of)?)|"
+    r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+    r"few|several|some|many|any))"
+)
+_COUNT_QUANTITY_VALUE = rf"(?:[+-]?\d+|{_COUNT_WORD_VALUE})"
+_COUNT_QUANTITY_MARKER = (
+    r"(?:最多|至多|不超过|上限|至少|不少于|最少|下限|"
+    r"at\s+most|no\s+more\s+than|at\s+least|no\s+fewer\s+than)"
+    r"(?=\s*[:：=]?\s*(?:(?:需要|要)\s*)?(?:(?:选择|选取|选|保留|比较|为|是|select(?:ing)?|choose)\s*)?"
+    rf"{_COUNT_QUANTITY_VALUE}\s*(?:篇(?:\s*(?:论文|方法|候选))?|论文|papers?\b))"
+)
 _COUNT_MARKER_RE = re.compile(
     r"(?:max(?:imum)?[_ -]?paper[_ -]?count|min(?:imum)?[_ -]?paper[_ -]?count|"
     r"target[_ -]?paper[_ -]?count|paper_count_constraint|目标(?:论文)?(?:数|数量|篇数)|"
-    r"(?:最多|至多|不超过|上限|至少|不少于|最少|下限)(?=.{0,12}(?:篇|论文|paper))|"
-    r"(?:最多|至多|不超过|上限|至少|不少于|最少|下限)"
-    r"(?=\s*[:：=]?\s*(?:选择|选取|选|保留|比较|为|是|select(?:ing)?|choose)?\s*[+-]?\d{3,})|"
-    r"(?:at\s+most|no\s+more\s+than|at\s+least|no\s+fewer\s+than)(?=.{0,12}papers?))",
+    rf"{_COUNT_QUANTITY_MARKER})",
     re.IGNORECASE,
 )
 

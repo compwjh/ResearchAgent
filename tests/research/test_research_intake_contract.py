@@ -137,6 +137,39 @@ def test_natural_language_minimum_count_is_kept_as_a_lower_bound(tmp_path):
     assert result.missing == []
 
 
+def test_character_length_requirement_does_not_block_natural_intake(tmp_path):
+    memory, store, conversation, registry = _setup(tmp_path)
+    skills_dir = tmp_path / "skills" / "deep-research-orchestration"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text(
+        "---\nname: deep-research-orchestration\ndescription: research\ntools: []\n---\nbody",
+        encoding="utf-8",
+    )
+    coordinator = ResearchIntakeCoordinator(store, memory, registry)
+    request = (
+        "帮我做一个深度研究，主题是 authentication security，目标是比较方法与局限，"
+        "目标论文数为5篇，至少5篇，时间范围是2022-2022。报告使用中文，"
+        "正文至少1500个中文字符，逐篇分析。"
+    )
+    _conversation, user, _assistant = memory.create_message_pair(
+        conversation.conversation_id, "owner-a", request
+    )
+
+    result = coordinator.handle_message(
+        conversation.conversation_id, "owner-a", user.message_id, user.content
+    )
+
+    fields = {
+        item.field_name: item
+        for item in store.list_intake_fields(result.session.intake_draft_id, "owner-a")
+    }
+    assert json.loads(fields["constraints"].value_json) == [
+        "target_paper_count:5",
+        "min_paper_count:5",
+    ]
+    assert result.missing == []
+
+
 def test_conflicting_paper_count_constraints_keep_intake_in_clarification(tmp_path):
     memory, store, conversation, registry = _setup(tmp_path)
     skills_dir = tmp_path / "skills" / "deep-research-orchestration"
