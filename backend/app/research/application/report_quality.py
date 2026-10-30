@@ -188,9 +188,12 @@ def _record_task_and_plan(item: Mapping[str, Any], task_id: str, plan_version: i
     record_task = item.get("task_id", item.get("research_task_id"))
     if _id(record_task, f"{field}.task_id") != task_id:
         _fail(f"{field} task_id mismatch")
-    if item.get("task_id") is not None and item.get("research_task_id") is not None:
-        if _id(item["research_task_id"], f"{field}.research_task_id") != task_id:
-            _fail(f"{field} research_task_id mismatch")
+    if (
+        item.get("task_id") is not None
+        and item.get("research_task_id") is not None
+        and _id(item["research_task_id"], f"{field}.research_task_id") != task_id
+    ):
+        _fail(f"{field} research_task_id mismatch")
     version = item.get("plan_version")
     if isinstance(version, bool) or not isinstance(version, int) or version != plan_version:
         _fail(f"{field} plan_version mismatch")
@@ -558,9 +561,8 @@ def validate_report_content(
         mapped, all_refs_valid = _reference_papers(item["evidence_ids"], evidence, declared & selected_papers, invalid_evidence_ids)
         if all_refs_valid and dimension_valid and declared.issubset(selected_papers) and len(mapped) >= 2:
             comparison_count += 1
-        elif not dimension_valid:
-            if "INVALID_DIMENSION_REFERENCE" not in failure_codes:
-                failure_codes.append("INVALID_DIMENSION_REFERENCE")
+        elif not dimension_valid and "INVALID_DIMENSION_REFERENCE" not in failure_codes:
+            failure_codes.append("INVALID_DIMENSION_REFERENCE")
 
     supported_finding_count = 0
     for item in content["synthesis_findings"]:

@@ -263,3 +263,20 @@ Verdict: **BLOCK** — 原预算/阶段恢复/质量状态/改写与同版发布
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_report_quality.py tests/research/test_report_content_runtime.py tests/research/test_report_quality_context.py -q` | 0 | `84 passed in 5.44s` |
 
 本轮仅复核上述安全反馈、checkpoint seed 和 legacy 边界；未运行全量测试、部署或真实模型。**该增量无 P0/P1 阻塞。**
+
+## `report_quality.py` SIM102 等价合并窄复审（2026-10-30）
+
+**结论：PASS。** 本轮只审查 SIM102 lint 修复的两处条件合并，没有扩大到其他报告质量逻辑。
+
+- `_record_task_and_plan` 中原先的外层双字段非空判断仍先于 `_id(research_task_id)` 与 task ID 比较；合并后的 `and` 表达式保持相同短路顺序。因此仅在两个字段都存在时验证第二个任务 ID，缺失字段不会新增拒绝或跳过原有校验。[report_quality.py:187](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_quality.py:187)
+- comparison dimension 分支仍只在维度无效时检查并追加一次 `INVALID_DIMENSION_REFERENCE`；有效维度不追加，已有该 code 时不重复追加。合并 `elif` 条件未改变比较计数或 failure code 的去重行为。[report_quality.py:555](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/backend/app/research/application/report_quality.py:555)
+- 既有针对未批准 dimension、Evidence 覆盖和 task/plan context 绑定的断言均由精确领域测试执行；本轮没有增加或修改测试。
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_quality.py tests/research/test_report_quality_context.py` | 0 | `64 passed in 5.61s` |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/report_quality.py` | 0 | `All checks passed!` |
+
+未运行全量测试、部署、模型或 Git 操作。
