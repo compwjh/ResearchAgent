@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import anyio
 import pytest
 
+from backend.app.memory.repository import MemoryRepository
 from backend.app.platform.ollama import create_chat_model
 from backend.app.research.application.agent_runtime import (
     AgentRunInput,
@@ -15,6 +16,8 @@ from backend.app.research.application.agent_runtime import (
     _ollama_model_factory,
     _OllamaRunnerAdapter,
 )
+from backend.app.research.domain.models import ResearchSession
+from backend.app.research.infrastructure.research_store import ResearchStore
 from tests.research.test_agent_runtime_contract import _output, _skill
 
 
@@ -67,6 +70,20 @@ def _run_input(*, budget):
     )
 
 
+def _runtime_store(tmp_path):
+    memory = MemoryRepository(tmp_path / "memory.sqlite3")
+    conversation, user, _ = memory.create_conversation_messages(
+        "owner-runtime-fallback", "q", None, "m", "normal",
+    )
+    session = ResearchSession(
+        "session-runtime-fallback", "owner-runtime-fallback",
+        conversation.conversation_id, user.message_id, "intake-runtime-fallback", "intake_pending",
+    )
+    store = ResearchStore(tmp_path / "research.sqlite3")
+    store.create_session(session, memory_repository=memory)
+    return store, session
+
+
 def test_provider_timeout_uses_run_grant_and_reserves_existing_fallback_time():
     clock = _Clock()
     models = {}
@@ -101,6 +118,86 @@ def test_provider_timeout_uses_run_grant_and_reserves_existing_fallback_time():
     assert sum(models["local:qwen"].request_timeouts + models["deepseek:flash"].request_timeouts) == 120
     assert clock.now == 38
     assert result.model_metadata["fallback_attempted"] is True
+
+
+def test_provider_fallback_updates_persisted_agent_run_model_metadata_on_success(tmp_path):
+    clock = _Clock()
+    store, session = _runtime_store(tmp_path)
+
+    def factory(name, _effort):
+        return _TimeoutModel(
+            name,
+            clock,
+            timeout_after_set=name.startswith("local:"),
+            output=_output("planner"),
+        )
+
+    run_id = "run-fallback-metadata-success"
+    result = ResearchAgentRunner(
+        store=store,
+        model_router=_Router(),
+        model_factory=factory,
+        online_fallback_factory=factory,
+        online_fallback_enabled=True,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("planner")]),
+        clock=clock,
+    ).run(AgentRunInput(
+        run_id,
+        session.research_session_id,
+        "planner",
+        skill_snapshot=_skill("planner"),
+        owner_id="owner-runtime-fallback",
+        budget_snapshot={"max_seconds": 120, "elapsed_seconds": 0},
+    ))
+
+    persisted = store.get_agent_run(run_id, "owner-runtime-fallback")
+    assert result.status == "completed"
+    assert result.model_metadata["fallback_attempted"] is True
+    assert (persisted.provider, persisted.resolved_model) == ("deepseek", "deepseek:flash")
+
+
+def test_provider_fallback_metadata_survives_invalid_output_retry_chain(tmp_path):
+    clock = _Clock()
+    store, session = _runtime_store(tmp_path)
+
+    def factory(name, _effort):
+        return _TimeoutModel(
+            name,
+            clock,
+            timeout_after_set=name.startswith("local:"),
+            output={},
+        )
+
+    run_id = "run-fallback-metadata-failure"
+    result = ResearchAgentRunner(
+        store=store,
+        model_router=_Router(),
+        model_factory=factory,
+        online_fallback_factory=factory,
+        online_fallback_enabled=True,
+        capability_registry=RoleCapabilityRegistry(skills=[_skill("planner")]),
+        clock=clock,
+    ).run(AgentRunInput(
+        run_id,
+        session.research_session_id,
+        "planner",
+        skill_snapshot=_skill("planner"),
+        owner_id="owner-runtime-fallback",
+        budget_snapshot={"max_seconds": 120, "elapsed_seconds": 0},
+    ))
+
+    persisted_runs = [
+        store.get_agent_run(run_id, "owner-runtime-fallback"),
+        store.get_agent_run(f"{run_id}:attempt-3", "owner-runtime-fallback"),
+        store.get_agent_run(f"{run_id}:attempt-4", "owner-runtime-fallback"),
+    ]
+    assert result.status == "failed"
+    assert result.error_code == "AGENT_OUTPUT_INVALID"
+    assert [(run.provider, run.resolved_model) for run in persisted_runs] == [
+        ("deepseek", "deepseek:flash"),
+        ("deepseek", "deepseek:flash"),
+        ("deepseek", "deepseek:flash"),
+    ]
 
 
 def test_shorter_remaining_grant_splits_proportionally_without_exceeding_cap():

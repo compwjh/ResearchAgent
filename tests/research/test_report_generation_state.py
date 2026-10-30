@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -9,6 +10,7 @@ import pytest
 from backend.app.memory.repository import MemoryRepository
 from backend.app.research.domain.models import (
     AgentRun,
+    ResearchArtifact,
     ResearchPlan,
     ResearchSession,
     ResearchTask,
@@ -413,27 +415,145 @@ def test_settlement_reads_agent_run_counters_and_never_trusts_caller_usage(tmp_p
         ended="2026-10-29T00:01:20Z",
     )
 
-    settled = store.settle_report_generation_budget(
-        TASK_ID,
-        OWNER_ID,
-        reservation.report.report_version,
-        claim_id=claim_id,
-    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        settlements = list(pool.map(
+            lambda _index: store.settle_report_generation_budget(
+                TASK_ID,
+                OWNER_ID,
+                reservation.report.report_version,
+                claim_id=claim_id,
+            ),
+            range(2),
+        ))
+    settled = next(item for item in settlements if not item["replayed"])
+    duplicate = next(item for item in settlements if item["replayed"])
     budget = store.get_report_generation_budget(TASK_ID, OWNER_ID, reservation.report.report_version)
 
+    expected_report_totals = {
+        "model_loops_used": 18,
+        "tool_calls_used": 45,
+        "elapsed_seconds": 80.0,
+    }
+    expected_task_totals = {
+        "model_loops_used": 18,
+        "tool_calls_used": 45,
+        "elapsed_seconds": 80.0,
+        "model_loops_limit": 160,
+        "tool_calls_limit": 640,
+        "max_seconds": 1500,
+    }
     assert settled["settled"] is True
-    assert budget["report_totals"] == {"model_loops_used": 18, "tool_calls_used": 45, "elapsed_seconds": 80.0}
+    assert duplicate["settled"] is True
+    assert budget["report_totals"] == expected_report_totals
     assert budget["task_totals"]["model_loops_used"] == 18
     assert budget["task_totals"]["tool_calls_used"] == 45
     assert budget["task_totals"]["elapsed_seconds"] == 80.0
     assert budget["reserved"] == {"model_loops": 0, "tool_calls": 0, "seconds": 0}
-    duplicate = store.settle_report_generation_budget(
+    for settlement in settlements:
+        persisted = json.loads(settlement["report"].report_json)
+        assert persisted["generation"]["budget"]["report_totals"] == expected_report_totals
+        assert persisted["generation"]["budget"]["task_totals"] == expected_task_totals
+        assert persisted["generation"]["budget"]["runs"] == [{
+            "agent_run_id": run_id,
+            "model_loops_used": 18,
+            "model_loops_limit": 40,
+            "tool_calls_used": 45,
+            "tool_calls_limit": 160,
+            "elapsed_seconds": 80.0,
+        }]
+
+    failed_state = store.update_report_generation_state(
+        TASK_ID,
+        OWNER_ID,
+        reservation.report.report_version,
+        expected_revision=duplicate["revision"],
+        stage="failed",
+        rewrite_count=0,
+        status="failed",
+        reason_codes=["AGENT_OUTPUT_INVALID"],
+    )
+    failed_payload = json.loads(failed_state["report"].report_json)
+    assert failed_payload["generation"]["budget"]["report_totals"] == expected_report_totals
+    assert failed_payload["generation"]["budget"]["task_totals"] == expected_task_totals
+    failed_replay = store.settle_report_generation_budget(
         TASK_ID,
         OWNER_ID,
         reservation.report.report_version,
         claim_id=claim_id,
     )
-    assert duplicate["replayed"] is True
+    assert failed_replay["replayed"] is True
+    assert json.loads(failed_replay["report"].report_json)["generation"]["budget"] == failed_payload["generation"]["budget"]
+
+
+def test_repeated_settlement_after_publish_preserves_terminal_task_and_artifacts(tmp_path):
+    store, reservation = _setup(tmp_path)
+    claim_id = "d2b67783-ec32-4c91-88c1-ff503623b468"
+    run_id = "run-settle-published-report"
+    _claim(store, reservation, claim_id=claim_id, run_id=run_id, loops=12, calls=20, seconds=300)
+    _persist_run(
+        store,
+        reservation,
+        run_id,
+        loops=4,
+        calls=6,
+        started="2026-10-29T00:00:00Z",
+        ended="2026-10-29T00:01:00Z",
+    )
+    settled = store.settle_report_generation_budget(
+        TASK_ID, OWNER_ID, 1, claim_id=claim_id, now="2026-10-29T00:01:10Z"
+    )
+    report = settled["report"]
+    payload = json.loads(report.report_json)
+    payload["quality_validation"] = {"status": "pass"}
+    payload["generation"].update({"path": "agent_runner", "output_disposition": "accepted"})
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE research_reports SET report_json=? WHERE report_id=?",
+            (json.dumps(payload, ensure_ascii=False, sort_keys=True), reservation.report.report_id),
+        )
+        connection.commit()
+
+    revision = settled["revision"]
+    for next_stage in ("evidence_review", "comparison", "drafting", "quality_check"):
+        state = store.update_report_generation_state(
+            TASK_ID, OWNER_ID, 1,
+            expected_revision=revision,
+            stage=next_stage,
+            rewrite_count=0,
+        )
+        revision = state["revision"]
+    published = store.update_report_generation_state(
+        TASK_ID, OWNER_ID, 1,
+        expected_revision=revision,
+        stage="published",
+        rewrite_count=0,
+        status="completed",
+        published=True,
+    )
+    artifact_body = "immutable published markdown"
+    artifact = ResearchArtifact(
+        artifact_id="artifact-settle-published-report",
+        research_task_id=TASK_ID,
+        report_version=1,
+        artifact_type="markdown",
+        content_hash=hashlib.sha256(artifact_body.encode("utf-8")).hexdigest(),
+        generated_by_agent_run_id=run_id,
+        content=artifact_body,
+    )
+    store.create_artifact(artifact, owner_id=OWNER_ID)
+    published_report_json = published["report"].report_json
+    published_artifacts = store.list_artifacts_for_task(TASK_ID, OWNER_ID)
+    terminal_task_status = store.get_task(TASK_ID, OWNER_ID).status
+
+    replay = store.settle_report_generation_budget(
+        TASK_ID, OWNER_ID, 1, claim_id=claim_id, now="2026-10-29T00:02:00Z"
+    )
+
+    assert replay["settled"] is True
+    assert replay["replayed"] is True
+    assert store.get_research_report(TASK_ID, OWNER_ID, report_version=1).report_json == published_report_json
+    assert store.list_artifacts_for_task(TASK_ID, OWNER_ID) == published_artifacts
+    assert store.get_task(TASK_ID, OWNER_ID).status == terminal_task_status == "completed"
 
 
 def test_new_report_version_keeps_historical_agent_run_usage(tmp_path):

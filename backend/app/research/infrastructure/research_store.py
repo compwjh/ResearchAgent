@@ -7989,20 +7989,31 @@ class ResearchStore:
                         "limits": dict(state.get("limits", {})),
                     }
                     generation["store_state"] = state
-                    payload, _generation, _state = self._generation_json(report_row)
-                    payload["generation"] = generation
-                    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-                    updated = conn.execute(
-                        "UPDATE research_reports SET report_json=? WHERE research_task_id=? AND report_version=? AND status='generating'",
-                        (serialized, research_task_id, int(report_version)),
-                    )
-                    if updated.rowcount != 1:
-                        raise ResearchReportGenerationStateConflict("report generation reservation changed concurrently")
-                    report_row = conn.execute(
-                        "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
-                        (research_task_id, int(report_version)),
-                    ).fetchone()
                 usage = self._collect_report_generation_usage(conn, task_row, report_row, now=now)
+                # Persist both claim settlement and the same store-derived
+                # usage snapshot in one transaction. Replays also refresh a
+                # stale summary without changing the claim/state revision or
+                # adding usage a second time.
+                self._write_report_generation_budget(generation, usage)
+                payload, _generation, _state = self._generation_json(report_row)
+                payload["generation"] = generation
+                serialized = json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+                updated = conn.execute(
+                    "UPDATE research_reports SET report_json=? WHERE research_task_id=? AND report_version=? AND status='generating'",
+                    (serialized, research_task_id, int(report_version)),
+                )
+                if updated.rowcount != 1:
+                    raise ResearchReportGenerationStateConflict("report generation reservation changed concurrently")
+                report_row = conn.execute(
+                    "SELECT * FROM research_reports WHERE research_task_id=? AND report_version=?",
+                    (research_task_id, int(report_version)),
+                ).fetchone()
                 conn.commit()
             except Exception:
                 conn.rollback()

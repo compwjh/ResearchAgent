@@ -218,6 +218,36 @@ def test_quality_output_rejects_non_allowlisted_evidence_then_retries_with_safe_
     assert "https://" not in serialized_feedback
 
 
+def test_quality_schema_retry_for_synthesis_paper_ids_uses_only_approved_ids():
+    context = _quality_context(stage="comparison")
+    malformed = _quality_output(report_content=_report_content())
+    malformed_id = "model-injected-paper-id"
+    malformed["report_content"]["synthesis_findings"][0]["paper_ids"] = [malformed_id]
+    valid = _quality_output(report_content=_report_content())
+    model = FakeModel([{"output_json": malformed}, {"output_json": valid}])
+
+    result = _runner(model).run(_runtime_input(context=context))
+
+    assert result.status == "completed", result.to_dict()
+    feedback = model.calls[1][0]["validation_feedback"]
+    assert feedback["code"] == "REPORT_SCHEMA_INVALID"
+    assert feedback["failure"]["field_paths"] == [
+        "report_content.synthesis_findings[].paper_ids",
+    ]
+    assert feedback["paper_ids_constraint"] == {
+        "field_path": "report_content.synthesis_findings[].paper_ids",
+        "type": "JSON array",
+        "min_items": 2,
+        "max_items": 64,
+        "unique_items": True,
+        "values_from": "selected_paper_ids",
+        "do_not_use": ["evidence_ids", "paper titles"],
+    }
+    assert feedback["selected_paper_ids"] == context["selected_paper_ids"]
+    assert malformed_id not in json.dumps(feedback, ensure_ascii=False)
+    assert "Approved source excerpt" not in json.dumps(feedback, ensure_ascii=False)
+
+
 def test_targeted_revision_prompt_uses_bounded_prior_content_and_failure_codes_only():
     prior = _report_content()
     context = _quality_context(
@@ -328,6 +358,18 @@ def test_report_prompt_narrows_gaps_when_evidence_already_reports_measurements_a
     assert "sample representativeness" in prompt
     assert "temporal granularity" in prompt
     assert "missing detail does not mean" in prompt
+
+
+def test_report_prompt_spells_out_synthesis_finding_paper_id_array_shape():
+    prompt = _role_contract_prompt(
+        "synthesizer", has_tool_results=False, report_quality_context=_quality_context(stage="comparison"),
+    ).casefold()
+
+    assert "paper_ids must be a json array with 2–64 distinct values" in prompt
+    assert "copied exactly from selected_paper_ids" in prompt
+    assert "do not place evidence ids or paper titles in paper_ids" in prompt
+    assert '"paper_ids":["<selected-paper-id-a>","<selected-paper-id-b>"]' in prompt
+    assert "replace every placeholder with the actual approved id" in prompt
 
 
 def test_legacy_synthesizer_context_still_accepts_missing_report_content():

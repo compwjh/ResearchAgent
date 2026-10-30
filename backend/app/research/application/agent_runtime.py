@@ -468,6 +468,10 @@ def _report_quality_prompt_boundary(context: Mapping[str, Any]) -> str:
         "research_question:{text}, evidence_scope:{text,paper_ids}, paper_analyses:[{paper_id,method,findings,limitations}], "+
         "cross_paper_comparisons:[{dimension_id,paper_ids,statement,evidence_ids}], "+
         "synthesis_findings:[{finding_id,statement,paper_ids,evidence_ids}], research_gaps:[{statement,evidence_ids}]. "+
+        "For each synthesis finding, paper_ids must be a JSON array with 2–64 distinct values copied exactly from "+
+        "selected_paper_ids; do not place evidence IDs or paper titles in paper_ids. Example shape only: "+
+        '{"paper_ids":["<selected-paper-id-a>","<selected-paper-id-b>"],"evidence_ids":["<evidence-id-a>","<evidence-id-b>"]}; '+
+        "replace every placeholder with the actual approved ID. "+
         "Compatibility sections/citation_manifest may be empty when the approved body evidence does not define them; artifact_ids must be empty. "+
         "For each paper analysis block, status is supported, not_stated, or unavailable; supported blocks cite supplied "+
         "evidence IDs, while the other statuses have empty text and evidence_ids. Use only selected paper IDs, supplied "+
@@ -590,6 +594,7 @@ def _output_contract_feedback(
     *,
     require_synthesis_matrix: bool,
     validation_error: Any = None,
+    report_quality_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return bounded correction instructions for any output-contract retry."""
     required = tuple(dict.fromkeys((*ROLE_GENERIC_OUTPUT_FIELDS, *ROLE_OUTPUT_FIELDS.get(role, ()))))
@@ -630,6 +635,29 @@ def _output_contract_feedback(
             "rule_id": safe[0],
             "field_paths": list(observed_paths) if observed_paths else list(safe[1]),
         }
+    paper_ids_path = "report_content.synthesis_findings[].paper_ids"
+    if role == "synthesizer" and paper_ids_path in observed_paths:
+        feedback["paper_ids_constraint"] = {
+            "field_path": paper_ids_path,
+            "type": "JSON array",
+            "min_items": 2,
+            "max_items": 64,
+            "unique_items": True,
+            "values_from": "selected_paper_ids",
+            "do_not_use": ["evidence_ids", "paper titles"],
+        }
+        approved_ids = (
+            report_quality_context.get("selected_paper_ids")
+            if isinstance(report_quality_context, Mapping)
+            else None
+        )
+        if (
+            isinstance(approved_ids, list)
+            and 5 <= len(approved_ids) <= 64
+            and all(isinstance(value, str) and value.strip() and len(value) <= 200 for value in approved_ids)
+            and len(set(approved_ids)) == len(approved_ids)
+        ):
+            feedback["selected_paper_ids"] = list(approved_ids)
     return feedback
 
 
@@ -2697,6 +2725,9 @@ class ResearchAgentRunner:
                                 model = fallback_model
                                 fallback_attempted = True
                                 resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                                run = self._record_model_metadata(
+                                    run, owner, model, resolved_model, input.reasoning_effort,
+                                )
                             else:
                                 raise
                         else:
@@ -2716,6 +2747,9 @@ class ResearchAgentRunner:
                                 model = fallback_model
                                 fallback_attempted = True
                                 resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                                run = self._record_model_metadata(
+                                    run, owner, model, resolved_model, input.reasoning_effort,
+                                )
                             else:
                                 raise AgentRuntimeError(code) from exc
                         else:
@@ -2796,6 +2830,9 @@ class ResearchAgentRunner:
                             model = fallback_model
                             fallback_attempted = True
                             resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                            run = self._record_model_metadata(
+                                run, owner, model, resolved_model, input.reasoning_effort,
+                            )
                             continue
                         if fallback_error_code:
                             raise AgentRuntimeError(fallback_error_code) from exc
@@ -3062,6 +3099,7 @@ class ResearchAgentRunner:
                                 input.role,
                                 require_synthesis_matrix=require_synthesis_matrix,
                                 validation_error=validation_error,
+                                report_quality_context=report_quality_context,
                             )
                             pending_feedback_classification = "output_contract"
                         context = retry_context
@@ -3084,6 +3122,9 @@ class ResearchAgentRunner:
                                 model = fallback_model
                                 fallback_attempted = True
                                 resolved_model = getattr(model, "model_name", resolved_model) or resolved_model
+                                run = self._record_model_metadata(
+                                    run, owner, model, resolved_model, input.reasoning_effort,
+                                )
                                 attempts_used = 0
                                 continue
                             if fallback_error_code:

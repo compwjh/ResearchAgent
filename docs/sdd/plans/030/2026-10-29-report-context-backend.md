@@ -188,3 +188,54 @@ drafting 会读取当前 reservation 下已接受的 comparison AgentRun checkpo
 | `/Users/wjh/ResearchAgent/.venv/bin/python -m ruff check --ignore SIM102 backend/app/research/application/report_quality.py backend/app/research/application/agent_runtime.py backend/app/research/application/orchestrator.py tests/research/test_report_quality_context.py` | 0 | All checks passed |
 
 未忽略 `SIM102` 的 Ruff 检查在 `report_quality.py` 两处未改动的既有嵌套条件处报告问题；本轮未扩展修复范围。验证未调用真实模型、未部署、未访问生产数据库且未运行全量回归。
+
+## v6 comparison 失败诊断（2026-10-30，只读）
+
+只读检查 `/Users/wjh/ResearchAgent/data/research/research.sqlite3` 与 `artifacts/20261030-report-v6/06-report.json`。未读取模型拒绝正文、思维链或凭据；未修改数据库/预算，也未改代码。
+
+### 根因
+
+- 报告 v6 的 comparison AgentRun 链在 15:20:11–15:23:53 UTC 结束。安全 checkpoint 和 `research_events` 给出的错误一致：`AGENT_OUTPUT_INVALID`，`REPORT_SCHEMA_INVALID`，规则 `agent.output.structure`，字段路径 `report_content.synthesis_findings[].paper_ids`。这是结构校验路径，不是论文选择/引用范围失败：`validate_report_content` 先在 `report_quality.py` `_validate_report_shape` 的 `_id_array(..., minimum=2, maximum=64)` 检查该数组；选择范围错误在后续阶段会报 `INVALID_PAPER_SELECTION`。
+- `paper_ids` 的当前结构约束是：列表包含 2–64 个不同 ID；每个 ID 是 trim 后非空、最多 200 字符的字符串。已持久安全诊断只保留字段路径，没有保留是哪一项约束失败；retry checkpoint 的 `output` 为 `null`。因此不能再区分字段缺失、非列表、数量不符、无效 ID 或重复 ID，也不能据此推测模型输出的具体值。
+- 三条 AgentRun 对应同一 comparison WorkItem：初始 run 2 model loops、两条 continuation 各 1 loop，共 4 loops/0 tool calls；状态依次 `limit_reached`、`limit_reached`、`failed`，错误码都为 `AGENT_OUTPUT_INVALID`。这不是 timeout 被误归类：唯一 timeout 是首次本地请求的 `MODEL_TIMEOUT`，见下一节；最终失败由 schema validator 抛出。
+
+### Retry、fallback 与候选 ID
+
+- 事件 seq 64 在 15:20:41 明确记录 `PROVIDER_FALLBACK`：`ollama/qwen3.5:9b` 因 `MODEL_TIMEOUT` 切换到 `deepseek/deepseek-flash`。online fallback 实际被调用。第一次结构错误后，同一 retry 链继续使用已切换的 model；`fallback_attempted` 已为 true，结构错误不会再触发第二次 fallback。两次后续验证反馈在 seq 66、68 记为 `feedback_sent=true`。
+- `research_agent_runs.provider/resolved_model` 三行仍显示初始 Ollama/Qwen，不能代表后续实际 provider。fallback 切换时 Runtime 没有更新这些 AgentRun 元数据；事件才记录实际 provider 变化。这是独立的运行元数据投影缺口。
+- durable WorkItem 有 5 个 `validated_candidates` 与 5 项 `citation_allowlist`，候选 ID 唯一。retry 会保留原 `work_item_input.report_quality_context`，其 `selected_paper_ids` 来源于当前批准选择；运行时把整个 context JSON 发给模型。因此合法候选 ID 在后续请求上下文中，且验证反馈确实发送；但反馈对象本身只列校验规则/字段路径，并不再次列出 ID。未读取真实模型请求正文。
+
+### 预算核对
+
+- 报告 claim 为 `settled=true`，requested/granted 均为 267 秒；comparison run 链端到端 222 秒。Task 运行记录合计 1455 秒、32 loops、2 tool calls，低于既有 1500 秒/160 loops 上限；v6 comparison 链占 222 秒/4 loops。不是因任务预算耗尽而失败，也没有发现超额使用。
+- v6 JSON 中的 `task_totals=1233s/28 loops`、`report_totals=0/runs=[]` 是未结算前的旧快照：1233 秒正好是之前 18 条 AgentRun 记录总时长，少了本次 3 条 continuation。Store 的 claim 阶段会持久预算快照，但 `settle_report_generation_budget` 仅持久 `settled` claim 并返回重算 usage，没有调用 `_write_report_generation_budget`；后续失败状态写入也未刷新 summary。数据库 AgentRun 行保留真实计数，Store 动态预算查询可从这些行重算；但最终 JSON 展示的 report/task totals 陈旧。该问题不解释本次结构失败，仍应单独修预算投影。
+
+### 最小修复建议（未实施）
+
+1. 不放宽 `_id_array` 或论文引用范围校验。针对 `synthesis_findings[].paper_ids` 在通用 prompt 和 retry feedback 中明确“每条 finding 的 `paper_ids` 必须是至少两个、互不重复的批准 Paper ID；不能填 Evidence ID/标题”，并可加结构示例。feedback 最好从已验证 `report_quality_context.selected_paper_ids` 限定可用值，避免模型再次猜 ID。
+2. 为 ID-array schema 错误加受限的稳定子码（如 missing/type/count/duplicate/invalid-id），checkpoint 只保存子码、现有安全路径，不保存拒绝值或正文。这样下次才可从持久记录识别具体失败约束。
+3. fallback 切换后同步更新 AgentRun provider/model metadata；在 claim settle 和终态状态落盘时写回重算后的 `generation.budget` summary。两项都是观测准确性修复，不改变模型/schema 接受标准或预算上限。
+
+### 只读证据范围
+
+检查的实体限于 report v6 JSON、指定 WorkItem、三条 comparison AgentRun、它们的安全 checkpoint 元数据、该 task 的安全 worker/validation/fallback 事件、报告候选计数，以及相关 validator/runtime/store 实现。未运行测试、模型、部署或任何写库操作。
+
+## v6 paper_ids、fallback 元数据与预算快照修复（2026-10-30）
+
+按上节诊断实施以下有界修复，未改 report schema/validator 接受标准，也未更改任何既有 task 或 report budget：
+
+- 通用 report-quality prompt 明确每条 `synthesis_findings[].paper_ids` 是 2–64 项、无重复的 JSON 数组，且值必须来自已验证 `selected_paper_ids`；明确禁止 Evidence ID 和论文标题，并给仅展示形状的占位示例。仅在该安全字段路径校验失败时，retry feedback 才携带同一结构约束和已验证选集 ID。未使用模型拒绝值、原始正文或隐藏推理作为反馈。
+- Runtime 选择 online fallback 后，在后续调用前通过当前 AgentRun generation CAS 更新 provider、model 与 reasoning metadata。成功输出和 fallback 后仍失败的 run 都保留实际 DeepSeek 投影；不 fallback 的原 provider 路径保持原样。
+- `settle_report_generation_budget` 在同一 `BEGIN IMMEDIATE` 事务内结算 claim、按持久 AgentRun 计数重算 usage，并写入 report JSON 的 budget snapshot。report 仍为 generating 时重复 settlement 只刷新同一事实快照，不新增累计；失败状态已有快照不变。report 已 published/terminal 时不写 report JSON，因此 canonical Artifact 内容、terminal task 状态及其报告 JSON保持不可变。
+
+### 精确验证
+
+TDD RED 阶段，以下新增能力反例曾全部按预期失败：安全 paper_ids retry 反馈、prompt 数组契约、fallback 成功与失败 run 元数据、结算后的 JSON budget snapshot。最终候选的定向验证如下：
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_report_content_runtime.py tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_generation_state.py tests/research/test_report_generation_budget_recovery.py -q` | 0 | 75 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/agent_runtime.py backend/app/research/infrastructure/research_store.py tests/research/test_report_content_runtime.py tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_generation_state.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m py_compile backend/app/research/application/agent_runtime.py backend/app/research/infrastructure/research_store.py tests/research/test_report_content_runtime.py tests/research/test_agent_runtime_request_timeout.py tests/research/test_report_generation_state.py` | 0 | 通过，无输出 |
+
+结算用例用两个并发调用竞争同一 claim，并核对只有一个首次结算、二次读取一致的 report/task totals 与 AgentRun list；失败终态的重放不能增加 usage；已发布状态后重复 settlement 不改 report JSON、Artifact 列表或 terminal Task 状态。该用例通过 Store 的 published 状态和 Artifact fixture 验证不可变边界，没有执行真实 canonical 投递。没有运行全量回归、部署、真实模型或生产数据库操作；v6 已用预算未重置。
