@@ -489,6 +489,11 @@ def _report_quality_prompt_boundary(context: Mapping[str, Any]) -> str:
         "a deployment fact. Do not say deployment is absent or unverified when the supplied excerpt reports deployment; "+
         "identify only the deployment details the excerpt leaves unknown. Distinguish author-stated future work from "+
         "gaps inferred by this review, and label reviewer-derived gaps as inferences from the supplied evidence scope. "+
+        "Before writing each reviewer-derived gap, check every cited excerpt for whether it has already reported the "+
+        "method, measurement, deployment, or high-level result at issue. If it has, narrow the gap to a specific detail "+
+        "the excerpt leaves unclear, such as the observation window, sample representativeness, or temporal granularity; "+
+        "do not recast a reported item as absent, unverified, or unreported. Missing detail does not mean the underlying "+
+        "activity or result did not occur. "+
         "Runtime validates structure/references and computes the output digest; do not calculate the digest."
     )
     if stage in {"evidence_review", "comparison"}:

@@ -24,3 +24,16 @@ Scope: `agent_runtime.py` report-quality prompt boundary and `test_report_conten
 ## Limits
 
 The prompt may improve model behavior but does not mechanically ensure that a future report classifies each source correctly or labels inferred gaps accurately. A subsequent report still needs an independent content review against its evidence, including checks that it does not overstate relevance or summarize unreported deployment outcomes.
+
+## 2026-10-30 follow-up: narrow inferred gaps to excerpt evidence
+
+**Verdict: PASS for the prompt change.** The common opt-in report-quality boundary now asks the model to check every cited excerpt before stating a reviewer-derived gap. When an excerpt already reports the method, measurement, deployment, or high-level result, the gap must identify only a specific detail that remains unclear; missing detail must not be described as absence of the underlying activity or result. The examples (observation window, sample representativeness, temporal granularity) are generic and do not hard-code DANE, MIGP, or any selected paper.
+
+The change only extends prompt text. `_role_contract_prompt` continues to select this boundary only for a synthesizer request carrying a `report_quality_context` mapping; the ordinary legacy synthesis boundary and legacy output contract remain unchanged. No schema fields, persistence behavior, or artifact writes were added, so existing report artifacts are not rewritten by this change. The new fixture verifies that the generic rule reaches the prompt; it does not establish that a model will follow it in a generated report.
+
+Verification for this follow-up:
+
+- `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_content_runtime.py` — exit 0, **21 passed in 0.60s**.
+- `/Users/wjh/ResearchAgent/.venv/bin/ruff check backend/app/research/application/agent_runtime.py tests/research/test_report_content_runtime.py` — exit 0, **All checks passed**.
+
+This PASS is limited to the prompt implementation and compatibility boundary. It does not clear the existing Task10 acceptance BLOCKED state or validate the previously published report. Generate the requested v6 within the original remaining task budget, then independently review its content against its cited evidence and complete the live browser verification before revisiting acceptance readiness.

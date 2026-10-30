@@ -310,6 +310,26 @@ def test_report_prompt_carries_scope_and_evidence_fidelity_rules_for_mixed_authe
     )
 
 
+def test_report_prompt_narrows_gaps_when_evidence_already_reports_measurements_and_results():
+    context = _quality_context()
+    context["evidence"][0]["excerpt"] = (
+        "A longitudinal assessment measured adoption across multiple sites and reported an increase. "
+        "The abstract does not specify the observation window or how representative the sample is."
+    )
+
+    prompt = _role_contract_prompt(
+        "synthesizer", has_tool_results=False, report_quality_context=context,
+    ).casefold()
+
+    assert "check every cited excerpt" in prompt
+    assert "already reported" in prompt
+    assert "narrow the gap to a specific detail" in prompt
+    assert "observation window" in prompt
+    assert "sample representativeness" in prompt
+    assert "temporal granularity" in prompt
+    assert "missing detail does not mean" in prompt
+
+
 def test_legacy_synthesizer_context_still_accepts_missing_report_content():
     from tests.research.test_agent_runtime_contract import _synthesizer_input
 
