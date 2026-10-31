@@ -62,7 +62,7 @@ def test_report_action_uses_an_explicit_versioned_generation_button() -> None:
     assert "generateReportVersion" in RESEARCH
     assert "readGeneratedReportVersion" in action
     assert "button.disabled = state.acquisition.reportActionInFlight" in RESEARCH
-    assert "/assets/research-tasks.js?v=16" in INDEX
+    assert "/assets/research-tasks.js?v=21" in INDEX
 
 
 def test_upload_only_surfaces_report_action_and_does_not_generate_implicitly() -> None:
@@ -80,7 +80,7 @@ def test_report_action_failure_restores_the_previous_report_for_retry() -> None:
     action = RESEARCH[action_start:action_end]
     assert "const previousReport = state.report" in action
     assert "state.report = previousReport" in action
-    assert "旧报告保持不变" in action
+    assert "提交结果尚未确认；重试会沿用同一请求标识，避免创建重复版本。" in action
 
 
 def test_report_actions_and_version_selection_guard_delayed_responses() -> None:

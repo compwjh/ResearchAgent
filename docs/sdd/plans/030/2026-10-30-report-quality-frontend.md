@@ -91,3 +91,25 @@
 - 修复：受理响应仅保留已校验的 report version，前端固定投影为 `generating`、`published=false`、`generation.published=false` 与 `quality_status=pending`，不把受理 body 的 quality/generation 字段带入报告。版本化 canonical GET 成功前，不显示质量指标、正式发布或下载；读取失败仍留在生成中并安排同版本轮询/读取重试。
 - 测试：将伪正式的 202 body 加入现有幂等/轮询测试；新增 canonical GET 返回 500 场景，断言报告保持生成中、没有质量指标和下载、且继续追踪。现有延迟轮询测试仍验证 canonical GET 返回合规 completed + published + quality-v1 pass 后才转正式并读正文。
 - 定向验证：`node --check frontend/research-tasks.js`、`node tests/frontend/test_report_action_race.js`、`node tests/frontend/test_research_session_workspace.js` 与 `git diff --check -- frontend/research-tasks.js frontend/index.html tests/frontend/test_report_action_race.js` 均退出 0；缓存版本升至 `research-tasks.js?v=21`，未发现 `innerHTML`。未跑后端测试、未部署。
+
+## 静态前端契约同步（2026-10-31）
+
+前端 tester 的 R3 全量重跑（由 root 转报）为 **385 passed / 0 skipped，另有 3 个静态失败**；所有浏览器用例实际通过。3 个静态失败正是以下陈旧断言：它们仍引用旧入口缓存版本或旧提示。当前生产源码与此前已确认的前端行为一致，因此只同步测试预期，没有改生产代码。
+
+| 精确测试节点 | 旧预期 → 新预期 | 依据 |
+|---|---|---|
+| `test_frontend_management_contract.py::test_keeps_static_asset_versions_and_scoped_css` | `styles.css?v=66` → `styles.css?v=67` | 当前入口 `frontend/index.html:8` 引用 v67；Spec030 前端评审 `docs/sdd/reviews/030-report-quality-frontend-review.md:24` 也确认 styles v67。`app.js?v=66` 仍是当前入口版本，原断言保持不动。 |
+| `test_paper_issue_ui_contract.py::test_report_action_uses_an_explicit_versioned_generation_button` | `research-tasks.js?v=16` → `research-tasks.js?v=21` | 当前入口 `frontend/index.html:804` 引用 v21；Spec030 前端评审 `docs/sdd/reviews/030-report-quality-frontend-review.md:24` 确认 v21。精确版本门禁仍保留。 |
+| `test_paper_issue_ui_contract.py::test_report_action_failure_restores_the_previous_report_for_retry` | 已不存在的 `旧报告保持不变` → 当前提示 `提交结果尚未确认；重试会沿用同一请求标识，避免创建重复版本。` | `frontend/research-tasks.js:2267` 是现行用户提示；`generateReportVersion()` 仍将 `state.report`、视图、版本列表与格式恢复到前一快照。测试原有 `state.report = previousReport` 回滚断言保留。Task09 合同要求不覆盖旧版本且失败可重试，Spec030 前端评审 v21 PASS。 |
+
+### 定向验证
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_frontend_management_contract.py::test_keeps_static_asset_versions_and_scoped_css tests/frontend/test_paper_issue_ui_contract.py::test_report_action_uses_an_explicit_versioned_generation_button tests/frontend/test_paper_issue_ui_contract.py::test_report_action_failure_restores_the_previous_report_for_retry -q` | 0 | 3 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest --collect-only -q tests/frontend/test_frontend_management_contract.py::test_keeps_static_asset_versions_and_scoped_css tests/frontend/test_paper_issue_ui_contract.py::test_report_action_uses_an_explicit_versioned_generation_button tests/frontend/test_paper_issue_ui_contract.py::test_report_action_failure_restores_the_previous_report_for_retry` | 0 | 3 collected，无 collection error |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check tests/frontend/test_frontend_management_contract.py tests/frontend/test_paper_issue_ui_contract.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py` | 0 | 无 spec/task 编号违规 |
+
+**交接状态：** 三处陈旧预期已按精确版本和当前提示同步；版本门禁及旧报告恢复断言保留。改动已冻结，待 frontend-reviewer 独立复核；本次未改生产代码或部署。

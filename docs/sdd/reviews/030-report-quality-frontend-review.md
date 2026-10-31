@@ -168,3 +168,49 @@ Fake DOM 探针按真实页面时序执行：`boot()` 启动的列表请求 A �
 - `node tests/frontend/test_report_action_race.js`：退出码 0；含 202 伪发布 + canonical 500、canonical 成功发布及 v5 通知/手选保持用例。
 - `node tests/frontend/test_research_session_workspace.js`：退出码 0。
 - 未运行后端测试、全量测试、部署或 Git 操作；未修改业务代码。v21 前端增量 PASS，可供主 Agent 继续浏览器通知路径最终复测。
+
+## 窄复审：静态前端合同同步（2026-10-31）
+
+### 结论
+
+**PASS / Approve。** 冻结差异仅修改两份 `tests/frontend/` 合同文件中的三处预期；`frontend/**` 没有差异。两处缓存版本断言已与当前入口一致，失败提示断言已改为当前实际文案。没有生产 UI 或行为改动。
+
+### 指定差异
+
+| 检查项 | 结论 | 依据 |
+|---|---|---|
+| 样式版本合同 | PASS | `test_frontend_management_contract.py` 断言 `styles.css?v=67`；入口 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:8) 当前也引用 v67。`app.js?v=66` 的原断言保持不变，入口见 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:807)。 |
+| 报告脚本版本合同 | PASS | `test_paper_issue_ui_contract.py` 断言 `research-tasks.js?v=21`；入口 [index.html](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/index.html:804) 当前也引用 v21。 |
+| 提交失败文案合同 | PASS | 测试现断言“提交结果尚未确认；重试会沿用同一请求标识，避免创建重复版本。”，与 [research-tasks.js](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/frontend/research-tasks.js:2267) 一致；旧的“旧报告保持不变”断言已不再对应当前产品文案。 |
+| 回滚与幂等保护 | PASS | `previousReport` 快照与 `state.report = previousReport` 断言保留；未修改的 `test_report_action_race.js::testVersionFailureRollsBackAndLateVersionCannotWin` 仍核对失败后旧报告正文及 `reportViews` 保持。`testReportSubmissionUsesIdempotencyKeyAndTreats202AsPending` 仍验证连接中断后连续 POST 复用同一 UUID，用户主动发起新重试时使用新 UUID；生产代码继续回滚报告、视图、版本列表和格式（`research-tasks.js:2246–2250`）。 |
+
+### DOM、版本与 XSS 范围
+
+- **DOM/CSS：未触及。** 本次只改测试预期，未更改 HTML、CSS 或交互代码；这不是一次新的产品 DOM/CSS 验收。
+- **资源版本：PASS。** 新断言与当前入口中的 v67/v21 对应；app.js 的 v66 断言继续保留。
+- **XSS：未触及。** 无渲染路径或用户输入处理变化；此前 v21 评审的 XSS 结论不受本次测试-only 差异影响，本节不构成新的全量 XSS 审计。
+
+### 定向验证
+
+以下结果来自本 Task 前端测试交接记录；评审未重跑测试。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/frontend/test_frontend_management_contract.py::test_keeps_static_asset_versions_and_scoped_css tests/frontend/test_paper_issue_ui_contract.py::test_report_action_uses_an_explicit_versioned_generation_button tests/frontend/test_paper_issue_ui_contract.py::test_report_action_failure_restores_the_previous_report_for_retry -q` | 0 | 3 passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest --collect-only -q tests/frontend/test_frontend_management_contract.py::test_keeps_static_asset_versions_and_scoped_css tests/frontend/test_paper_issue_ui_contract.py::test_report_action_uses_an_explicit_versioned_generation_button tests/frontend/test_paper_issue_ui_contract.py::test_report_action_failure_restores_the_previous_report_for_retry` | 0 | 3 collected，无 collection error |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check tests/frontend/test_frontend_management_contract.py tests/frontend/test_paper_issue_ui_contract.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py` | 0 | 无 spec/task 编号违规 |
+
+未运行全量回归、后端测试或部署；本轮未改生产代码。
+
+## 本轮 Review Summary
+
+| Severity | Count | Status |
+|----------|-------|--------|
+| CRITICAL | 0 | pass |
+| HIGH | 0 | pass |
+| MEDIUM | 0 | info |
+| LOW | 0 | note |
+
+Verdict: **PASS / Approve** — 三项陈旧静态预期已对齐当前入口和文案，回滚与幂等保护断言仍保留；本结论仅覆盖这三处测试合同改动。
