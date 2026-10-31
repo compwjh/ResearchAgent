@@ -9,7 +9,6 @@ from backend.app.research.application.report_quality import (
     validate_report_content,
 )
 
-
 TASK_ID = "task-a"
 PLAN_VERSION = 2
 PAPER_IDS = [f"paper-{number}" for number in range(1, 6)]

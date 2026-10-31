@@ -14,7 +14,6 @@ from backend.app.research.application.report_quality import (
     count_report_content_cjk,
 )
 
-
 TASK_ID = "task-render"
 PLAN_VERSION = 3
 PAPER_IDS = [f"paper-{number}" for number in range(1, 6)]
@@ -25,7 +24,9 @@ def _context() -> ReportQualityContext:
     claims = []
     evidence = []
     levels = ["catalog", "abstract", "fulltext", "catalog", "abstract"]
-    for number, (paper_id, evidence_id, level) in enumerate(zip(PAPER_IDS, EVIDENCE_IDS, levels), start=1):
+    for number, (paper_id, evidence_id, level) in enumerate(
+        zip(PAPER_IDS, EVIDENCE_IDS, levels, strict=False), start=1
+    ):
         claim_id = f"claim-{number}"
         claims.append({
             "claim_id": claim_id,
@@ -101,7 +102,9 @@ def _context() -> ReportQualityContext:
 
 def _report_content() -> dict:
     analyses = []
-    for number, (paper_id, evidence_id) in enumerate(zip(PAPER_IDS, EVIDENCE_IDS), start=1):
+    for number, (paper_id, evidence_id) in enumerate(
+        zip(PAPER_IDS, EVIDENCE_IDS, strict=False), start=1
+    ):
         analyses.append({
             "paper_id": paper_id,
             "method": {

@@ -402,3 +402,60 @@ TDD RED 曾确认：计划 query 不含独立 topic；aggregate refs 被当成�
 | `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py` | 0 | test naming check passed |
 
 未运行全量、真实模型、线上 E2E、生产/本机主数据库写入、部署或 Git 操作。安全分类只能定位拒绝类型及安全路径；要确定自然语言 E2E 中具体命中的值类型，仍需下次运行版本产生该闭集诊断。
+
+## R3 Intake reasoning effort 拒绝诊断（2026-10-31，只读）
+
+检查 `docs/sdd/plans/030/artifacts/20261031-natural-e2e-r3/`、部署 commit `44752b60` 的事件、当前代码能力解析路径，以及主目录 `data/model_capabilities.sqlite3` 中 `qwen3.8:27b` 的单行 capability metadata。数据库连接使用 SQLite `mode=ro`；未读取环境变量/密钥、未重探测模型、未改配置或发起 API/model/approval 请求。
+
+### 观察
+
+- R3 三次本地 Intake SSE 都在 skill activation/plan 之前返回 `REASONING_EFFORT_UNSUPPORTED`，meta 所选模型均为 `qwen3.8:27b`。第一次 `request.json` 未带 reasoning effort，走会话默认档位；后两次 `retry-request.json` 显式设为 `off`，结果仍相同。没有创建 session/task，因而不是 Intake 内容或 plan 校验拒绝。
+- 同目录 `models.json` 标记 `qwen3.8:27b` 为 current，且给所有本地模型静态列出 `off/low/medium/high/xhigh`。但 `routes_models._build_local_models()` 只是直接返回 `list(REASONING_EFFORTS)`，不调用 Ollama 能力探测，因此该值是 UI 展示清单，不是当前模型的实测能力。
+- 入口 `_start_message()` 使用 `_resolve_request_effort()`，随后走 `resolve_reasoning_effort()` → `get_reasoning_capabilities()`。该路径先读进程内 300 秒缓存，之后读 24 小时 SQLite 能力记录，最后才进行 Ollama 实测。与 `/api/models` 的静态清单是两套来源。
+- 主目录 SQLite 中当前 `qwen3.8:27b` 记录为 `supported_efforts=[off,low,medium,xhigh]`、`default=xhigh`、`source=ollama_probe`，`probed_at=2026-10-30T16:56:49.103745Z`；该时间比第三次失败 SSE 的 `16:57:12.614Z` 早约 23 秒。数据库记录不支持 `high`，也不与 `/api/models` 展示完全一致；当前持久记录支持 `off`，与第三次入口拒绝不一致。
+- 当前 `capability_scheduler.run_capability_sweep()` 探测后只 upsert SQLite；`get_reasoning_capabilities()` 对有效内存缓存优先返回，且内存缓存 TTL 为 300 秒。代码因此允许同一服务进程保留旧内存能力集，即使共享 SQLite 已更新；三次请求在约 82 秒内发生，符合这一陈旧缓存窗口。事件不包含所命中缓存的 `source/cached_at`，故这是强推断，不能凭现有材料确认具体 worker 的内存状态。
+- 后续 `04-online-intake.sse` 明确选用 `deepseek:deepseek-flash` 与 `off`，成功输出 plan/intake，session 为 `9ff213128bd14ea8841e7bd65b7ace13`。`models.json` 仍将本地 Qwen 标为 current；线上模型 `capabilities.reasoning_efforts=null`。这符合现有逻辑：能力未知的线上模型允许 `off` 映射为 `think=false`。当前 plan 尚待审批。
+
+### 诊断结论与证据边界
+
+已确认的是两个 API 的能力来源不一致：`/api/models` 对本地模型宣称全档位支持；Intake 则按实测/缓存能力做严格校验。`models.json` 的支持清单不能作为实际解析结果的证据。主目录 DB 的新记录支持 `off`，但第三次 Intake 仍拒绝，最符合“处理该请求的进程仍使用旧内存 capability cache”；后台 sweep 写 SQLite 时没有同步失效进程缓存。当前资料没有每个 SSE 请求的 worker id、capability source/cache timestamp，也没有该服务实际 `OLLAMA_BASE_URL` 指纹，无法排除另一个 worker/环境持有不同旧记录；不应把它定论为部署了错误 env，也未发现需要改 Ollama LAN 配置的证据。
+
+### 最小修复范围
+
+1. `/api/models` 不应把所有 effort 静态宣称为本地模型已支持。最小做法是读与入口相同的已探测/缓存能力状态；记录缺失或不新鲜时显示 unknown/null，而不是虚报五档齐全。保持线上模型 capabilities unknown 的现状。
+2. 消除进程内缓存与共享 SQLite 的更新不一致：能力写入/后台 sweep 后失效当前进程的相关内存项；并为多 worker 情况增加读取时以 SQLite `probed_at` 对比缓存时间的检查，或采取等价的版本化失效机制。这样支持档位变化可在 300 秒内反映到入口解析，且不会清空数据库或改 Ollama 配置。
+3. 增加不含凭据的诊断字段/日志，仅记录 `capability_source`、安全模型 ID、requested effort、结果码和探测时间；对 SSE 返回继续保持既有错误码。用 fake resolver 测试“SQLite 新记录比 worker 缓存新”及 models API 与入口看到同一已知能力集。是否把该 telemetry 暴露到产品 API 不在本次只读诊断范围。
+
+本次只读 artifact、代码和能力数据库；未写代码/数据库，未读取 credentials，未切换或修改长期模型设置，也未重复调用 Intake、模型或审批。
+
+实现归属保持既有 Spec026/035 reasoning-capability 范围；先让 Spec030 自然语言主案例继续通过线上入口完成，不在报告验收前并行扩散配置变更。最小可复现应使用 fake capability store/prober 而不实际发请求：预置 worker 内存缓存缺少 `off`、SQLite 返回更新且含 `off` 的新记录，验证入口解析是否仍误拒；再模拟 sweep/upsert 后内存项失效，并验证 models listing 与入口解析读取相同能力投影。此诊断没有调用 capability probe 或模型，未实现、部署或审批。
+
+## R3 evaluator safety feedback 与终态复核（2026-10-31，只读）
+
+复查 `docs/sdd/plans/030/artifacts/20261031-natural-e2e-r3/09-events.sse` 与最终 `11-events.sse`，并对照 evaluator prompt、batch normalizer 和 runtime output validator。未读取模型原始输出/隐藏推理，未调用模型/API，未改代码或数据库。
+
+### 复核结果
+
+- 第一次观察到的 E1 `attempt=3` 拒绝是 `agent.output.safety`，安全诊断为 `forbidden_key`、路径 `output.safe_summary.unknown`。未知对象键按诊断契约被折叠为 `unknown`；因此事件能确认拒绝发生在 `safe_summary` 子树，但不能还原触发的具体键，也不能据此认定是 evaluation/CoT、`kept` 位置或某个特定字段导致。不得从隐藏输出猜测。
+- 最终事件显示该拒绝后的安全反馈恢复了生成：E1 以 DeepSeek 完成，后续 critic 与 synthesizer 也完成。报告最终为 `partial` / `EVIDENCE_INSUFFICIENT`，仅选中 2/5；当前结果不是持续 safety failure，而是已批准最低论文数未满足。
+- `agent_runtime.py::_role_contract_prompt()` 的 evaluator 指令要求对每篇候选分别输出 `candidate_id`、`keep`、`relevance_score`、理由和该篇 catalog refs，并称批量结果“may put ... decisions in a kept array”，但没有明确 `kept` 是顶层键，也没有给出完整 JSON 例子。生产 normalizer `orchestrator.py::_validated_evaluator_candidates()` 实际只在每个 output 的顶层读取 `output.get("kept")`，并逐项校验 ID、refs、keep 和既有相关性阈值。因此 prompt 对当前 parser 的关键容器位置表达不够精确。
+- 通用 prompt 要求 `safe_summary` 是 object；`AgentRuntime._validate_output()` 确认它是 `Mapping`，再对整个输出递归调用 `validate_safe_scope()`。两边在外层类型上相符；validator 对 `safe_summary` 内层没有额外的业务字段 schema，而是继续执行既有 forbidden-key pattern、URL/credential、大小及深度安全规则。`forbidden_key` 说明安全门禁按既有规则拒绝了一个子键，不是放宽规则或改变 validator 的理由。
+
+### 最小建议及范围
+
+本次反馈已经让 evaluator 继续完成，故不因这条事件额外修改 prompt 或安全规则。若后续复现同一类 evaluator 容器错误，最小 prompt 澄清应明确批量 JSON 将逐篇决策放在**顶层** `kept` 数组，并给出一个不带额外 summary 字段的形状示例；仍保留每篇单独打分、选集 allowlist、既有阈值和安全 validator。若只需单条决策，继续支持现有单对象形状。`safe_summary` 如需示例，只用通用、无链接及凭据语义的普通字段；不得为了未知键而全局允许额外键。
+
+后续可行性案例按已授权的“安全研究中的实证评估方法”主题继续；认证主题若真实相关且通过阈值的论文不足 5 篇，应保留 `partial` 并说明缺口，不用不相关论文补数、不降低相关性门槛。本次复核未执行该后续案例、未做模型调用、审批、数据库写入或部署。
+
+## 最终静态检查清理（2026-10-31）
+
+仅整理 `tests/research/test_report_content_rendering.py` 与 `tests/research/test_report_quality.py`：移除 imports 后多余空行以通过 Ruff `I001`；在 rendering 测试两处 `zip()` 上显式指定 `strict=False`，保持既有长度不一致时的截断语义并通过 `B905`。未改断言、生产代码或选集/质量行为。
+
+| 命令 | 退出码 | 结果 |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest tests/research/test_report_content_rendering.py tests/research/test_report_quality.py -q` | 0 | 30 passed in 1.13s |
+| `/Users/wjh/ResearchAgent/.venv/bin/ruff check tests/research/test_report_content_rendering.py tests/research/test_report_quality.py` | 0 | All checks passed |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_layout.py` | 0 | test layout: ok |
+| `/Users/wjh/ResearchAgent/.venv/bin/python scripts/check_test_naming.py` | 0 | no spec/task numbers under tests |
+
+未运行全量测试、部署或模型/API调用，未执行 Git 操作。

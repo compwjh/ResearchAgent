@@ -199,3 +199,15 @@ This review verifies diagnostic plumbing only. The root cause of the reported re
 | Author's scoped suite and static checks | 0 (reported) | 114 tests; Ruff, compile, test-layout, and naming checks reported passing; not rerun here |
 
 No full regression, model call, deployment, or Git operation was performed in this review.
+
+## Follow-up review — 2026-10-31 test-only lint cleanup
+
+**Current verdict: PASS.** The frozen diff is limited to `tests/research/test_report_content_rendering.py` and `tests/research/test_report_quality.py`. The two `zip` calls now state `strict=False` explicitly ([test_report_content_rendering.py:27](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_content_rendering.py:27), [test_report_content_rendering.py:105](/Users/wjh/.codex/worktrees/map-usability/ResearchAgent/tests/research/test_report_content_rendering.py:105)); this preserves Python's prior default truncation behavior. No assertion, fixture data, import, or production code changed. The remaining edits only remove excess blank lines. No baseline route lint or frontend file was touched in this slice.
+
+| Command | Exit code | Result |
+|---|---:|---|
+| `/Users/wjh/ResearchAgent/.venv/bin/python -m pytest -q tests/research/test_report_content_rendering.py tests/research/test_report_quality.py` | 0 | 30 passed in 0.80s (independently rerun) |
+| `git diff --check -- tests/research/test_report_content_rendering.py tests/research/test_report_quality.py` | 0 | Passed |
+| Author's two-file Ruff and test-layout/naming checks | 0 (reported) | Passed; not rerun here |
+
+No production change, full regression, model call, or deployment was part of this review.
