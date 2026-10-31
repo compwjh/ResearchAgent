@@ -1,0 +1,9 @@
+{
+  "command": "approve_plan",
+  "subject_version": 1,
+  "scope_json": {
+    "output_hash": "13217d974ff333c7f1c36594feec460a944766a0b5d9e65a6deab041539a4d0f",
+    "plan_version": 1
+  },
+  "idempotency_key": "dd710bf0-2d75-4200-a4ef-edf6c49c7f4b"
+}

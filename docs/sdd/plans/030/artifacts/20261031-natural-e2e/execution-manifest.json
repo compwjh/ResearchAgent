@@ -1,0 +1,38 @@
+{
+  "deployment_commit": "4e63615f",
+  "base_url": "http://127.0.0.1:8000",
+  "conversation_id": "d63f178266934ab6a790d932fd15baea",
+  "research_session_id": "eb423a0ae279472d9709cda75e957da3",
+  "task_id": "387a5090b27550c59de86adb415eb26e",
+  "report_id": "f8ccfb15-0670-47fc-af6b-d78ed23ea626",
+  "plan_version": 1,
+  "report_version": 1,
+  "status": "completed",
+  "published": true,
+  "quality_validation": {
+    "cjk_count": 2920,
+    "comparison_count": 3,
+    "count_method": "report-quality-v1",
+    "failure_codes": [],
+    "invalid_evidence_count": 0,
+    "paper_count": 5,
+    "revision_count": 0,
+    "schema_version": "report-quality-v1",
+    "status": "pass",
+    "supported_finding_count": 5
+  },
+  "provider": "deepseek",
+  "model": "deepseek:deepseek-flash",
+  "machine_result": "pass",
+  "human_acceptance": "blocked_pending_independent_review",
+  "known_blockers": [
+    "Initial natural input required an unnecessary paper-count clarification",
+    "Selected papers do not adequately match authentication security topic"
+  ],
+  "request": "request.json",
+  "natural_supplement": "supplement-request.json",
+  "artifact_verification": "download-verification.json",
+  "browser_screenshot": "browser-report.jpg",
+  "observed_at": "2026-10-30T16:06:41.475233+00:00",
+  "events_note": "08-events.sse records a real UI-style event-stream read that may drain projection retries; curl exit28 is intentional two-second stream cutoff, not generation failure."
+}

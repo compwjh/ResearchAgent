@@ -1,0 +1,24 @@
+{
+  "conversation_id": "532b3ed50b93435fa9d229e74d311f80",
+  "session_id": "e08273d699674234a47d74b725c3cc73",
+  "plan_version": 1,
+  "task_id": "d5a3c7f89f2d5449b9bd3f59a2f67bfd",
+  "deployment_commit": "dd54b11a",
+  "base_url": "http://127.0.0.1:8000",
+  "outcome": "partial",
+  "published": false,
+  "selected_count": 1,
+  "required_count": 5,
+  "terminal_error_code": "AGENT_OUTPUT_INVALID",
+  "failed_role": "paper-evaluator",
+  "validation_rule": "agent.output.safety",
+  "validation_field_paths": [
+    "output"
+  ],
+  "verified_fixes": {
+    "initial_intake_missing_fields": [],
+    "search_queries_include_topic": true
+  },
+  "evidence": "06-events.sse",
+  "note": "Safety subtype not yet established. No successful report claimed. Event stream read may perform projection retry reconciliation."
+}

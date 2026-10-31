@@ -1,0 +1,26 @@
+[
+  {
+    "type": "citation_manifest",
+    "artifact_id": "0376e5c47c2946ea813ba5fa44b91c2b",
+    "http_status": 200,
+    "bytes": 1437,
+    "sha256": "9aa93e73da178473ef2f05f32f8bf6e4aa09e279ea70506978f129c495aa3d16",
+    "matches": true
+  },
+  {
+    "type": "html",
+    "artifact_id": "4ecfa805bab340e793aeaa40254e2478",
+    "http_status": 200,
+    "bytes": 14977,
+    "sha256": "d291454c1f3019f9bf21b4c88af5d09bf0dc2aa9e7b49b5e8367b4a3922fee2c",
+    "matches": true
+  },
+  {
+    "type": "markdown",
+    "artifact_id": "4ab008dd475d485a9ec7f3410b04d5d1",
+    "http_status": 200,
+    "bytes": 12171,
+    "sha256": "370af56603ac292915dcca319ac86b5965e48e7c2a56e75837e10f7060f5ae4f",
+    "matches": true
+  }
+]

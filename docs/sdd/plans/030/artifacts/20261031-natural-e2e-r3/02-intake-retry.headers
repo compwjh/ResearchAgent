@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+date: Fri, 30 Oct 2026 16:56:30 GMT
+server: uvicorn
+content-type: text/event-stream; charset=utf-8
+transfer-encoding: chunked
+

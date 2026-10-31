@@ -1,0 +1,26 @@
+{
+  "deployment_commit": "6f70303f",
+  "base_url": "http://127.0.0.1:8000",
+  "observed_at": "2026-10-30T15:27:43.733327+00:00",
+  "request_method": "POST",
+  "request_path": "/api/research-tasks/bdcd7fc185425e0f8443599e9cdbe8ec/reports",
+  "idempotency_key": "f120035d-6496-43c7-99e5-1df2f7cbbf19",
+  "http_status": 202,
+  "final_response": "06-report.json",
+  "outcome": "failed",
+  "reason_codes": [
+    "AGENT_OUTPUT_INVALID"
+  ],
+  "published": false,
+  "browser_observation": {
+    "report_version": 5,
+    "formal_published": true,
+    "cjk_count": 2912,
+    "paper_count": 5,
+    "comparison_count": 5,
+    "supported_finding_count": 6,
+    "revision_count": 0,
+    "screenshot": "browser-v5.jpg"
+  },
+  "note": "Execution manifest transcribed from actual tool results; not a raw request trace. Failed v6 does not alter published v5."
+}

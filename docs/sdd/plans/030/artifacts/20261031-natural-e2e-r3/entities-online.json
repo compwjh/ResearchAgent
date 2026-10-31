@@ -1,0 +1,10 @@
+{
+  "deployment_commit": "44752b60",
+  "base_url": "http://127.0.0.1:8000",
+  "entry_model": "deepseek:deepseek-flash",
+  "reasoning_effort": "off",
+  "conversation_id": "252609a6130e40a4818ac1560656111d",
+  "session_id": "9ff213128bd14ea8841e7bd65b7ace13",
+  "plan_version": 1,
+  "task_id": "3efcee5268f25980ae09d0d0fbe7a145"
+}

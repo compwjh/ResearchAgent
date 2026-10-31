@@ -1,0 +1,252 @@
+id: 1
+event: task
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 1, "type": "task", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "phase:research", "node_type": "phase", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "message_id": "3408adcf4b135b93815913953609997f", "kind": "task", "label": "task", "status": "running", "summary": null, "started_at": "2026-10-30T15:52:58.928634+00:00", "completed_at": null, "parent_step_id": null, "node_type": "phase", "node_key": "phase:research", "display_order": 1, "detail_json": "{\"status\": \"running\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:1", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 2
+event: plan
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 2, "type": "plan", "timestamp": "2026-10-30T15:58:02Z", "payload": {"facets": ["比较 USENIX Security 2022 认证安全论文的研究方法", "安全问题", "主要发现与证据边界"], "items": [{"role": "search-worker", "task_type": "search_catalog"}, {"role": "search-worker", "task_type": "search_catalog"}, {"role": "search-worker", "task_type": "search_catalog"}, {"role": "paper-evaluator", "task_type": "evaluate_papers"}, {"role": "research-critic", "task_type": "check_coverage"}, {"role": "synthesizer", "task_type": "synthesize_preliminary_report"}], "node_key": "phase:plan", "node_type": "phase", "plan_version": 1, "replan_round": 0, "stop_reason": "replan_pending"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "30dd240e46d54268ad32f5ea4733f0c5", "message_id": "3408adcf4b135b93815913953609997f", "kind": "plan", "label": "plan", "status": "completed", "summary": null, "started_at": "2026-10-30T15:52:59.094166+00:00", "completed_at": "2026-10-30T15:52:59.094166+00:00", "parent_step_id": null, "node_type": "phase", "node_key": "phase:plan", "display_order": 2, "detail_json": "{\"facets\": [\"比较 USENIX Security 2022 认证安全论文的研究方法\", \"安全问题\", \"主要发现与证据边界\"]}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:2", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 3
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 3, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "status": "running", "task_type": "search_catalog", "work_item_id": "387a5090b27550c59de86adb415eb26e:s1"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "a3afc958fe6f4d29b0fd7755afefb745", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:52:59.312990+00:00", "completed_at": "2026-10-30T15:53:59.735382+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "display_order": 9, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:s1\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:9", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 4
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 4, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:s1:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:3", "skill_name": "usenix-catalog-orchestration", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 5
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 5, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "tool:387a5090b27550c59de86adb415eb26e:s1:search_paper_catalog:6295fe93517f", "node_type": "tool", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:3", "status": "running", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 6
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 6, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093", "node_key": "tool:387a5090b27550c59de86adb415eb26e:s1:search_paper_catalog:6295fe93517f", "node_type": "tool", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:3", "result_id": "search_paper_catalog", "result_length": 10350, "status": "completed", "summary": "检索完成：来源=USENIX Security（全局目录），命中 5 篇候选论文。\n1. Dos and Don'ts of Machine Learning in Computer Security\n   catalog_paper_id: bf973b6a0943cb3d3165ec26e72e6915\n   candidate: {\"title\":\"Dos and Don'ts of Machine Learning in Computer Security\",\"catalog_paper_id\":\"bf973b6a0943cb3d3165ec26e72e6915\",\"conference_id\":\"usenix-security\",\"year\":2022,\"source_page_url\":\"[已隐藏链接]\",\"source_links\":[\"[已隐藏链接]\"]}\n   详情页: [已隐藏链接]\n   摘要: With the growing processing power of computing systems and the increasing availability of massive datasets, machine learning algorithms have led to major breakthroughs in many different areas. This development has influenced computer security, spawning a series of work on learning-based security systems, such as for malware detection, vulnerability discovery, and binary code analysis. Despite great potential, machine learning in security is prone to subtle pitfalls that undermine its performance and render learning-based systems potentially unsuitable for security tasks and prac", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 7
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 7, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"attempt": 2, "code": "PROVIDER_FALLBACK", "event_type": "provider_fallback", "from_model": "qwen3.5:9b", "from_provider": "ollama", "node_key": "model-fallback:387a5090b27550c59de86adb415eb26e:s1", "node_type": "model", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:3", "reason_code": "MODEL_TIMEOUT", "status": "running", "to_model": "deepseek:deepseek-flash", "to_provider": "deepseek"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 8
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 8, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:s1:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:3", "skill_name": "usenix-catalog-orchestration", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 9
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 9, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "deepseek:deepseek-flash", "role": "search-worker", "search_id": "3a14ac4fe12e41b8824c5ccca906e2c4", "status": "completed", "task_type": "search_catalog", "work_item_id": "387a5090b27550c59de86adb415eb26e:s1"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "a3afc958fe6f4d29b0fd7755afefb745", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:52:59.312990+00:00", "completed_at": "2026-10-30T15:53:59.735382+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s1", "display_order": 9, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:s1\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:9", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 10
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 10, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "status": "running", "task_type": "search_catalog", "work_item_id": "387a5090b27550c59de86adb415eb26e:s2"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "cb18936f968e4de08e6d659822347677", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:53:59.786530+00:00", "completed_at": "2026-10-30T15:54:21.956034+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "display_order": 15, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:s2\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:15", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 11
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 11, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:s2:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:10", "skill_name": "usenix-catalog-orchestration", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 12
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 12, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "tool:387a5090b27550c59de86adb415eb26e:s2:search_paper_catalog:fcf8ce47ad57", "node_type": "tool", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:10", "status": "running", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 13
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 13, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093", "node_key": "tool:387a5090b27550c59de86adb415eb26e:s2:search_paper_catalog:fcf8ce47ad57", "node_type": "tool", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:10", "result_id": "search_paper_catalog", "result_length": 10350, "status": "completed", "summary": "检索完成：来源=USENIX Security（全局目录），命中 5 篇候选论文。\n1. Dos and Don'ts of Machine Learning in Computer Security\n   catalog_paper_id: bf973b6a0943cb3d3165ec26e72e6915\n   candidate: {\"title\":\"Dos and Don'ts of Machine Learning in Computer Security\",\"catalog_paper_id\":\"bf973b6a0943cb3d3165ec26e72e6915\",\"conference_id\":\"usenix-security\",\"year\":2022,\"source_page_url\":\"[已隐藏链接]\",\"source_links\":[\"[已隐藏链接]\"]}\n   详情页: [已隐藏链接]\n   摘要: With the growing processing power of computing systems and the increasing availability of massive datasets, machine learning algorithms have led to major breakthroughs in many different areas. This development has influenced computer security, spawning a series of work on learning-based security systems, such as for malware detection, vulnerability discovery, and binary code analysis. Despite great potential, machine learning in security is prone to subtle pitfalls that undermine its performance and render learning-based systems potentially unsuitable for security tasks and prac", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 14
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 14, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:s2:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:10", "skill_name": "usenix-catalog-orchestration", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 15
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 15, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "search_id": "916d5afc7cf948a78134d423ab62eb1f", "status": "completed", "task_type": "search_catalog", "work_item_id": "387a5090b27550c59de86adb415eb26e:s2"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "cb18936f968e4de08e6d659822347677", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:53:59.786530+00:00", "completed_at": "2026-10-30T15:54:21.956034+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s2", "display_order": 15, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:s2\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:15", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 16
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 16, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "status": "running", "task_type": "search_catalog", "work_item_id": "387a5090b27550c59de86adb415eb26e:s3"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "38818c85cd1b404d978008b5fda35cb1", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:54:21.978705+00:00", "completed_at": "2026-10-30T15:54:46.687601+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "display_order": 21, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:s3\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:21", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 17
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 17, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:s3:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:16", "skill_name": "usenix-catalog-orchestration", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 18
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 18, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "tool:387a5090b27550c59de86adb415eb26e:s3:search_paper_catalog:a4107ba84e89", "node_type": "tool", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:16", "status": "running", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 19
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 19, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093", "node_key": "tool:387a5090b27550c59de86adb415eb26e:s3:search_paper_catalog:a4107ba84e89", "node_type": "tool", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:16", "result_id": "search_paper_catalog", "result_length": 9759, "status": "completed", "summary": "检索完成：来源=USENIX Security（全局目录），命中 5 篇候选论文。\n1. Dos and Don'ts of Machine Learning in Computer Security\n   catalog_paper_id: bf973b6a0943cb3d3165ec26e72e6915\n   candidate: {\"title\":\"Dos and Don'ts of Machine Learning in Computer Security\",\"catalog_paper_id\":\"bf973b6a0943cb3d3165ec26e72e6915\",\"conference_id\":\"usenix-security\",\"year\":2022,\"source_page_url\":\"[已隐藏链接]\",\"source_links\":[\"[已隐藏链接]\"]}\n   详情页: [已隐藏链接]\n   摘要: With the growing processing power of computing systems and the increasing availability of massive datasets, machine learning algorithms have led to major breakthroughs in many different areas. This development has influenced computer security, spawning a series of work on learning-based security systems, such as for malware detection, vulnerability discovery, and binary code analysis. Despite great potential, machine learning in security is prone to subtle pitfalls that undermine its performance and render learning-based systems potentially unsuitable for security tasks and prac", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 20
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 20, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:s3:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:16", "skill_name": "usenix-catalog-orchestration", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 21
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 21, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "search_id": "4d1b9817df164dad939b3944b51b2c06", "status": "completed", "task_type": "search_catalog", "work_item_id": "387a5090b27550c59de86adb415eb26e:s3"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "38818c85cd1b404d978008b5fda35cb1", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:54:21.978705+00:00", "completed_at": "2026-10-30T15:54:46.687601+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:s3", "display_order": 21, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:s3\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:21", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 22
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 22, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "paper-evaluator", "status": "running", "task_type": "evaluate_papers", "work_item_id": "387a5090b27550c59de86adb415eb26e:e1"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "ae0963a30c19427ab4a620cfbfcbb0fa", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:54:46.746082+00:00", "completed_at": "2026-10-30T15:55:44.234282+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "display_order": 26, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"paper-evaluator\", \"status\": \"completed\", \"task_type\": \"evaluate_papers\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:e1\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:26", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 23
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 23, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:e1:research-paper-evaluation", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:22", "skill_name": "research-paper-evaluation", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 24
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 24, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"attempt": 1, "code": "PROVIDER_FALLBACK", "event_type": "provider_fallback", "from_model": "qwen3.5:9b", "from_provider": "ollama", "node_key": "model-fallback:387a5090b27550c59de86adb415eb26e:e1", "node_type": "model", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:22", "reason_code": "MODEL_TIMEOUT", "status": "running", "to_model": "deepseek:deepseek-flash", "to_provider": "deepseek"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 25
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 25, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:e1:research-paper-evaluation", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:22", "skill_name": "research-paper-evaluation", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 26
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 26, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "fast", "node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "deepseek:deepseek-flash", "role": "paper-evaluator", "status": "completed", "task_type": "evaluate_papers", "work_item_id": "387a5090b27550c59de86adb415eb26e:e1"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "ae0963a30c19427ab4a620cfbfcbb0fa", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:54:46.746082+00:00", "completed_at": "2026-10-30T15:55:44.234282+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:e1", "display_order": 26, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"paper-evaluator\", \"status\": \"completed\", \"task_type\": \"evaluate_papers\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:e1\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:26", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 27
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 27, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "strong", "node_key": "agent:387a5090b27550c59de86adb415eb26e:c1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.8:27b-q4_K_M", "role": "research-critic", "status": "running", "task_type": "check_coverage", "work_item_id": "387a5090b27550c59de86adb415eb26e:c1"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "2d9fee8339c649daaca9d20304811339", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:55:44.283032+00:00", "completed_at": "2026-10-30T15:55:50.079544+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:c1", "display_order": 30, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"research-critic\", \"status\": \"completed\", \"task_type\": \"check_coverage\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:c1\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:30", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 28
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 28, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:c1:research-coverage-review", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:c1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:27", "skill_name": "research-coverage-review", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 29
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 29, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:c1:research-coverage-review", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:c1", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:27", "skill_name": "research-coverage-review", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 30
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 30, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "strong", "node_key": "agent:387a5090b27550c59de86adb415eb26e:c1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "research-critic", "status": "completed", "task_type": "check_coverage", "work_item_id": "387a5090b27550c59de86adb415eb26e:c1"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "2d9fee8339c649daaca9d20304811339", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:55:44.283032+00:00", "completed_at": "2026-10-30T15:55:50.079544+00:00", "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:c1", "display_order": 30, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"research-critic\", \"status\": \"completed\", \"task_type\": \"check_coverage\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:c1\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:30", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 31
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 31, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"model_tier": "strong", "node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.8:27b-q4_K_M", "role": "synthesizer", "status": "running", "task_type": "synthesize_preliminary_report", "work_item_id": "387a5090b27550c59de86adb415eb26e:syn"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "cbadfae8c2a744ed8ccb7ecb5d1e9726", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "running", "summary": null, "started_at": "2026-10-30T15:55:50.162785+00:00", "completed_at": null, "parent_step_id": "4ea6f91b5f7d4996a95ce8529328c11c", "node_type": "agent", "node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "display_order": 31, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.8:27b-q4_K_M\", \"role\": \"synthesizer\", \"status\": \"running\", \"task_type\": \"synthesize_preliminary_report\", \"work_item_id\": \"387a5090b27550c59de86adb415eb26e:syn\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:31", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 32
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 32, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:syn:research-report-synthesis", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:31", "skill_name": "research-report-synthesis", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "7d35e93234e2438792e1fe9f242d7583", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:55:50.206422+00:00", "completed_at": "2026-10-30T15:57:07.293985+00:00", "parent_step_id": "cbadfae8c2a744ed8ccb7ecb5d1e9726", "node_type": "skill", "node_key": "skill:387a5090b27550c59de86adb415eb26e:syn:research-report-synthesis", "display_order": 34, "detail_json": "{\"skill_name\": \"research-report-synthesis\", \"status\": \"completed\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:34", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 33
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 33, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"attempt": 1, "code": "PROVIDER_FALLBACK", "event_type": "provider_fallback", "from_model": "qwen3.5:9b", "from_provider": "ollama", "node_key": "model-fallback:387a5090b27550c59de86adb415eb26e:syn", "node_type": "model", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:31", "reason_code": "MODEL_TIMEOUT", "status": "running", "to_model": "deepseek:deepseek-flash", "to_provider": "deepseek"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 34
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 34, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:syn:research-report-synthesis", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "parent_source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:31", "skill_name": "research-report-synthesis", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "7d35e93234e2438792e1fe9f242d7583", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:55:50.206422+00:00", "completed_at": "2026-10-30T15:57:07.293985+00:00", "parent_step_id": "cbadfae8c2a744ed8ccb7ecb5d1e9726", "node_type": "skill", "node_key": "skill:387a5090b27550c59de86adb415eb26e:syn:research-report-synthesis", "display_order": 34, "detail_json": "{\"skill_name\": \"research-report-synthesis\", \"status\": \"completed\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:34", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 35
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 35, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"node_key": "skill:387a5090b27550c59de86adb415eb26e:syn:research-report-synthesis", "node_type": "skill", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "skill_name": "research-report-synthesis", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "7d35e93234e2438792e1fe9f242d7583", "message_id": "3408adcf4b135b93815913953609997f", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-30T15:55:50.206422+00:00", "completed_at": "2026-10-30T15:57:07.293985+00:00", "parent_step_id": "cbadfae8c2a744ed8ccb7ecb5d1e9726", "node_type": "skill", "node_key": "skill:387a5090b27550c59de86adb415eb26e:syn:research-report-synthesis", "display_order": 34, "detail_json": "{\"skill_name\": \"research-report-synthesis\", \"status\": \"completed\"}", "source_event_id": "research-event:387a5090b27550c59de86adb415eb26e:34", "research_session_id": "eb423a0ae279472d9709cda75e957da3", "schema_version": 2}}}
+
+id: 36
+event: worker
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": 36, "type": "worker", "timestamp": "2026-10-30T15:58:02Z", "payload": {"attempt": 1, "code": "PROVIDER_FALLBACK", "event_type": "provider_fallback", "from_model": "qwen3.5:9b", "from_provider": "ollama", "node_key": "model-fallback:387a5090b27550c59de86adb415eb26e:syn", "node_type": "model", "parent_node_key": "agent:387a5090b27550c59de86adb415eb26e:syn", "reason_code": "MODEL_TIMEOUT", "status": "running", "to_model": "deepseek:deepseek-flash", "to_provider": "deepseek"}}
+
+event: processing_step
+data: {"research_task_id": "387a5090b27550c59de86adb415eb26e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-30T15:58:02Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+

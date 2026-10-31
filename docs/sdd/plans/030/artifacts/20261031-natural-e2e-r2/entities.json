@@ -1,0 +1,8 @@
+{
+  "conversation_id": "532b3ed50b93435fa9d229e74d311f80",
+  "session_id": "e08273d699674234a47d74b725c3cc73",
+  "plan_version": 1,
+  "task_id": "d5a3c7f89f2d5449b9bd3f59a2f67bfd",
+  "deployment_commit": "dd54b11a",
+  "base_url": "http://127.0.0.1:8000"
+}
