@@ -1173,43 +1173,7 @@
     multiSelectToggle.disabled = true;
     multiSelectToggle.addEventListener('click', () => toggleMultiSelectMode());
     layerTools.append(multiSelectToggle);
-    const nodeStyle = createElement('fieldset', 'literature-map-node-style');
-    nodeStyle.id = 'literature-map-node-style';
-    nodeStyle.append(createElement('legend', '', '节点填充'));
-    [['filled', '填充'], ['outline', '仅描边']].forEach(([value, labelText]) => {
-      const label = createElement('label', 'literature-map-node-style-mode');
-      const input = createElement('input');
-      input.type = 'radio';
-      input.name = 'fill_mode';
-      input.value = value;
-      input.checked = state.nodeStyleDraft.fill_mode === value;
-      input.addEventListener('change', () => updateNodeStyleDraft());
-      label.append(input, createElement('span', '', labelText));
-      nodeStyle.append(label);
-    });
-    const opacityLabel = createElement('label', 'literature-map-node-style-opacity-label', '填充透明度');
-    const opacityInput = createElement('input');
-    opacityInput.type = 'range';
-    opacityInput.name = 'fill_opacity';
-    opacityInput.min = '0';
-    opacityInput.max = '1';
-    opacityInput.step = '0.05';
-    opacityInput.value = String(state.nodeStyleDraft.fill_opacity);
-    opacityInput.addEventListener('input', () => updateNodeStyleDraft());
-    const opacityValue = createElement('output', 'literature-map-node-style-opacity-value', `${Math.round(state.nodeStyleDraft.fill_opacity * 100)}%`);
-    nodeStyle.append(opacityLabel, opacityInput, opacityValue);
-    const applyNodeStyleButton = createElement('button', 'send-button literature-map-node-style-apply', '应用外观');
-    applyNodeStyleButton.type = 'button';
-    applyNodeStyleButton.disabled = true;
-    applyNodeStyleButton.addEventListener('click', () => saveNodeStyle(applyNodeStyleButton));
-    const cancelNodeStyleButton = createElement('button', 'secondary-button literature-map-node-style-cancel', '取消预览');
-    cancelNodeStyleButton.type = 'button';
-    cancelNodeStyleButton.disabled = true;
-    cancelNodeStyleButton.addEventListener('click', () => cancelNodeStyleDraft());
-    nodeStyle.append(applyNodeStyleButton, cancelNodeStyleButton);
-    const nodeStyleDisclosure = createElement('details', 'literature-map-node-style-disclosure');
-    nodeStyleDisclosure.open = !isMobileViewport();
-    nodeStyleDisclosure.append(createElement('summary', '', '节点样式'), nodeStyle);
+    const { nodeStyleDisclosure, nodeStyle } = buildNodeStyleDisclosure();
     layerTools.append(nodeStyleDisclosure);
     canvasPanel.append(layerTools);
     const selectionToolbar = createElement('section', 'literature-map-selection-toolbar');
@@ -1307,6 +1271,48 @@
     renderGraph();
   }
 
+  // 节点样式浮层：默认折叠，只有用户点 summary「节点样式」才展开。
+  // 视口（桌面/移动）不得决定开合状态，否则用户正在调的外观草稿会突然弹出或被收起。
+  function buildNodeStyleDisclosure() {
+    const nodeStyle = createElement('fieldset', 'literature-map-node-style');
+    nodeStyle.id = 'literature-map-node-style';
+    nodeStyle.append(createElement('legend', '', '节点填充'));
+    [['filled', '填充'], ['outline', '仅描边']].forEach(([value, labelText]) => {
+      const label = createElement('label', 'literature-map-node-style-mode');
+      const input = createElement('input');
+      input.type = 'radio';
+      input.name = 'fill_mode';
+      input.value = value;
+      input.checked = state.nodeStyleDraft.fill_mode === value;
+      input.addEventListener('change', () => updateNodeStyleDraft());
+      label.append(input, createElement('span', '', labelText));
+      nodeStyle.append(label);
+    });
+    const opacityLabel = createElement('label', 'literature-map-node-style-opacity-label', '填充透明度');
+    const opacityInput = createElement('input');
+    opacityInput.type = 'range';
+    opacityInput.name = 'fill_opacity';
+    opacityInput.min = '0';
+    opacityInput.max = '1';
+    opacityInput.step = '0.05';
+    opacityInput.value = String(state.nodeStyleDraft.fill_opacity);
+    opacityInput.addEventListener('input', () => updateNodeStyleDraft());
+    const opacityValue = createElement('output', 'literature-map-node-style-opacity-value', `${Math.round(state.nodeStyleDraft.fill_opacity * 100)}%`);
+    nodeStyle.append(opacityLabel, opacityInput, opacityValue);
+    const applyNodeStyleButton = createElement('button', 'send-button literature-map-node-style-apply', '应用外观');
+    applyNodeStyleButton.type = 'button';
+    applyNodeStyleButton.disabled = true;
+    applyNodeStyleButton.addEventListener('click', () => saveNodeStyle(applyNodeStyleButton));
+    const cancelNodeStyleButton = createElement('button', 'secondary-button literature-map-node-style-cancel', '取消预览');
+    cancelNodeStyleButton.type = 'button';
+    cancelNodeStyleButton.disabled = true;
+    cancelNodeStyleButton.addEventListener('click', () => cancelNodeStyleDraft());
+    nodeStyle.append(applyNodeStyleButton, cancelNodeStyleButton);
+    const nodeStyleDisclosure = createElement('details', 'literature-map-node-style-disclosure');
+    nodeStyleDisclosure.append(createElement('summary', '', '节点样式'), nodeStyle);
+    return { nodeStyleDisclosure, nodeStyle };
+  }
+
   function isMobileViewport() {
     return Boolean(window.matchMedia?.('(max-width: 760px)').matches);
   }
@@ -1395,7 +1401,7 @@
     const previousMobileViewport = state.mobileViewport;
     state.mobileViewport = currentMobileViewport;
     if (previousMobileViewport === currentMobileViewport) return;
-    if (refs.nodeStyleDisclosure) refs.nodeStyleDisclosure.open = !currentMobileViewport;
+    // 节点样式浮层的开合只由用户点击决定：视口切换不得改写，否则会打断外观草稿。
     const preserveDesktopDetail = state.active && previousMobileViewport === true && !currentMobileViewport;
     closeAllMobilePanels(false, preserveDesktopDetail);
     scheduleViewportStabilization();

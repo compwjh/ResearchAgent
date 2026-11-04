@@ -287,6 +287,10 @@
 #literature-maps-view .literature-map-node-style-disclosure > summary { min-height: 24px; padding: 3px 7px; border: 1px solid #e4e0f5; border-radius: 6px; background: #fff; color: var(--muted-strong); cursor: pointer; font-size: 9px; font-weight: 700; list-style: none; }
 #literature-maps-view .literature-map-node-style-disclosure > summary::-webkit-details-marker { display: none; }
 #literature-maps-view .literature-map-node-style-disclosure[open] > summary { border-color: #d8d2ff; background: #f7f5ff; }
+/* 折叠态必须真的看不见：`.literature-map-node-style { display: flex }` 与 `details { display: flex }`
+ * 都是作者样式，会压过 UA 对 `details:not([open])` 非 summary 子元素的隐藏，使浮层缩成一条竖边继续渲染。
+ * 这里显式恢复隐藏，只在容器作用域内生效。 */
+#literature-maps-view .literature-map-node-style-disclosure:not([open]) > .literature-map-node-style { display: none; }
 #literature-maps-view .literature-map-node-style legend { padding: 0 4px; color: var(--muted-strong); font-size: 9px; font-weight: 700; }
 #literature-maps-view .literature-map-node-style-mode, #literature-maps-view .literature-map-node-style-opacity-label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted-strong); font-size: 9px; }
 #literature-maps-view .literature-map-node-style-mode input { accent-color: var(--accent); }

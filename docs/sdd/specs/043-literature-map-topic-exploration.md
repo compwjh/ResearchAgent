@@ -191,8 +191,11 @@
 - 技术评审：[043-tech-review.md](../reviews/043-tech-review.md)（独立评审通过，2026-10-19）。
 - 验收评审：[043-acceptance-review.md](../reviews/043-acceptance-review.md)（独立tester与architect通过，2026-10-22；READY_FOR_USER，签字后准备度10/10）。
 - 建档为主会话纯文档代行；需求、技术、实施和最终验收分工真实执行。部署地址 http://127.0.0.1:8000/ ，启动命令 `PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh`。保留provider partial、非物理真机及RRF降级限制；Spec032仍暂停，不push或合main。
+- 人工验收阶段 UX 缺陷复审：[043-node-style-disclosure-frontend-review.md](../reviews/043-node-style-disclosure-frontend-review.md) 与 [043-node-style-disclosure-frontend-regression.md](../reviews/043-node-style-disclosure-frontend-regression.md)（两轮独立复审通过、0 阻塞；单端回归 READY，含真实浏览器可见性与变异验证）。
 
 ## 变更日志
+
+- 2026-11-05：用户人工验收反馈文献地图「节点样式」浮层一打开就展开，要求点击才弹出。两轮修复：①`frontend/literature-maps.js` 删除两处 `nodeStyleDisclosure.open = ...`（桌面默认展开、视口切换强制展开），`?v=37→38`；②真实浏览器复测发现仅删 `open` 不够——`literature-maps.css` 给 fieldset 显式 `display:flex` 覆盖 UA 折叠隐藏，补 `:not([open]) > .literature-map-node-style { display:none }`，CSS `?v=25→26`。新增 2 个按能力命名的测试（JS 契约 + 真实浏览器可见性）并同步全部版本号断言。`frontend-reviewer` 两轮复审通过（0 阻塞）、`frontend-tester` 两轮回归 READY（72 passed/0 failed、4 可见性用例、变异验证）；主会话浏览器复测：折叠 `display:none / 0×0`、点击展开 `flex / 416×47`、700↔1280 切换仍折叠、summary 常驻可点。主会话代行纯文档同步（评审记录、本变更日志、状态台账），无业务代码改动；实现、测试、两份评审报告同分支同提交，本地 ff 合并 main，未 push。
 
 - 2026-10-24：Task09收口。标签/引用尺寸/鼠标锚点/持久自动摘要/全文引导/提问草稿及最后KB接缝修复已独立复核；原失败论文真实入库、合法v1 reindex和全文分析通过。首轮冻结矩阵快照失败保留，最小维护后最终全量3384 passed/0 failed/2合法skip/67 subtests/5 warnings、exit0、覆盖率82.38%。tester与architect双签10/10，主会话纯文档同步完成台账与复盘，已部署8000JSv18；仅本地提交，不自动push/合main。
 

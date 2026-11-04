@@ -344,7 +344,12 @@ def test_style_preview_does_not_write_until_apply_and_png_uses_saved_outline_sty
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         _open_map(page, "palette&usable-saved-view")
         page.locator('[data-node-id="node-a"] circle').click()
+        # 节点样式浮层默认折叠（用户要求点击后才弹出），这里显式展开后再调外观。
+        style_disclosure = page.locator('.literature-map-node-style-disclosure')
+        assert style_disclosure.get_attribute('open') is None
+        style_disclosure.locator('summary').click()
         style = page.locator('#literature-map-node-style')
+        style.wait_for(state="visible")
         assert page.locator('[data-node-id="node-a"] circle').get_attribute('fill-opacity') == '0.3'
         style.locator('input[name="fill_mode"][value="outline"]').check()
         assert page.locator('[data-node-id="node-a"] circle').get_attribute('fill-opacity') == '0'
@@ -423,7 +428,12 @@ def test_exports_are_blocked_while_color_or_style_preview_is_unapplied() -> None
         assert page.evaluate("window.__requestLog.some(entry => entry.path.includes('/export?format=json'))") is False
         palette.locator('.literature-map-color-cancel').click()
 
+        # 节点样式浮层默认折叠（用户要求点击后才弹出），这里显式展开后再改外观。
+        style_disclosure = page.locator('.literature-map-node-style-disclosure')
+        assert style_disclosure.get_attribute('open') is None
+        style_disclosure.locator('summary').click()
         style = page.locator('#literature-map-node-style')
+        style.wait_for(state="visible")
         style.locator('input[name="fill_mode"][value="outline"]').check()
         page.locator('#literature-map-export-png').click()
         page.wait_for_function("document.querySelector('#literature-map-status')?.textContent.includes('取消预览')")
