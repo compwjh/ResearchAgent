@@ -5244,12 +5244,37 @@ async function stFetchJson(input, init) {
   return stJson(response);
 }
 
+// 主内容区（.app-shell 的 .main-area 列）视图全集。
+// `#research-view` 由 research-tasks.js 负责显示，本文件的 showView() 只负责把它隐藏，
+// 避免两个视图切换器互不知情导致「深度研究」与「对话」同时可见（两列 grid 下第二个
+// .main-area 被挤到下一行第 1 列，产生滚动重叠与侧栏透叠）。
+const MAIN_AREA_VIEW_IDS = Object.freeze([
+  'chat',
+  'research-view',
+  'models-view',
+  'memory-view',
+  'kb-view',
+  'papers-view',
+  'literature-maps-view',
+  'skill-tool-view',
+]);
+
+function hideAllMainAreas() {
+  MAIN_AREA_VIEW_IDS.forEach((id) => {
+    const section = document.getElementById(id);
+    if (section) section.hidden = true;
+  });
+}
+
 // 模型库/知识库视图：导航切换 + 列表渲染（spec 006 / spec 011）
 function showView(view) {
   const nextView = view === 'papers' && !paperState.enabled ? 'chat' : view;
   if (nextView !== 'papers' && !paperView?.hidden) cancelPaperSearchPolling();
   const isChat = nextView === 'chat';
   const literatureMapsView = document.querySelector('#literature-maps-view');
+  // 先整体隐藏主内容区（含 research-tasks.js 掌管的 #research-view），再显示目标视图，
+  // 保证任意时刻只有一个 .main-area 可见。
+  hideAllMainAreas();
   document.querySelector('#chat').hidden = !isChat;
   document.querySelector('#models-view').hidden = nextView !== 'models';
   if (memoryView) memoryView.hidden = nextView !== 'memory';

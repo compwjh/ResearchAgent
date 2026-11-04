@@ -96,6 +96,7 @@
 - 需求评审：`docs/sdd/reviews/030-requirement-review.md`（通过；Task02 合同门）
 - 技术评审：`docs/sdd/reviews/030-tech-review.md`（通过；Task02 合同门）
 - 验收评审：`docs/sdd/reviews/030-acceptance-review.md`（通过；P1 已修复并复验）
+- 人工验收阶段 UI 缺陷复审：`docs/sdd/reviews/030-view-exclusivity-frontend-review.md`（通过；DOM 契约 / `?v=N` / XSS 三项 PASS、0 阻塞）与 `docs/sdd/reviews/030-view-exclusivity-frontend-regression.md`（前端单端回归 READY）
 
 ## 变更日志
 
@@ -106,6 +107,7 @@
 | 2026-09-17 | Task06 收口审计（Luna high） | 完成唯一全量回归、运行时与浏览器 smoke、固定矩阵/manifest/三格式/安全审计；发现 `EvidenceReportError.message` 缺失导致未知报告路由 500 的 P1，保持实施中并退回主 Agent 修复。 |
 | 2026-09-17 | 主 Agent / Task06 | 修复报告错误响应与矩阵未就绪状态映射，补齐旧资源版本兼容标记；全量回归 2504 passed、1 skipped，部署 smoke 全部通过，Spec030 收口为已完成。 |
 | 2026-10-31 | 架构师主会话；独立 tester / architect（临时 Luna xhigh） | 内容充分性修订收口：自然语言 methods 案例生成3020 CJK、5篇、4比较、5综合发现；三产物HTTP/hash、内容5/5、浏览器、后端3476及前端388通过，验收双签READY_FOR_USER。仅本地提交；用户人工验收尚待执行，旧失败记录保留。 |
+| 2026-11-05 | 主会话（编排）；`frontend-dev` / `frontend-reviewer` / `frontend-tester` | 人工验收阶段修复研究视图互斥缺陷：`showView()` 先整体隐藏 8 个 `.main-area` 再显示目标视图，`app.js?v=66→67`，新增 2 个按能力命名的前端测试。独立复审通过（0 阻塞）、前端单端回归 READY（含变异验证）；主会话真实浏览器复测滚动与导航互切通过。主会话代行纯文档同步（评审记录、本变更日志、状态台账），无业务代码改动；实现、测试、两份评审报告同分支同提交。 |
 
 
 ## 2026-10-29 修订：研究报告内容充分性

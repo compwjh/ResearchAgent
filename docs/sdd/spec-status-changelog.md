@@ -616,3 +616,5 @@
 - 2026-10-31（Asia/Shanghai）｜Spec030 跨论文证据矩阵与深度研究报告（内容充分性修订）：实施中 → 已完成。methods 自然语言真实案例生成3020 CJK、5篇、4比较、5综合发现，三格式产物HTTP/hash、独立内容5/5及浏览器通过；后端3476通过/3跳过/82.25%，前端388通过/0跳过。tester 与独立 architect 双签 READY_FOR_USER（10/10），8000部署生产树与最终候选一致，Task07–10、人工步骤与复盘同步。仅完成 Agent 验收与部署闭环，用户人工验收待执行；旧认证失败/partial及摘要级/专家访谈限制保留。仅本地提交，未push或合并main。
 
 - 2026-11-04（Asia/Shanghai）｜Spec030 跨论文证据矩阵与深度研究报告（内容充分性修订）：已完成 → 已完成（本地合并到 main）。复核 DoD 全项通过后，主会话把 `codex/spec030-report-quality`（含收尾证据共 117 个提交）fast-forward 合并至本地 `main`，无代码改动、仅纯文档台账同步与 Git 编排；10-31 条目的「未合并 main」为当时状态。仅本地合并，未 push、未删除源分支；独立 architect 签字只批准 READY_FOR_USER，用户人工验收仍待执行。
+
+- 2026-11-05（Asia/Shanghai）｜Spec030 跨论文证据矩阵与深度研究报告（人工验收阶段 UI 缺陷修复）：已完成 → 已完成（保持 READY_FOR_USER，用户人工验收仍待执行）。用户反馈 `/c/<id>#research-view` 向下滚动出现视图重叠与侧栏透叠；根因是 `frontend/app.js` 的 `showView()` 未把 `#research-view` 纳入互斥，致 `#chat` 与研究视图同显、第二个 `.main-area` 被栅格挤入侧栏列（页面高 8734px）。`frontend-dev` 修复并补 2 个前端测试，`frontend-reviewer` 复审通过（0 阻塞）、`frontend-tester` 单端回归 READY；主会话真实浏览器复测：切到研究视图后唯一可见主区、rect [238,-32,1042,6681]、overlapX=false，切回对话仅 chat。主会话代行纯文档同步（spec 评审记录、变更日志、本台账），无业务代码改动；报告与实现同分支同提交，本地 ff 合并 main，未 push。
