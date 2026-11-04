@@ -169,3 +169,53 @@ curl -sS -D "$RUN_DIR/artifacts.headers" -o "$RUN_DIR/artifacts.json" \
 | 无背景用户步骤可复现 | `PASS / API 步骤已准备，UI文案待真实运行校准` | 路由和请求字段来自当前源码；真实按钮文案不在本文猜写。 |
 
 **当前结论：`BLOCKED`。** 已完成接口梳理、固定论文集准备、自然语言输入和精确请求/核验步骤；尚未完成真实 API E2E。主 Agent 应在当前分支真实运行后补齐真实 IDs、响应、运行态和产物 hash，再独立完成验收；不得把本准备文档作为 `READY_FOR_USER`、API 成功证据或部署证明。
+
+## 附录：Provider 配置与合法档位输入（2026-10-29）
+
+本次只读核对在工作区 Python 进程导入项目配置后进行；输出仅包含开关、模型别名和 Key 是否存在布尔值，没有读取或打印 Key 值、`.env` 内容，也没有调用模型、探测 Provider 或查询数据库。该进程配置投影**不等同于正在运行的部署进程配置**；部署配置仍需由实际服务环境另行核实。
+
+| 配置项 | 当前工作区配置投影 | 含义 |
+|---|---|---|
+| `RESEARCH_ONLINE_FALLBACK_ENABLED` | `false` | 研究 Runtime 的线上回退未启用。 |
+| 已注册线上模型别名 | 空 | `ONLINE_MODELS` 没有产生可注册条目；因此没有 provider/model ID 可报告，也没有对应 API Key 可报告存在性。 |
+| 线上回退可用性 | `不可用` | 当前投影下同时缺少启用开关与已注册别名；未发起请求，不能据此断言任何线上服务的网络或认证状态。 |
+
+本地模型策略由 `ModelRouter` 从 Ollama 的可用模型清单按角色档位选择：planner、research-critic、synthesizer 走 strong；search-worker、paper-evaluator 走 fast。按模型名尺寸 token 匹配档位；没有尺寸匹配时使用 Router 显式 fallback model 或清单首项。这里没有请求 Ollama 清单，因此**当前实际本地模型 ID 未核实**。在线回退只有在配置开关开启、注册表存在通过 Key/base URL 校验的别名且模型工厂可建模后才会尝试；Router 选择第一个注册别名，不先做在线探测。此前 E2E 的同步 provider 调用超时故障仍需等待 Runtime timeout 修复并复验，配置投影不证明超时问题已解决。
+
+### API 的模型与质量档位选择
+
+- 没有发现面向研究任务的客户端 `model` 或 `provider` 选择字段。自然语言入口 `POST /api/conversations/messages` 请求 `{content, mode}`；模型由上述角色 Router 决定，不能在该请求中固定 provider/model。
+- 自然语言 Intake 当前只确定性提取 topic、objective、time_range 和 paper-count constraints；`depth` 不从消息提取，按 `intake.py` 的默认值 `balanced`。所以本 E2E 的目标 5 篇约束能从文本进入计划，但质量档位仍是 `balanced`（契约 soft budget 1500 秒）。应从实际任务投影核实 `quality_profile`、`target_paper_count` 和预算，不把生成计划里的预算字段单独当作运行时预算证据。
+- 可显式选择档位的结构化 Session API 是 `POST /api/research-sessions`，字段位于 `intake.depth`；合法值为 `speed`、`balanced`、`quality`。任务服务中三者对应目标篇数缺省值与 soft budget：`speed` 8 篇/600 秒，`balanced` 12 篇/1500 秒，`quality` 20 篇/2700 秒；显式 count constraints 可覆盖目标篇数，范围为 1–20。Session 创建 schema 没有 model/provider 字段。
+- `POST /api/research-tasks` 的旧请求 schema 虽含 `quality_profile` / `target_paper_count`，但使用统一 Session/Intake 路径时适配器只传 `intake.topic`，不保留这两个参数；因此不要用它来证明新版流程已按指定档位执行。
+
+档位预算有一个需要真实响应核对的投影差异：`session_plan_generation.py` 当前写入计划 `budget.soft_budget_seconds=1500` 是固定值；任务创建服务则按 `QUALITY_PROFILES` 对应档位计算任务 `soft_budget_seconds`。因此显式提交 `depth:"speed"` 后，应核对 Intake/plan 中的 profile/篇数，并在计划批准、task 创建后核对 task 投影的 `quality_profile` 与 `soft_budget_seconds`；计划中的 1500 秒字段不能作为 speed 预算依据。
+
+下次要快速且可控地验证**结构化 Session 档位**，可用一个新 conversation/新幂等键提交下列合法请求；这是结构化边界，不替代本准备文档要求的自然语言主路径：
+
+```json
+{
+  "intake": {
+    "topic": "在线账户与密码认证安全",
+    "objective": "比较 USENIX Security 2022 Passwords session 五篇论文的研究问题、方法、发现和局限",
+    "time_range": {"from": 2022, "to": 2022},
+    "language": "zh",
+    "sources": ["usenix"],
+    "depth": "speed",
+    "constraints": ["target_paper_count:5", "min_paper_count:5"],
+    "output": "markdown",
+    "citations": "inline"
+  },
+  "idempotency_key": "<本次生成的新 UUID>"
+}
+```
+
+该请求创建的 Intake/计划应实际返回并核验 `depth=speed`、目标篇数 5 和 `budget.quality_profile=speed`；批准后再从 task 投影核验保存的质量档位/预算。当前计划预算秒数字段固定为 1500，不能作为 speed 预算依据。若验收必须保持自然语言主路径，则继续使用上文自然语言请求并接受默认 `balanced`；当前自然语言解析没有可合法选择 `speed` 的字段。两条路径均没有模型 ID override。模型最终选择需在真实 WorkItem/runtime 投影中记录，不能由请求内容推断。
+
+## 附录：primary 部署根 Provider 连通性复核（2026-10-29）
+
+此复核的配置来源为 primary `/Users/wjh/ResearchAgent` 项目配置加载器，不是当前 worktree 的环境变量：fallback=`true`；注册 alias=`deepseek:deepseek-flash`；provider=`deepseek`；`key_present=true`。不记录 `.env`、Key 值或请求头。
+
+使用既有 `create_chat_model` adapter 对该别名做最小调用，限制 `max_tokens=8` 且每次进程总上限 60 秒。受限环境首次调用在 1,687 ms 后报 `OpenAIConnectionError`，无 HTTP 状态或响应。之后申请网络权限，以同一 alias 和限制重试一次，1,143 ms 成功，客户端可见 HTTP `2xx`（精确码未暴露），短响应为 `OK`，响应 model 元数据为 `deepseek-flash`。未输出异常原文、headers 或 secret。
+
+结论：受限外的独立探测确认该目标从获准网络进程可达；初次失败很可能由运行环境网络限制造成。该连通探测不替代完整报告 E2E，也不证明运行中 worker 的任务已成功触发 fallback。

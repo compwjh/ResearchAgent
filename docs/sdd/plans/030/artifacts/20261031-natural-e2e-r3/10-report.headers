@@ -1,0 +1,10 @@
+HTTP/1.1 200 OK
+date: Sat, 31 Oct 2026 03:41:46 GMT
+server: uvicorn
+content-length: 30438
+content-type: application/json; charset=utf-8
+content-disposition: attachment; filename="research-report-v1.json"
+cache-control: no-store
+x-content-type-options: nosniff
+content-security-policy: default-src 'none'
+

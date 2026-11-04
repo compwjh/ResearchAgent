@@ -1,7 +1,7 @@
 # Spec 030 执行计划：证据矩阵与深度研究报告
 
 > 关联：[Spec 030](../../specs/030-research-evidence-reporting.md)
-> 当前状态：实施中。2026-10-29用户确认、独立需求/技术GO，Task07合同门通过，Task08分步实施；历史Task02–06保持已完成。
+> 当前状态：已完成（2026-10-31 Agent 验收与部署闭环，READY_FOR_USER；用户人工验收待执行）。Task07–10均完成；methods 实例为3020 CJK、5篇、4比较、5综合发现，内容5/5、准备度10/10及独立签字通过。旧失败案例保留，不以新案例覆盖。
 
 ## 任务索引
 
@@ -13,10 +13,12 @@
 | [05](./task-05-report-workspace-ui.md) | 报告工作台和引用展开 | 04 | 已完成 |
 | [06](./task-06-review-regression-deploy.md) | 最终验收、回归、部署和复盘 | 02–05 | 已完成 |
 
-| 07 | 内容质量合同与运行路径审计 | [Task07](./task-07-quality-contract.md) | 本修订确认/独立评审 | 已完成（独立GO） |
-| 08 | 后端实质报告生成与质量门禁 | [Task08](./task-08-substantive-report-generation.md) | 07 | 实施中 |
-| 09 | 前端报告质量与恢复反馈 | [Task09](./task-09-report-quality-feedback.md) | 08接口冻结 | 待执行 |
-| 10 | 内容质量最终验收与交付 | [Task10](./task-10-quality-acceptance.md) | 08、09 | 待执行 |
+| 07 | 内容质量合同与运行路径审计 | [Task07](./task-07-quality-contract.md) | 本修订确认/独立评审 | 已完成（合同门，独立GO） |
+| 08 | 后端实质报告生成与质量门禁 | [Task08](./task-08-substantive-report-generation.md) | 07 | 已完成 |
+| 09 | 前端报告质量与恢复反馈 | [Task09](./task-09-report-quality-feedback.md) | 08接口冻结 | 已完成 |
+| 10 | 内容质量最终验收与交付 | [Task10](./task-10-quality-acceptance.md) | 08、09 | 已完成（READY_FOR_USER） |
+
+最终交付：[验收双签](../../reviews/030-report-quality-acceptance-review.md)、[人工步骤](2026-10-31-manual-acceptance.md)、[回归记录](2026-10-30-final-regression.md)、[真实产物](artifacts/20261031-methods-e2e/)、[复盘](../../retro/2026-10-31-report-quality.md)。后端3476通过/3跳过/82.25%，前端388通过/0跳过；服务 http://127.0.0.1:8000/。
 
 ## 统一规则
 

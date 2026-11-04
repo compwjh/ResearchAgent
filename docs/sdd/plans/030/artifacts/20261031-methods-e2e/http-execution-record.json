@@ -1,0 +1,197 @@
+{
+  "record_kind": "transcribed_executed_tool_calls",
+  "not_a_wire_capture": true,
+  "note": "Methods and paths are copied from the actual executed tool arguments, not inferred from outcomes. Request payload files are those sent. Status is populated only from captured HTTP headers or the recorded downloader result; missing headers remain null. This supplements rather than replaces original response files.",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/conversations/messages",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": "request.json",
+      "response_body_file": "01-intake.sse",
+      "response_headers_file": "01-intake.headers",
+      "http_status": 200,
+      "request_sha256": "673e238ced07c4eba78997bdc94461f1aac4d08a0074dd01edfb0be0f030f8d2"
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-sessions/b4dfc9390b884b86b2d2b1045321625d/commands",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": "approval-request.json",
+      "response_body_file": "02-approval.json",
+      "response_headers_file": "02-approval.headers",
+      "http_status": 200,
+      "request_sha256": "100c9bc4aa848ff92d497650b8f64a185e787cf858f874a8bde7453f76fbdb96"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "03-task.json",
+      "response_headers_file": null,
+      "http_status": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "04-task.json",
+      "response_headers_file": null,
+      "http_status": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "05-task.json",
+      "response_headers_file": null,
+      "http_status": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/reports/1?format=json",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "04-report.json",
+      "response_headers_file": "04-report.headers",
+      "http_status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/reports/1?format=json",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "05-report.json",
+      "response_headers_file": "05-report.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/reports/1?format=json",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "08-report.json",
+      "response_headers_file": "08-report.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/reports/1?format=json",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "09-report.json",
+      "response_headers_file": "09-report.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/reports/1?format=json",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "10-report.json",
+      "response_headers_file": "10-report.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/evidence-matrix?plan_version=1",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "06-matrix.json",
+      "response_headers_file": "06-matrix.headers",
+      "http_status": 409
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/paper-displays",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "07-paper-displays.json",
+      "response_headers_file": "07-paper-displays.headers",
+      "http_status": 422,
+      "request_body_transcription": {
+        "paper_ids": []
+      },
+      "note": "Early empty probe; not used as successful evidence. Original body file was subsequently reused for final nonempty request."
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-sessions/b4dfc9390b884b86b2d2b1045321625d/artifacts",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "11-artifacts.json",
+      "response_headers_file": "11-artifacts.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/evidence-matrix?plan_version=1",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "12-matrix.json",
+      "response_headers_file": "12-matrix.headers",
+      "http_status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46/paper-displays",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": "paper-displays-request.json",
+      "response_body_file": "13-paper-displays.json",
+      "response_headers_file": "13-paper-displays.headers",
+      "http_status": 200,
+      "request_sha256": "960c842c6772f561e3790797d575751b861b897eddd69de328cfc000afeb6c94"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-tasks/f19f879e4b05587ba0246768fa15cf46",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "14-task.json",
+      "response_headers_file": "14-task.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "source": "executed tool invocation transcribed from conversation",
+      "request_body_file": null,
+      "response_body_file": "final-health.json",
+      "response_headers_file": "final-health.headers",
+      "http_status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-sessions/b4dfc9390b884b86b2d2b1045321625d/artifacts/bcba50d0dede4797bb61ecb3598debaa/download",
+      "source": "executed urllib request; status persisted in download-verification.json",
+      "request_body_file": null,
+      "response_body_file": "citations.json",
+      "response_headers_file": "citations.json.headers",
+      "http_status": 200,
+      "sha256": "98f4ffe7a24382625eaceff9f9d02dd817e052124199dc727a135b83e9880b61"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-sessions/b4dfc9390b884b86b2d2b1045321625d/artifacts/a575eff722d046d6b0a26538a40c1a3e/download",
+      "source": "executed urllib request; status persisted in download-verification.json",
+      "request_body_file": null,
+      "response_body_file": "report.html",
+      "response_headers_file": "report.html.headers",
+      "http_status": 200,
+      "sha256": "14234c5fa22f74151ed0bd73852a16ed7833f2568e7c73995964ac5f5d10f5c1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-sessions/b4dfc9390b884b86b2d2b1045321625d/artifacts/ae94321e15f1431a85a40b127cd9fa87/download",
+      "source": "executed urllib request; status persisted in download-verification.json",
+      "request_body_file": null,
+      "response_body_file": "report.md",
+      "response_headers_file": "report.md.headers",
+      "http_status": 200,
+      "sha256": "3a773f28b516dc0e15a5e9d732ab13b68a7385165c717032e526bf9ead13ff03"
+    }
+  ]
+}

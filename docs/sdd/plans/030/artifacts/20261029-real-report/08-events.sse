@@ -1,0 +1,230 @@
+id: 1
+event: task
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 1, "type": "task", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "phase:research", "node_type": "phase", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "1a2638dde4604f1aa660f216c7a155fc", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "task", "label": "task", "status": "running", "summary": null, "started_at": "2026-10-29T13:25:51.654195+00:00", "completed_at": null, "parent_step_id": null, "node_type": "phase", "node_key": "phase:research", "display_order": 1, "detail_json": "{\"status\": \"running\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:1", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 2
+event: plan
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 2, "type": "plan", "timestamp": "2026-10-29T13:31:31Z", "payload": {"facets": ["比较 USENIX Security 2022 Passwords session 的至少五篇论文的研究问题", "方法", "主要发现", "局限"], "items": [{"role": "search-worker", "task_type": "search_catalog"}, {"role": "search-worker", "task_type": "search_catalog"}, {"role": "search-worker", "task_type": "search_catalog"}, {"role": "paper-evaluator", "task_type": "evaluate_papers"}, {"role": "research-critic", "task_type": "check_coverage"}, {"role": "synthesizer", "task_type": "synthesize_preliminary_report"}], "node_key": "phase:plan", "node_type": "phase", "plan_version": 1, "replan_round": 0, "stop_reason": "replan_pending"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "c53832b141454ea1b8bee85db975f3c2", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "plan", "label": "plan", "status": "completed", "summary": null, "started_at": "2026-10-29T13:25:51.670779+00:00", "completed_at": "2026-10-29T13:25:51.670779+00:00", "parent_step_id": null, "node_type": "phase", "node_key": "phase:plan", "display_order": 2, "detail_json": "{\"facets\": [\"比较 USENIX Security 2022 Passwords session 的至少五篇论文的研究问题\", \"方法\", \"主要发现\", \"局限\"]}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:2", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 3
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 3, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "status": "running", "task_type": "search_catalog", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:s1"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "686cbe3b7f584bdbbebb94880e2a3ca9", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:25:51.708033+00:00", "completed_at": "2026-10-29T13:26:27.715688+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "display_order": 8, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:s1\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:8", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 4
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 4, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:s1:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:3", "skill_name": "usenix-catalog-orchestration", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 5
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 5, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "tool:6534ef7a3f81583a949ff08d8d4d731e:s1:search_paper_catalog:afdcd5378e90", "node_type": "tool", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:3", "status": "running", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 6
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 6, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093", "node_key": "tool:6534ef7a3f81583a949ff08d8d4d731e:s1:search_paper_catalog:afdcd5378e90", "node_type": "tool", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:3", "result_id": "search_paper_catalog", "result_length": 11122, "status": "completed", "summary": "[REDACTED]", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 7
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 7, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:s1:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:3", "skill_name": "usenix-catalog-orchestration", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 8
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 8, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "search_id": "5e2490f565d441f5b2a72e436aba48b2", "status": "completed", "task_type": "search_catalog", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:s1"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "686cbe3b7f584bdbbebb94880e2a3ca9", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:25:51.708033+00:00", "completed_at": "2026-10-29T13:26:27.715688+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s1", "display_order": 8, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:s1\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:8", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 9
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 9, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "status": "running", "task_type": "search_catalog", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:s2"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "3feb2200bd7044d2b85536b765e67f6c", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:26:27.750857+00:00", "completed_at": "2026-10-29T13:27:14.376151+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "display_order": 14, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:s2\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:14", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 10
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 10, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:s2:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:9", "skill_name": "usenix-catalog-orchestration", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 11
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 11, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "tool:6534ef7a3f81583a949ff08d8d4d731e:s2:search_paper_catalog:6d26f97b8a23", "node_type": "tool", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:9", "status": "running", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 12
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 12, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093", "node_key": "tool:6534ef7a3f81583a949ff08d8d4d731e:s2:search_paper_catalog:6d26f97b8a23", "node_type": "tool", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:9", "result_id": "search_paper_catalog", "result_length": 11415, "status": "completed", "summary": "[REDACTED]", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 13
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 13, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:s2:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:9", "skill_name": "usenix-catalog-orchestration", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 14
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 14, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "search_id": "7d20f7e4de4f4c1fb9ba23354bd0ef47", "status": "completed", "task_type": "search_catalog", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:s2"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "3feb2200bd7044d2b85536b765e67f6c", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:26:27.750857+00:00", "completed_at": "2026-10-29T13:27:14.376151+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s2", "display_order": 14, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:s2\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:14", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 15
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 15, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "status": "running", "task_type": "search_catalog", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:s3"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "5d295c22ebaa454caea774419a7217d1", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:27:14.424032+00:00", "completed_at": "2026-10-29T13:27:44.924941+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "display_order": 20, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:s3\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:20", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 16
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 16, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:s3:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:15", "skill_name": "usenix-catalog-orchestration", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 17
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 17, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "tool:6534ef7a3f81583a949ff08d8d4d731e:s3:search_paper_catalog:a924cb85c407", "node_type": "tool", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:15", "status": "running", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 18
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 18, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"content_hash": "fca92358a25a3418b48b418da3d16a5a170136fefcafc47495b432a98cd19093", "node_key": "tool:6534ef7a3f81583a949ff08d8d4d731e:s3:search_paper_catalog:a924cb85c407", "node_type": "tool", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:15", "result_id": "search_paper_catalog", "result_length": 10557, "status": "completed", "summary": "[REDACTED]", "tool_name": "search_paper_catalog"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 19
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 19, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:s3:usenix-catalog-orchestration", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:15", "skill_name": "usenix-catalog-orchestration", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 20
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 20, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "search-worker", "search_id": "16f65e86ec6142fd85a994f5a37975b0", "status": "completed", "task_type": "search_catalog", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:s3"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "5d295c22ebaa454caea774419a7217d1", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:27:14.424032+00:00", "completed_at": "2026-10-29T13:27:44.924941+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:s3", "display_order": 20, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"search-worker\", \"status\": \"completed\", \"task_type\": \"search_catalog\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:s3\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:20", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 21
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 21, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "paper-evaluator", "status": "running", "task_type": "evaluate_papers", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:e1"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "bcca62ee025042779677ab681088068b", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:27:44.982542+00:00", "completed_at": "2026-10-29T13:28:33.609878+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "display_order": 26, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"paper-evaluator\", \"status\": \"completed\", \"task_type\": \"evaluate_papers\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:e1\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:26", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 22
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 22, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:e1:research-paper-evaluation", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:21", "skill_name": "research-paper-evaluation", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 23
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 23, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:e1:validation:1", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:21", "status": "failed", "validation_diagnostic": {"attempt": 1, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "not_sent", "feedback_sent": false, "field_paths": ["output"], "rule_id": "agent.output.safety"}}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 24
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 24, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "event_type": "validation_feedback", "node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:e1:validation-feedback:1", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:21", "status": "completed", "validation_diagnostic": {"attempt": 1, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "output_contract", "feedback_sent": true, "field_paths": ["output"], "rule_id": "agent.output.safety"}}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 25
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 25, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:e1:research-paper-evaluation", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:21", "skill_name": "research-paper-evaluation", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 26
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 26, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "fast", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "paper-evaluator", "status": "completed", "task_type": "evaluate_papers", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:e1"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "bcca62ee025042779677ab681088068b", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:27:44.982542+00:00", "completed_at": "2026-10-29T13:28:33.609878+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:e1", "display_order": 26, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"paper-evaluator\", \"status\": \"completed\", \"task_type\": \"evaluate_papers\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:e1\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:26", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 27
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 27, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "strong", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:c1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.8:27b-q4_K_M", "role": "research-critic", "status": "running", "task_type": "check_coverage", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:c1"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "fdce8d2dd4ff47a78cf834d24d24d7b6", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:28:33.629277+00:00", "completed_at": "2026-10-29T13:28:42.294910+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:c1", "display_order": 30, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"research-critic\", \"status\": \"completed\", \"task_type\": \"check_coverage\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:c1\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:30", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 28
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 28, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:c1:research-coverage-review", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:c1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:27", "skill_name": "research-coverage-review", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 29
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 29, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:c1:research-coverage-review", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:c1", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:27", "skill_name": "research-coverage-review", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 30
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 30, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "strong", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:c1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "research-critic", "status": "completed", "task_type": "check_coverage", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:c1"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "fdce8d2dd4ff47a78cf834d24d24d7b6", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-29T13:28:33.629277+00:00", "completed_at": "2026-10-29T13:28:42.294910+00:00", "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:c1", "display_order": 30, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"research-critic\", \"status\": \"completed\", \"task_type\": \"check_coverage\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:c1\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:30", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 31
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 31, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"model_tier": "strong", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:syn", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.8:27b-q4_K_M", "role": "synthesizer", "status": "running", "task_type": "synthesize_preliminary_report", "work_item_id": "6534ef7a3f81583a949ff08d8d4d731e:syn"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "ec2d327e17f9431a8da4349ef627af24", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "running", "summary": null, "started_at": "2026-10-29T13:28:42.398840+00:00", "completed_at": null, "parent_step_id": "1a2638dde4604f1aa660f216c7a155fc", "node_type": "agent", "node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:syn", "display_order": 31, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.8:27b-q4_K_M\", \"role\": \"synthesizer\", \"status\": \"running\", \"task_type\": \"synthesize_preliminary_report\", \"work_item_id\": \"6534ef7a3f81583a949ff08d8d4d731e:syn\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:31", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+id: 32
+event: worker
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": 32, "type": "worker", "timestamp": "2026-10-29T13:31:31Z", "payload": {"node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:syn:research-report-synthesis", "node_type": "skill", "parent_node_key": "agent:6534ef7a3f81583a949ff08d8d4d731e:syn", "parent_source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:31", "skill_name": "research-report-synthesis", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "6534ef7a3f81583a949ff08d8d4d731e", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-29T13:31:31Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "ecdc9cf5b20a4cf3acc497a295dad80c", "message_id": "63c9bb9c69155962b6bc8b36d06a4920", "kind": "worker", "label": "worker", "status": "running", "summary": null, "started_at": "2026-10-29T13:28:42.442444+00:00", "completed_at": null, "parent_step_id": "ec2d327e17f9431a8da4349ef627af24", "node_type": "skill", "node_key": "skill:6534ef7a3f81583a949ff08d8d4d731e:syn:research-report-synthesis", "display_order": 32, "detail_json": "{\"skill_name\": \"research-report-synthesis\", \"status\": \"running\"}", "source_event_id": "research-event:6534ef7a3f81583a949ff08d8d4d731e:32", "research_session_id": "50a8eb2588cd4eb58377fc111956a690", "schema_version": 2}}}
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+

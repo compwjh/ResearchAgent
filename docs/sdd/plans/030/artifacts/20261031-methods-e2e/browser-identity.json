@@ -1,0 +1,23 @@
+{
+  "source": "actual browser DOM observation",
+  "notification_number": 230,
+  "selected_card_class": "research-task-card is-selected",
+  "selected_session_id": "b4dfc9390b884b86b2d2b1045321625d",
+  "details_session_id": "b4dfc9390b884b86b2d2b1045321625d",
+  "details_conversation_id": "e7e38b96fc1b4218a3766563db631d46",
+  "api_task_id": "f19f879e4b05587ba0246768fa15cf46",
+  "api_evidence": "14-task.json",
+  "screenshots": [
+    "browser-selection.jpg",
+    "browser-report.jpg",
+    "browser-body.jpg"
+  ],
+  "note": "Older LLM task cards visible below selected card are unselected neighbors, not the displayed report binding.",
+  "approval_button_observation": {
+    "visible_text": "批准计划",
+    "conversation_id": "542b4a6004bf4dc9ae735e0f24db42de",
+    "screenshot": "browser-plan-approval.jpg",
+    "clicked": false,
+    "note": "Separate live UI Intake-only check; no second research task approved."
+  }
+}

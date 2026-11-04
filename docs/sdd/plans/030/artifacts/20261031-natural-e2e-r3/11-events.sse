@@ -1,0 +1,122 @@
+id: 27
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 27, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "event_type": "validation_feedback", "node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:e1:validation-feedback:3", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:e1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:21", "status": "completed", "validation_diagnostic": {"attempt": 3, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "output_contract", "feedback_sent": true, "field_paths": ["output.safe_summary.unknown"], "rule_id": "agent.output.safety", "safety_classification": "forbidden_key"}}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 28
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 28, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:e1:research-paper-evaluation", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:e1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:21", "skill_name": "research-paper-evaluation", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 29
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 29, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"model_tier": "fast", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:e1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "deepseek:deepseek-flash", "role": "paper-evaluator", "status": "completed", "task_type": "evaluate_papers", "work_item_id": "3efcee5268f25980ae09d0d0fbe7a145:e1"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "43d2edc2a5cd45308d5e3e93a429121b", "message_id": "97af066db4e359189aa9c6eb7583fb73", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-31T03:37:59.330217+00:00", "completed_at": "2026-10-31T03:39:59.580271+00:00", "parent_step_id": "39fcb7eb809f4f75b345d22a78f88812", "node_type": "agent", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:e1", "display_order": 29, "detail_json": "{\"model_tier\": \"fast\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"paper-evaluator\", \"status\": \"completed\", \"task_type\": \"evaluate_papers\", \"work_item_id\": \"3efcee5268f25980ae09d0d0fbe7a145:e1\"}", "source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:29", "research_session_id": "9ff213128bd14ea8841e7bd65b7ace13", "schema_version": 2}}}
+
+id: 30
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 30, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"model_tier": "strong", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.8:27b-q4_K_M", "role": "research-critic", "status": "running", "task_type": "check_coverage", "work_item_id": "3efcee5268f25980ae09d0d0fbe7a145:c1"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "bf51916ce9434e289b266567550c0663", "message_id": "97af066db4e359189aa9c6eb7583fb73", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-31T03:39:59.624833+00:00", "completed_at": "2026-10-31T03:40:25.790280+00:00", "parent_step_id": "39fcb7eb809f4f75b345d22a78f88812", "node_type": "agent", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "display_order": 37, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"research-critic\", \"status\": \"completed\", \"task_type\": \"check_coverage\", \"work_item_id\": \"3efcee5268f25980ae09d0d0fbe7a145:c1\"}", "source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:37", "research_session_id": "9ff213128bd14ea8841e7bd65b7ace13", "schema_version": 2}}}
+
+id: 31
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 31, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:c1:research-coverage-review", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:30", "skill_name": "research-coverage-review", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 32
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 32, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:c1:validation:1", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:30", "status": "failed", "validation_diagnostic": {"attempt": 1, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "not_sent", "feedback_sent": false, "field_paths": ["output.safe_summary.unknown.unknown"], "rule_id": "agent.output.safety", "safety_classification": "forbidden_key"}}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 33
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 33, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "event_type": "validation_feedback", "node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:c1:validation-feedback:1", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:30", "status": "completed", "validation_diagnostic": {"attempt": 1, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "output_contract", "feedback_sent": true, "field_paths": ["output.safe_summary.unknown.unknown"], "rule_id": "agent.output.safety", "safety_classification": "forbidden_key"}}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 34
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 34, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:c1:validation:2", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:30", "status": "failed", "validation_diagnostic": {"attempt": 2, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "not_sent", "feedback_sent": false, "field_paths": ["provider.content"], "rule_id": "agent.output.json_parse"}}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 35
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 35, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"error_code": "AGENT_OUTPUT_INVALID", "event_type": "validation_feedback", "node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:c1:validation-feedback:2", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:30", "status": "completed", "validation_diagnostic": {"attempt": 2, "error_code": "AGENT_OUTPUT_INVALID", "feedback_classification": "output_contract", "feedback_sent": true, "field_paths": ["provider.content"], "rule_id": "agent.output.json_parse"}}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 36
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 36, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:c1:research-coverage-review", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:30", "skill_name": "research-coverage-review", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 37
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 37, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"model_tier": "strong", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.5:9b", "role": "research-critic", "status": "completed", "task_type": "check_coverage", "work_item_id": "3efcee5268f25980ae09d0d0fbe7a145:c1"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "bf51916ce9434e289b266567550c0663", "message_id": "97af066db4e359189aa9c6eb7583fb73", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-31T03:39:59.624833+00:00", "completed_at": "2026-10-31T03:40:25.790280+00:00", "parent_step_id": "39fcb7eb809f4f75b345d22a78f88812", "node_type": "agent", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:c1", "display_order": 37, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"qwen3.5:9b\", \"role\": \"research-critic\", \"status\": \"completed\", \"task_type\": \"check_coverage\", \"work_item_id\": \"3efcee5268f25980ae09d0d0fbe7a145:c1\"}", "source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:37", "research_session_id": "9ff213128bd14ea8841e7bd65b7ace13", "schema_version": 2}}}
+
+id: 38
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 38, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"model_tier": "strong", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "qwen3.8:27b-q4_K_M", "role": "synthesizer", "status": "running", "task_type": "synthesize_preliminary_report", "work_item_id": "3efcee5268f25980ae09d0d0fbe7a145:syn"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "c4a2e699343040e38676071fb2442d9c", "message_id": "97af066db4e359189aa9c6eb7583fb73", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-31T03:40:25.854927+00:00", "completed_at": "2026-10-31T03:41:25.004225+00:00", "parent_step_id": "39fcb7eb809f4f75b345d22a78f88812", "node_type": "agent", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "display_order": 42, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"synthesizer\", \"status\": \"completed\", \"task_type\": \"synthesize_preliminary_report\", \"work_item_id\": \"3efcee5268f25980ae09d0d0fbe7a145:syn\"}", "source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:42", "research_session_id": "9ff213128bd14ea8841e7bd65b7ace13", "schema_version": 2}}}
+
+id: 39
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 39, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:syn:research-report-synthesis", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:38", "skill_name": "research-report-synthesis", "status": "running"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 40
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 40, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"attempt": 1, "code": "PROVIDER_FALLBACK", "event_type": "provider_fallback", "from_model": "qwen3.5:9b", "from_provider": "ollama", "node_key": "model-fallback:3efcee5268f25980ae09d0d0fbe7a145:syn", "node_type": "model", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:38", "reason_code": "MODEL_TIMEOUT", "status": "running", "to_model": "deepseek:deepseek-flash", "to_provider": "deepseek"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 41
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 41, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"node_key": "skill:3efcee5268f25980ae09d0d0fbe7a145:syn:research-report-synthesis", "node_type": "skill", "parent_node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "parent_source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:38", "skill_name": "research-report-synthesis", "status": "completed"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "syncing", "status": "trace_syncing", "code": "TRACE_PROJECTION_FAILED", "retryable": true}}
+
+id: 42
+event: worker
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 42, "type": "worker", "timestamp": "2026-10-31T03:42:03Z", "payload": {"model_tier": "strong", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "node_type": "agent", "parent_node_key": "phase:research", "resolved_model": "deepseek:deepseek-flash", "role": "synthesizer", "status": "completed", "task_type": "synthesize_preliminary_report", "work_item_id": "3efcee5268f25980ae09d0d0fbe7a145:syn"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "c4a2e699343040e38676071fb2442d9c", "message_id": "97af066db4e359189aa9c6eb7583fb73", "kind": "worker", "label": "worker", "status": "completed", "summary": null, "started_at": "2026-10-31T03:40:25.854927+00:00", "completed_at": "2026-10-31T03:41:25.004225+00:00", "parent_step_id": "39fcb7eb809f4f75b345d22a78f88812", "node_type": "agent", "node_key": "agent:3efcee5268f25980ae09d0d0fbe7a145:syn", "display_order": 42, "detail_json": "{\"model_tier\": \"strong\", \"resolved_model\": \"deepseek:deepseek-flash\", \"role\": \"synthesizer\", \"status\": \"completed\", \"task_type\": \"synthesize_preliminary_report\", \"work_item_id\": \"3efcee5268f25980ae09d0d0fbe7a145:syn\"}", "source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:42", "research_session_id": "9ff213128bd14ea8841e7bd65b7ace13", "schema_version": 2}}}
+
+id: 43
+event: terminal
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": 43, "type": "terminal", "timestamp": "2026-10-31T03:42:03Z", "payload": {"error_code": "EVIDENCE_INSUFFICIENT", "node_key": "phase:research", "node_type": "phase", "reason": "approved minimum paper count not met: selected 2 of 5", "selected_count": 2, "status": "partial"}}
+
+event: processing_step
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "processing_step", "timestamp": "2026-10-31T03:42:03Z", "payload": {"type": "processing_step", "operation": "upsert", "step": {"step_id": "39fcb7eb809f4f75b345d22a78f88812", "message_id": "97af066db4e359189aa9c6eb7583fb73", "kind": "task", "label": "terminal", "status": "completed", "summary": "approved minimum paper count not met: selected 2 of 5", "started_at": "2026-10-31T03:36:43.511677+00:00", "completed_at": "2026-10-31T03:41:25.237104+00:00", "parent_step_id": null, "node_type": "phase", "node_key": "phase:research", "display_order": 43, "detail_json": "{\"error_code\": \"EVIDENCE_INSUFFICIENT\", \"reason\": \"approved minimum paper count not met: selected 2 of 5\", \"selected_count\": 2, \"status\": \"partial\"}", "source_event_id": "research-event:3efcee5268f25980ae09d0d0fbe7a145:43", "research_session_id": "9ff213128bd14ea8841e7bd65b7ace13", "schema_version": 2}}}
+
+event: terminal
+data: {"research_task_id": "3efcee5268f25980ae09d0d0fbe7a145", "event_seq": null, "type": "terminal", "timestamp": "2026-10-31T03:42:03Z", "payload": {"status": "partial"}}
+

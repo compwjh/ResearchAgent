@@ -2,11 +2,17 @@
 
 日期：2026-10-30  
 角色：tester（跨端验收）  
-**当前结论：BLOCKED。** 本文整合已有自然语言 E2E、公开 report-only 重试、v5/v6 与 2026-10-31 新案例产物、内容评审和分端评审；不是 Spec 收尾签字，也不授权开始用户人工验收。本次文档更新未启动服务、未重跑测试/全量回归、未调用模型或修改业务代码，仅整理已落盘证据。
+**初始快照结论：BLOCKED（历史保留）。** 本文整合已有自然语言 E2E、公开 report-only 重试、v5/v6 与后续案例；以下各历史 BLOCKED 不由新案例抹除。
+
+## 2026-10-31 最终交付更新（主会话状态同步）
+
+当前 methods-topic 案例已 READY_FOR_USER：3020 CJK、5篇、4比较、5综合发现，独立内容5/5、三产物HTTP/hash、浏览器和最终前后端回归通过，readiness10/10。最终权威结论为[tester 与独立 architect 双签](../../reviews/030-report-quality-acceptance-review.md)，操作见[人工步骤](2026-10-31-manual-acceptance.md)，真实请求/响应和产物见[methods 目录](artifacts/20261031-methods-e2e/)。Spec030 已由主会话按DoD收口，用户人工验收待执行；旧认证案例仍是失败/partial，不冒充成功。
+
+记录勘误：下文 `exit3` 是回归轮次目录名，不是退出码；该轮真实退出码为0。最终后端是 b43bbea0 的3476通过/3跳过/82.25%，前端是58803f8c的388通过/0跳过，运行生产树与候选一致。
 
 ## 0.1 最新确认进展（2026-10-30；不解除 BLOCKED）
 
-- 独立审查 prompt 的当前候选提交为 `6f70303f`；已记录部署在 8000 且 `/api/health` 返回 HTTP 200。该候选最终全量已有结果但退出码为 3，见下方回归状态；本文件不读取日志、不轮询，也不把部分通过写成全绿。
+- 独立审查 prompt 的当时候选提交为 `6f70303f`；已记录部署在 8000 且 `/api/health` 返回 HTTP 200。该候选回归轮次为 exit3，真实退出码0，详见最终回归报告；本段是当时快照，不作为当前最终候选结论。
 - 前端 v21 的 root 真实浏览器路径已实测：从精确通知 **`研究已完成：研究已完成 · 报告 v5`** 打开报告；页面 **`研究摘要与报告`** 稳定显示 v5 正式发布状态，指标为 `2912/1500`、`5/5` 逐篇、`5/1` 比较、`6/3` 发现、`0/2` 改写，正文渲染正常。截图见 [`browser-v5.jpg`](artifacts/20261030-report-v6/browser-v5.jpg)。这证明当前通知→报告展示路径可观察，不改变 v5 人工语义 rubric 的既有 FAIL。
 - v6 已真实提交并返回 HTTP 202；执行证据 [`execution-manifest.json`](artifacts/20261030-report-v6/execution-manifest.json)、`request.json`、`response-headers.txt`、[`01-submit.json`](artifacts/20261030-report-v6/01-submit.json) 与终态 [`06-report.json`](artifacts/20261030-report-v6/06-report.json) 已落盘在 [`artifacts/20261030-report-v6/`](artifacts/20261030-report-v6/)。终态为 `failed`、`published=false`、`reason=AGENT_OUTPUT_INVALID`，不能把 v6 受理当作 v6 成功。
 - v6 诊断证据见 [`2026-10-29-report-context-backend.md`](2026-10-29-report-context-backend.md) 新增 v6 段：`paper_ids` 结构约束（2–64 个不同 ID）失败；具体是 type、count 还是 duplicate 子因没有可用证据，本文不猜。确有 local 30s timeout→DeepSeek fallback 事件；Run 的模型名称属于陈旧投影。实际预算为 `1455/1500`，原 JSON 的 `1233` 已知陈旧，结算未超限。三项后端缺陷已指派 `report_context` 修复，但不代表已完成。

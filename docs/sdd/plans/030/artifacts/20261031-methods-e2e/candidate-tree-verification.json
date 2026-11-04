@@ -1,0 +1,12 @@
+{
+  "source": "git rev-parse and git diff executed by root",
+  "runtime_commit": "44752b60",
+  "backend_regression_candidate": "b43bbea0",
+  "frontend_regression_candidate": "58803f8c",
+  "backend_tree_oid_runtime": "df65c1d5dfb56647e86de5fb7bf8660aa960a7ac",
+  "backend_tree_oid_frontend_candidate": "df65c1d5dfb56647e86de5fb7bf8660aa960a7ac",
+  "frontend_tree_oid_runtime": "85bb55da84f084b4330496b0523875582e9df77c",
+  "frontend_tree_oid_frontend_candidate": "85bb55da84f084b4330496b0523875582e9df77c",
+  "backend_and_research_test_diff_b43_to_588": [],
+  "note": "The frontend-only test expectation sync does not alter runtime code or backend tests. Later documentation-only closure commits do not change these production trees."
+}

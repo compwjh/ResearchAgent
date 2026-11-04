@@ -1,0 +1,175 @@
+{
+  "deployment_commit": "44752b60",
+  "base_url": "http://127.0.0.1:8000",
+  "conversation_id": "e7e38b96fc1b4218a3766563db631d46",
+  "session_id": "b4dfc9390b884b86b2d2b1045321625d",
+  "plan_version": 1,
+  "task_id": "f19f879e4b05587ba0246768fa15cf46",
+  "observed_at": "2026-10-31T03:58:30.821498+00:00",
+  "report_id": "4b7212ea-7f22-40ae-bf32-1b788f9a466b",
+  "report_version": 1,
+  "status": "completed",
+  "published": true,
+  "quality_validation": {
+    "cjk_count": 3020,
+    "comparison_count": 4,
+    "count_method": "report-quality-v1",
+    "failure_codes": [],
+    "invalid_evidence_count": 0,
+    "paper_count": 5,
+    "revision_count": 0,
+    "schema_version": "report-quality-v1",
+    "status": "pass",
+    "supported_finding_count": 5
+  },
+  "generation": {
+    "agent_run_ids": [
+      "f19f879e4b05587ba0246768fa15cf46:syn:report-1:comparison-c0134fe797bd4160bf0e8a3e16a2d623",
+      "f19f879e4b05587ba0246768fa15cf46:syn:report-1:drafting-37fcb78a604744c09dfeebe56e0586ba"
+    ],
+    "budget": {
+      "cost": null,
+      "report_totals": {
+        "elapsed_seconds": 294.0,
+        "model_loops_used": 6,
+        "tool_calls_used": 0
+      },
+      "runs": [
+        {
+          "agent_run_id": "f19f879e4b05587ba0246768fa15cf46:syn:report-1:comparison-c0134fe797bd4160bf0e8a3e16a2d623",
+          "elapsed_seconds": 114.0,
+          "model_loops_limit": 40,
+          "model_loops_used": 2,
+          "tool_calls_limit": 160,
+          "tool_calls_used": 0
+        },
+        {
+          "agent_run_id": "f19f879e4b05587ba0246768fa15cf46:syn:report-1:drafting-37fcb78a604744c09dfeebe56e0586ba",
+          "elapsed_seconds": 114.0,
+          "model_loops_limit": 40,
+          "model_loops_used": 2,
+          "tool_calls_limit": 160,
+          "tool_calls_used": 0
+        },
+        {
+          "agent_run_id": "f19f879e4b05587ba0246768fa15cf46:syn:run-1",
+          "elapsed_seconds": 66.0,
+          "model_loops_limit": 40,
+          "model_loops_used": 2,
+          "tool_calls_limit": 160,
+          "tool_calls_used": 0
+        }
+      ],
+      "task_totals": {
+        "elapsed_seconds": 531.0,
+        "max_seconds": 1500,
+        "model_loops_limit": 160,
+        "model_loops_used": 16,
+        "tool_calls_limit": 640,
+        "tool_calls_used": 2
+      },
+      "tokens": null
+    },
+    "fallback_reason_code": null,
+    "model": "deepseek:deepseek-flash",
+    "output_disposition": "accepted",
+    "path": "agent_runner",
+    "plan_version": 1,
+    "provider": "deepseek",
+    "published": true,
+    "report_version": 1,
+    "request_key": "e47ad5c9-2636-5236-a80f-ff03298cb17a",
+    "store_state": {
+      "claims": [
+        {
+          "agent_run_id": "f19f879e4b05587ba0246768fa15cf46:syn:run-1",
+          "claim_id": "055f3130-282e-4227-ac12-fbd8c91f31d9",
+          "created_at": "2026-10-31T03:47:24Z",
+          "fingerprint": "99c6dcd70bd2e8eedfa696c7b57b416f8e9aacd90660450a4b698337c50d8bb8",
+          "granted_model_loops": 40,
+          "granted_seconds": 120,
+          "granted_tool_calls": 160,
+          "requested_model_loops": 40,
+          "requested_seconds": 120,
+          "requested_tool_calls": 160,
+          "run_model_loops_limit": 40,
+          "run_tool_calls_limit": 160,
+          "settled": true,
+          "work_item_id": "f19f879e4b05587ba0246768fa15cf46:syn"
+        },
+        {
+          "agent_run_id": "f19f879e4b05587ba0246768fa15cf46:syn:report-1:comparison-c0134fe797bd4160bf0e8a3e16a2d623",
+          "claim_id": "02d75e51-48be-490b-9add-bbecd690abbf",
+          "created_at": "2026-10-31T03:48:30Z",
+          "fingerprint": "e485321d733d9a3c8a937a3dba556305dfbd5a399f37bdc81a0a6b722737c805",
+          "granted_model_loops": 40,
+          "granted_seconds": 300,
+          "granted_tool_calls": 160,
+          "requested_model_loops": 40,
+          "requested_seconds": 300,
+          "requested_tool_calls": 160,
+          "run_model_loops_limit": 40,
+          "run_tool_calls_limit": 160,
+          "settled": true,
+          "work_item_id": "f19f879e4b05587ba0246768fa15cf46:syn"
+        },
+        {
+          "agent_run_id": "f19f879e4b05587ba0246768fa15cf46:syn:report-1:drafting-37fcb78a604744c09dfeebe56e0586ba",
+          "claim_id": "6408c8c5-4c36-4005-ac40-6088d010c6cc",
+          "created_at": "2026-10-31T03:50:24Z",
+          "fingerprint": "f4bac3f959d4c568ccf36b49e597d81bd50e936116e1683050282f85b158d025",
+          "granted_model_loops": 40,
+          "granted_seconds": 300,
+          "granted_tool_calls": 160,
+          "requested_model_loops": 40,
+          "requested_seconds": 300,
+          "requested_tool_calls": 160,
+          "run_model_loops_limit": 40,
+          "run_tool_calls_limit": 160,
+          "settled": true,
+          "work_item_id": "f19f879e4b05587ba0246768fa15cf46:syn"
+        }
+      ],
+      "limits": {
+        "max_seconds": 1500,
+        "model_loops": 160,
+        "run_model_loops": 40,
+        "run_tool_calls": 160,
+        "tool_calls": 640
+      },
+      "revision": 12,
+      "rewrite_count": 0,
+      "stage": "published"
+    },
+    "work_item_id": "f19f879e4b05587ba0246768fa15cf46:syn"
+  },
+  "downloads": "download-verification.json",
+  "human_review": "content-review.md",
+  "human_rubric": "PASS 5/5",
+  "browser": {
+    "research_tasks_asset": "/assets/research-tasks.js?v=21",
+    "task_selected_by_notification": 230,
+    "report_version": 1,
+    "status_text": "报告 v1 · 已完成",
+    "publication_text": "正式发布",
+    "formats_verified": [
+      "Markdown",
+      "HTML"
+    ],
+    "links_verified_against_artifacts": true,
+    "screenshots": [
+      "browser-report.jpg",
+      "browser-body.jpg",
+      "browser-html.jpg"
+    ]
+  },
+  "limitations": [
+    "Abstract-level evidence only; no full-text verification",
+    "Human-participant evidence includes expert interviews, not a broad end-user-study corpus"
+  ],
+  "notes": [
+    "Execution manifest transcribed from actual tool results, not a raw HTTP trace.",
+    "06-matrix.json and 07-paper-displays.json were not-ready/empty probes and are not used as successful evidence; 12/13 contain final responses.",
+    "Frontend SSE/session reads are part of browser acceptance and may reconcile projections; no historical rows were edited."
+  ]
+}

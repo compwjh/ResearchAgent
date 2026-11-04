@@ -1,7 +1,7 @@
 # Task 07：内容质量合同与运行路径审计
 
 关联：Spec 030；[内容质量合同](./2026-10-29-report-quality-contract.md)；[Grilling](./2026-10-29-report-quality-grilling.md)；[运行时审计](./2026-10-29-report-runtime-audit.md)。
-状态：合同已按 Gate 2 REQ-01 / TECH-01..05 修订，待原独立评审者复审；产品范围已确认，Task 02–06 仍为已完成历史任务。
+状态：已完成（合同门）。030-report-quality 需求/技术独立最终评审 GO，合同已通过；首轮“待复审”记录保留为历史，产品范围已确认，Task 02–06 仍为已完成历史任务。Task08/Task10 的实现与验收不因本合同门通过而提前完成。
 
 ## 目标与边界
 

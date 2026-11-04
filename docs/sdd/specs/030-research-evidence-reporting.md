@@ -2,7 +2,7 @@
 
 ## 状态
 
-**当前状态：实施中（2026-10-29 内容充分性修订；用户已确认，独立需求/技术门禁GO；原交付记录保留）**
+**当前状态：已完成（2026-10-31 内容充分性修订完成 Agent 验收、独立签字和部署验证；READY_FOR_USER，用户人工验收待执行；原交付记录保留）**
 
 ## 一句话目标
 
@@ -87,11 +87,11 @@
 | 06 | 最终评审、回归、部署与复盘 | [`task-06-review-regression-deploy.md`](../plans/030/task-06-review-regression-deploy.md) | 02–05 | 已完成 |
 
 | 07 | 内容质量合同与运行路径审计 | [Task07](../plans/030/task-07-quality-contract.md) | 本修订确认/独立评审 | 已完成（独立GO） |
-| 08 | 后端实质报告生成与质量门禁 | [Task08](../plans/030/task-08-substantive-report-generation.md) | 07 | 实施中 |
-| 09 | 前端报告质量与恢复反馈 | [Task09](../plans/030/task-09-report-quality-feedback.md) | 08接口冻结 | 待执行 |
-| 10 | 内容质量最终验收与交付 | [Task10](../plans/030/task-10-quality-acceptance.md) | 08、09 | 待执行 |
+| 08 | 后端实质报告生成与质量门禁 | [Task08](../plans/030/task-08-substantive-report-generation.md) | 07 | 已完成 |
+| 09 | 前端报告质量与恢复反馈 | [Task09](../plans/030/task-09-report-quality-feedback.md) | 08接口冻结 | 已完成 |
+| 10 | 内容质量最终验收与交付 | [Task10](../plans/030/task-10-quality-acceptance.md) | 08、09 | 已完成（READY_FOR_USER） |
 
-## 评审记录
+## 评审记录（原交付，历史保留）
 
 - 需求评审：`docs/sdd/reviews/030-requirement-review.md`（通过；Task02 合同门）
 - 技术评审：`docs/sdd/reviews/030-tech-review.md`（通过；Task02 合同门）
@@ -105,11 +105,12 @@
 | 2026-09-17 | 架构师（自身） | 用户确认 Spec030，进入实施阶段；按 Task02–06 顺序开发，Task 阶段仅运行定向测试。 |
 | 2026-09-17 | Task06 收口审计（Luna high） | 完成唯一全量回归、运行时与浏览器 smoke、固定矩阵/manifest/三格式/安全审计；发现 `EvidenceReportError.message` 缺失导致未知报告路由 500 的 P1，保持实施中并退回主 Agent 修复。 |
 | 2026-09-17 | 主 Agent / Task06 | 修复报告错误响应与矩阵未就绪状态映射，补齐旧资源版本兼容标记；全量回归 2504 passed、1 skipped，部署 smoke 全部通过，Spec030 收口为已完成。 |
+| 2026-10-31 | 架构师主会话；独立 tester / architect（临时 Luna xhigh） | 内容充分性修订收口：自然语言 methods 案例生成3020 CJK、5篇、4比较、5综合发现；三产物HTTP/hash、内容5/5、浏览器、后端3476及前端388通过，验收双签READY_FOR_USER。仅本地提交；用户人工验收尚待执行，旧失败记录保留。 |
 
 
 ## 2026-10-29 修订：研究报告内容充分性
 
-状态：待确认。用户已采用Grilling Q1–Q15推荐，待共同理解确认及本修订独立需求/技术评审；此前评审不自动覆盖本修订。仅文档规划，无代码、测试运行或部署。决策详见[Grilling记录](../plans/030/2026-10-29-report-quality-grilling.md)。Spec042是离线评测，不改变其目的；本次沿030修订并核对034生成接缝，不另起重复Spec。
+状态：已完成。初稿于2026-10-29经用户共同理解确认，独立需求/技术门禁GO后实施；2026-10-31完成真实报告、回归、浏览器、独立验收与签字。初稿及失败记录保留于状态台账和评审记录。决策详见[Grilling记录](../plans/030/2026-10-29-report-quality-grilling.md)。Spec042仍是离线评测，本次不改变其目的。
 
 ### 目标
 
@@ -169,7 +170,7 @@ Agent先固定可复现真实主题，从自然语言入口完成Intake、计划
 
 新修订评审与历史记录分开落盘：需求`030-report-quality-requirement-review.md`、技术`030-report-quality-tech-review.md`、最终验收`030-report-quality-acceptance-review.md`（均位于reviews；当前未产出的文件不得视为已通过）。
 
-本轮技术候选详见[质量合同](../plans/030/2026-10-29-report-quality-contract.md)，待独立评审，不宣告已通过。
+2026-10-29技术初稿记录：[质量合同](../plans/030/2026-10-29-report-quality-contract.md) 当时待独立评审；最终GO及本次验收结论见下文。
 
 2026-10-29独立首轮门禁：本修订[需求评审](../reviews/030-report-quality-requirement-review.md)与[技术评审](../reviews/030-report-quality-tech-review.md)均BLOCK；待补语义验收rubric、API/版本原子预留/恢复、全文证据和有界schema预算合同。用户范围确认继续有效，不重复请求确认；修订后独立复审前不进入代码实现。
 
@@ -186,4 +187,13 @@ Agent先固定可复现真实主题，从自然语言入口完成Intake、计划
 - 不足五篇时保留真实短缺，仅沿既有批准范围和预算恢复，不降低阈值或扩大主题冒充完成。
 - 自然语言字数要求不得被解析为论文篇数；未支持的显式论文数量继续澄清，不静默采用默认值。
 
-复验须覆盖主题进入查询、低相关聚合引用/补足被拒绝、数量与字数区别，以及部署后新自然语言案例的真实报告内容评审。既有产物和失败证据保留；Spec 继续实施中。
+复验覆盖主题进入查询、低相关聚合引用/补足被拒绝、数量与字数区别，以及部署后新自然语言案例的真实报告内容评审。methods 案例已通过；既有产物和认证主题失败证据保留，不假报该历史任务成功。
+
+## 当前修订评审与收口
+
+- 需求：[独立需求评审](../reviews/030-report-quality-requirement-review.md)，最终 GO。
+- 技术：[独立技术评审](../reviews/030-report-quality-tech-review.md)，最终 GO。
+- 验收：[tester 与独立 architect 双签](../reviews/030-report-quality-acceptance-review.md)，READY_FOR_USER，10/10，当前案例无未解 P0/P1。
+- [人工验收步骤](../plans/030/2026-10-31-manual-acceptance.md)；[真实证据](../plans/030/artifacts/20261031-methods-e2e/execution-manifest.json)；[最终回归](../plans/030/2026-10-30-final-regression.md)；[复盘](../retro/2026-10-31-report-quality.md)。
+
+运行在 http://127.0.0.1:8000/；前后端生产树与最终测试候选一致。报告为摘要级，专家访谈不代表终端用户研究。旧输入占位及本地模型能力展示/缓存疑点作为其他范围的后续项保留，未宣称修复。此完成状态指 Agent 的实现、验收与部署闭环，不表示用户已执行人工验收。
