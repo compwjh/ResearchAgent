@@ -13,6 +13,8 @@
   const MAX_MAP_SCALE = 2.8;
   const FIT_MAX_SCALE = 2.4;
   const INITIAL_FIT_SCALE_EPSILON = 0.01;
+  // 卡片上把历史 partial 显示成「可用」时，用 title / aria-label 保留这段完整说明。
+  const PARTIAL_MAP_CARD_NOTICE = '初始建图部分完成，已保留可用节点；不影响已保存节点与后续扩展';
   const FIT_PADDING_CSS_PX = 48;
   const MAX_LAYOUT_FRAMES = 8;
   // A spacing preview treats a node's edge clearance as two copies of the
@@ -98,7 +100,14 @@
     importInFlightNodeId: null,
     mapRequest: 0,
     viewRequest: 0,
+    // 离开视图时那次 flush 的 promise；切回同一张地图前必须先等它落地，
+    // 否则 `resetMapSelectionState` 的 `viewRequest += 1` 会把它判成 stale，
+    // dirty 永远清不掉、revision 也不收口（下一次保存直接 409）。
+    viewFlushPromise: null,
     initialFitPending: false,
+    // 本次会话内是否已成功提交过视图保存；用于区分「后端默认视口」与
+    // 「用户显式保存的同值视口」，避免后者被当成未初始化而自动 fit。
+    viewSavedOnce: false,
     pollGeneration: 0,
     preview: null,
     previewJob: null,
@@ -116,6 +125,9 @@
     expansionGeneration: 0,
     expansionHighlightNodeIds: new Set(),
     positions: Object.create(null),
+    // state.positions 里的坐标属于哪张地图；跨图时必须丢弃，否则同源论文
+    // （node_id 相同）会沿用上一张图的位置。
+    positionsMapId: null,
     positionsDirty: false,
     spacingViolationCount: 0,
     viewDirty: false,
@@ -359,8 +371,50 @@
     return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : NaN;
   }
 
+  // 当前活动节点数由列表接口派生返回；缺失 / 非数 / 负数一律视为「未知」，
+  // 不写入规范化结果，由渲染层回落到建图目标数 requested_count。
+  function normalizeMapNodeCount(value) {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : undefined;
+    }
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (!text) return undefined;
+      const parsed = Number(text);
+      return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : undefined;
+    }
+    return undefined;
+  }
+
+  // 视图是否「被用户显式保存过」必须是显式事实，不能靠视口数值去猜：
+  // `(0,0,1)` 既可能是后端默认值，也可能是用户点了「重置视图」后保存的结果，
+  // 单纯看数值必然把后者误判成「未初始化」并自动 fit 掉。
+  // 只认两个显式来源：后端 `view_settings.view_initialized` 布尔标记，
+  // 以及前端本次会话内确实提交过视图保存（state.viewSavedOnce）。
+  function normalizeMapViewInitialized(map) {
+    const settings = map && typeof map.view_settings === 'object' && map.view_settings ? map.view_settings : {};
+    const flag = settings.view_initialized;
+    if (flag === true || flag === false) return flag;
+    return undefined;
+  }
+
   function normalizeMap(map) {
-    return map && typeof map === 'object' ? map : null;
+    if (!map || typeof map !== 'object') return null;
+    const viewInitialized = normalizeMapViewInitialized(map);
+    const viewSettings = viewInitialized === undefined
+      ? (map.view_settings || {})
+      : { ...(map.view_settings || {}), view_initialized: viewInitialized };
+    const base = {
+      ...map,
+      view_settings: viewSettings,
+      ...(viewInitialized === undefined ? {} : { view_initialized: viewInitialized }),
+    };
+    const nodeCount = normalizeMapNodeCount(map.node_count);
+    if (nodeCount === undefined) {
+      const { node_count: _ignored, ...rest } = base;
+      return rest;
+    }
+    return { ...base, node_count: nodeCount };
   }
 
   function normalizeNodeStyle(nodeStyle) {
@@ -1749,6 +1803,33 @@
     }
   }
 
+  // 卡片篇数口径：优先当前活动节点数 node_count；缺失 / 非数 / 负数时回落建图目标数。
+  // 两者不同也不显示「目标 N」等辅助信息（用户明确要求卡片只显当前篇数）。
+  function mapCardNodeCount(map) {
+    const active = normalizeMapNodeCount(map?.node_count);
+    if (active !== undefined) return active;
+    const requested = normalizeMapNodeCount(map?.requested_count);
+    return requested !== undefined ? requested : null;
+  }
+
+  // 历史建图作业的 partial 只代表「初始建图没凑满目标数」，地图本身已可用；
+  // 因此当地图已有活动节点时卡片徽标改显「可用」，完整说明留在 title / aria-label。
+  // 只对卡片做局部映射：全局状态文案表与列表筛选下拉保持原样。
+  function mapCardStatusBadge(map) {
+    const status = String(map?.status || '').toLowerCase();
+    const badge = renderStatusBadge(map?.status);
+    if (status !== 'partial') return badge;
+    const activeCount = normalizeMapNodeCount(map?.node_count);
+    if (!(activeCount > 0)) return badge;
+    badge.textContent = mapStatusLabel('ready');
+    // 保留 data-status="partial"（筛选契约不变），另加 availability 标记让
+    // 「可用」徽标走绿色样式，而不套用 partial 的橙色。
+    badge.dataset.availability = 'usable';
+    badge.setAttribute('title', PARTIAL_MAP_CARD_NOTICE);
+    badge.setAttribute('aria-label', `${mapStatusLabel('ready')}：${PARTIAL_MAP_CARD_NOTICE}`);
+    return badge;
+  }
+
   function renderMapList() {
     if (!refs.mapList) return;
     refs.mapList.replaceChildren();
@@ -1764,8 +1845,9 @@
       const title = createElement('strong', 'literature-map-list-title', mapTitle(map));
       const topic = createElement('span', 'literature-map-list-topic', map.topic || '主题未提供');
       const meta = createElement('span', 'literature-map-list-meta');
-      meta.append(renderStatusBadge(map.status));
-      if (map.requested_count) meta.append(createElement('span', '', `${map.requested_count} 篇`));
+      meta.append(mapCardStatusBadge(map));
+      const cardNodeCount = mapCardNodeCount(map);
+      if (cardNodeCount !== null) meta.append(createElement('span', '', `${cardNodeCount} 篇`));
       item.append(title, topic, meta);
       item.addEventListener('click', () => {
         selectMap(map.map_id);
@@ -2187,14 +2269,16 @@
     });
   }
 
-  async function loadMaps() {
+  // `options.keepLocalView` 只用于「同一张地图切回」的自动重读：保留本地未落地
+  // 的改动，不被服务端旧值覆盖。它只影响这里那次隐式选图，不影响用户主动点选。
+  async function loadMaps(options = {}) {
     try {
       const payload = await request('');
       state.maps = Array.isArray(payload.maps) ? payload.maps.map(normalizeMap).filter(Boolean) : [];
       renderMapList();
       if (state.selectedMapId) {
         const existing = state.maps.find((map) => map.map_id === state.selectedMapId);
-        if (existing && !state.map) await selectMap(existing.map_id);
+        if (existing && !state.map) await selectMap(existing.map_id, options);
       }
       if (!state.maps.length) {
         setStatus('还没有地图。点击“新建地图”输入主题即可开始。');
@@ -2284,9 +2368,15 @@
     }
   }
 
-  async function selectMap(mapId) {
-    if (!mapId) return;
+  // 清空「选中地图」相关的本地状态。`keepLocalView` 为真时（同一张地图重新进入，
+  // 例如从别的视图切回）保留本地尚未落地的位置与视口，避免被服务端旧值覆盖；
+  // 切到另一张地图必须清空，否则会串图。
+  function resetMapSelectionState(mapId, options = {}) {
     const previousMapId = state.selectedMapId;
+    // 「切回同一张地图」的自动重读一律保留本地视图：离开时的 flush 可能已经
+    // 落地（dirty 已清），此时若改用 dirty 判定，就会用服务端旧快照覆盖用户
+    // 刚整理好的视图。用户主动点选（不传 keepLocalView）仍走下面的清空分支。
+    const keepLocalView = Boolean(options.keepLocalView) && previousMapId === mapId;
     closeExpansionPanel();
     if (previousMapId !== mapId) {
       state.multiSelectActive = false;
@@ -2303,10 +2393,20 @@
     state.graph = null;
     state.job = null;
     state.eventCursor = 0;
-    state.positions = Object.create(null);
-    state.positionsDirty = false;
-    state.spacingViolationCount = 0;
-    state.viewDirty = false;
+    // 注意：保留本地视图（keepLocalView）时，不能在这里把 positions 归零——
+    // 后续 loadMapGraph 只覆盖服务端返回的节点，归零会丢掉全部本地节点位置。
+    // 只在 options 明确未要求保留时清空，语义与条件一致。
+    if (!options.keepLocalView) {
+      state.positions = Object.create(null);
+      state.positionsMapId = null;
+      state.positionsDirty = false;
+      state.spacingViolationCount = 0;
+      state.viewDirty = false;
+    } else if (previousMapId === mapId) {
+      // 同一张地图上保留本地坐标时，明确把这批坐标的归属标成当前地图，
+      // 否则 loadMapGraph 的跨图守卫会把它们当成上一张图的残留清掉。
+      state.positionsMapId = mapId;
+    }
     state.layoutPendingIds.clear();
     state.layoutPreview = null;
     state.layoutPreviewActive = false;
@@ -2356,14 +2456,70 @@
     renderGraph();
     renderSpacingPreviewPanel();
     renderAnalysisQueue();
+    return { requestId, keepLocalView };
+  }
+
+  // 地图读到之后的视图应用与收尾。keepLocalView 时不用服务端旧值覆盖本地改动。
+  function applyMapPayload(payload, keepLocalView) {
+    state.map = normalizeMap(payload.map);
+    state.job = payload.latest_job || null;
+    if (!keepLocalView) applySavedView(state.map);
+  }
+
+  function onMapLoaded(payload, requestId, mapId) {
+    if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+    applyMapPayload(payload, false);
+    void loadMapGraph(mapId).then(() => {
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return undefined;
+      return loadGroups(mapId, requestId);
+    }).then(() => {
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return undefined;
+      return ensureAnalysisQueue(mapId, requestId);
+    }).then(() => {
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return undefined;
+      return restorePreviewForMap(mapId, requestId);
+    }).then(() => {
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      renderMapList();
+      if (state.job && !TERMINAL_JOB_STATES.has(state.job.status)) startPolling();
+      const mapStatus = state.map?.status === 'partial' ? '地图部分完成；已保留可用节点并标注失败阶段。' : '地图已打开，图谱数据来自本地保存结果。';
+      const spacingNotice = state.spacingViolationCount
+        ? `检测到${state.spacingViolationCount}对节点间距不足，原有位置未修改；可点击“整理间距”预览。`
+        : '';
+      setStatus([state.previewDiscoveryNotice, mapStatus, spacingNotice].filter(Boolean).join(' '),
+        state.previewDiscoveryNotice ? 'waiting' : (state.map?.status === 'partial' ? 'partial' : ''));
+      renderJobActions();
+    }).catch((error) => {
+      if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
+      setStatus(`打开地图失败：${errorAction(error, '请重新点击地图重试。')}`, 'error');
+    });
+  }
+
+  // 同一张地图上，若离开视图触发的 flush 还没落地，先等它完成再重置状态：
+  // 这样它的响应仍然「最新」（不会被 `viewRequest += 1` 判成 stale），
+  // dirty 与 revision 都能正常收口。只对同一张地图生效；跨地图时必须立刻
+  // 丢弃旧地图的响应，故不等待。
+  async function waitForPendingViewFlush(mapId) {
+    if (!mapId || mapId !== state.selectedMapId) return;
+    const pending = state.viewFlushPromise;
+    if (!pending) return;
+    try {
+      await pending;
+    } finally {
+      if (state.viewFlushPromise === pending) state.viewFlushPromise = null;
+    }
+  }
+
+  async function selectMap(mapId, options = {}) {
+    if (!mapId) return;
+    await waitForPendingViewFlush(mapId);
+    const { requestId, keepLocalView } = resetMapSelectionState(mapId, options);
     setStatus('正在读取已保存地图…');
     try {
       const payload = await request(`/${encodeURIComponent(mapId)}`);
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
-      state.map = normalizeMap(payload.map);
-      state.job = payload.latest_job || null;
-      applySavedView(state.map);
-      await loadMapGraph(mapId);
+      applyMapPayload(payload, keepLocalView);
+      await loadMapGraph(mapId, { keepLocalView });
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
       await loadGroups(mapId, requestId);
       if (requestId !== state.mapRequest || mapId !== state.selectedMapId || !state.active) return;
@@ -2385,6 +2541,31 @@
     }
   }
 
+  // 是否需要在图数据到达后自动 fit 一次。判定顺序（越靠前越权威）：
+  //   1. 显式保存证据（后端 view_settings.view_initialized === true，或本次会话
+  //      viewSavedOnce）→ **绝不 fit**：用户真的保存过，(0,0,1)、0.35 都是有效视图；
+  //   2. 显式标记 === false → 未初始化，fit 一次；
+  //   3. 无任何显式证据 → 恢复提交 61096ed6 `fix(maps): fit unreadable opening views`
+  //      的既有 UX 契约：完全没视口 → fit；极小缩放（<= MIN_MAP_SCALE + EPSILON）
+  //      不可读 → fit；后端默认 (0,0,1) → fit；其余保留用户视图。
+  //      注意这里不能用 view_initialized 缺失推断「用户没保存过」——旧数据/旧后端
+  //      都没有这个字段，只能靠「读不出来」这个可观测事实兜底。
+  function resolveInitialFitPending(map, viewportInfo = {}) {
+    const settings = map && typeof map.view_settings === 'object' && map.view_settings ? map.view_settings : {};
+    const hasOwnViewport = Boolean(settings.viewport) && typeof settings.viewport === 'object';
+    const explicit = normalizeMapViewInitialized(map);
+    if (explicit === true) return false;
+    // 本次会话内已经成功保存过视图（例如用户点了「重置视图」存下 (0,0,1)），
+    // 旧后端没有显式标记也要认出「这是用户的视图」，不再自动 fit。
+    if (state.viewSavedOnce) return false;
+    if (explicit === false) return true;
+    if (!hasOwnViewport) return true;
+    const scaleKnown = Number.isFinite(viewportInfo.savedScale) && viewportInfo.savedScale > 0;
+    if (!scaleKnown) return true;
+    if (viewportInfo.savedScale <= MIN_MAP_SCALE + INITIAL_FIT_SCALE_EPSILON) return true;
+    return viewportInfo.savedX === 0 && viewportInfo.savedY === 0 && viewportInfo.savedScale === 1;
+  }
+
   function applySavedView(map) {
     const settings = map?.view_settings || {};
     const viewport = settings.viewport || {};
@@ -2396,13 +2577,7 @@
       y: Number.isFinite(savedY) ? savedY : 0,
       scale: Number.isFinite(savedScale) && savedScale > 0 ? savedScale : 1,
     };
-    // A viewport persisted at the minimum zoom is not useful as an opening
-    // view for a graph. The exact backend default is also an uninitialized
-    // view for a newly created map. Fit it once after the graph arrives,
-    // but leave ordinary saved views (including intentional zoom/pan) alone.
-    state.initialFitPending = !Number.isFinite(savedScale)
-      || savedScale <= MIN_MAP_SCALE + INITIAL_FIT_SCALE_EPSILON
-      || (savedX === 0 && savedY === 0 && savedScale === 1);
+    state.initialFitPending = resolveInitialFitPending(map, { savedX, savedY, savedScale });
     const layers = settings.layers || {};
     state.layers = { citation: layers.citation !== false, similarity: layers.similarity !== false };
     state.labelMode = normalizeLabelMode(settings.label_mode);
@@ -2413,14 +2588,40 @@
     renderNodeStyleControls();
   }
 
-  async function loadMapGraph(mapId) {
+  // `keepLocalView` 为真时（同一张地图切回、本地还有未落地的改动），图数据里的
+  // 服务端位置是旧快照，不能再回填进 `state.positions`，否则本地改动被静默覆盖。
+  async function loadMapGraph(mapId, options = {}) {
+    const keepLocalView = Boolean(options.keepLocalView);
     const requestId = ++state.graphRequest;
     try {
       const payload = await request(`/${encodeURIComponent(mapId)}/graph`);
       if (requestId !== state.graphRequest || mapId !== state.selectedMapId || !state.active) return;
       state.graph = payload;
-      state.map = normalizeMap(payload.map) || state.map;
+      // 跨图时不得沿用上一张图的坐标：node_id 相同（同源论文）极常见，
+      // 不校验归属就会把上一张图的位置当成本地改动保留下来。归属未知
+      // （positionsMapId 尚未记录）时也按跨图处理，避免默认放行。
+      if (state.positionsMapId !== mapId) {
+        state.positions = Object.create(null);
+        state.layoutPendingIds.clear();
+        state.positionsDirty = false;
+      }
+      // 图数据里的 map 可能缺 revision / view_settings（甚至有 null 字段），直接整体
+      // 替换会把这些关键值清空，进而让 saveView 的 expected_revision 变成 undefined。
+      // 因此：已有同一张地图时只吸收服务端**确实给出**的字段（revision / view_initialized），
+      // 绝不覆盖本地 view、layers、node_style 与 positions。
+      const graphMap = normalizeMap(payload.map);
+      if (!(graphMap && state.map && graphMap.map_id === state.map.map_id)) {
+        state.map = graphMap || state.map;
+      } else {
+        const merged = { ...state.map, ...graphMap };
+        if (Number.isInteger(Number(graphMap.revision))) merged.revision = Number(graphMap.revision);
+        else merged.revision = state.map.revision;
+        const graphInitialized = normalizeMapViewInitialized(graphMap);
+        if (graphInitialized !== undefined) merged.view_initialized = graphInitialized;
+        state.map = merged;
+      }
       state.job = payload.latest_job || state.job;
+      state.positionsMapId = mapId;
       state.layerStatus = {};
       LAYER_NAMES.forEach((kind) => {
         state.layerStatus[kind] = payload.layers?.[kind]?.status || 'waiting';
@@ -2428,7 +2629,9 @@
       const nodes = activeNodes(payload);
       state.layoutPendingIds.clear();
       nodes.forEach((node, index) => {
-        if (node.position && Number.isFinite(Number(node.position.x)) && Number.isFinite(Number(node.position.y))) {
+        if (keepLocalView && state.positions[node.node_id]) {
+          // 本地已有该节点位置：保留本地值（不排队重排、不覆盖）。
+        } else if (node.position && Number.isFinite(Number(node.position.x)) && Number.isFinite(Number(node.position.y))) {
           state.positions[node.node_id] = { x: Number(node.position.x), y: Number(node.position.y) };
         } else {
           state.layoutPendingIds.add(node.node_id);
@@ -5157,11 +5360,37 @@
     state.saveTimer = window.setTimeout(saveView, 500);
   }
 
+  // 离开视图时的一次性补偿保存：先取消防抖计时器，再**立即 flush 一次**已经积累的
+  // positionsDirty / viewDirty。`allowInactive` 只给这一次 flush 用，其它路径仍受
+  // `state.active` 守卫，避免离开视图后还在后台反复写库。
+  function flushPendingViewSave(options = {}) {
+    window.clearTimeout(state.saveTimer);
+    state.saveTimer = null;
+    if (!state.map?.map_id) return Promise.resolve(false);
+    if (!state.positionsDirty && !state.viewDirty) return Promise.resolve(false);
+    // 记录这次 flush，供同一张地图切回时等待（见 waitForPendingViewFlush）。
+    const pending = saveView({ ...options, allowInactive: true });
+    state.viewFlushPromise = pending;
+    pending.then(() => {
+      if (state.viewFlushPromise === pending) state.viewFlushPromise = null;
+    }, () => {
+      if (state.viewFlushPromise === pending) state.viewFlushPromise = null;
+    });
+    return pending;
+  }
+
   async function saveView(options = {}) {
-    if (!state.map?.map_id || !state.active || (!state.positionsDirty && !state.viewDirty)) return false;
+    const allowInactive = Boolean(options.allowInactive);
+    if (!state.map?.map_id || (!allowInactive && !state.active) || (!state.positionsDirty && !state.viewDirty)) return false;
     if (state.layoutPreviewActive && !options.allowLayoutPreview) return false;
     const viewport = mapViewportWorldSize();
-    if (!viewport.valid) return false;
+    // 零尺寸视口守卫只在「用户仍在这个视图里」时成立：那时测不到尺寸说明布局没就绪，
+    // 写进去就是 bogus 视口。而离开视图的 flush（allowInactive）由 showView() 先
+    // hideAllMainAreas() 再 setActive(false) 触发，SVG 必然量到 0×0；此时
+    // state.view / state.positions 是用户刚操作过的**有效逻辑值**，且 PATCH body
+    // 只用 state.view（viewport 的测量数值根本不进 payload），必须放行，否则
+    // 位置/视口永远落不了库，下次查看又回到原来的位置。
+    if (!viewport.valid && !allowInactive) return false;
     const requestId = ++state.viewRequest;
     const mapId = state.map.map_id;
     const expectedRevision = state.map.revision;
@@ -5191,16 +5420,24 @@
         }
         return;
       }
-      if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      // 离开视图时的那一次 flush 允许在 state.active 已为 false 的情况下落地，
+      // 否则请求虽然发出、本地 dirty 却永远清不掉（下次进入又被旧值覆盖）。
+      const stillCurrent = mapId === state.selectedMapId && state.map?.map_id === mapId
+        && (state.active || allowInactive);
+      if (requestId !== state.viewRequest || !stillCurrent) return;
       state.map = normalizeMap(payload.map) || state.map;
       state.positionsDirty = false;
       state.viewDirty = false;
+      state.viewSavedOnce = true;
+      state.initialFitPending = false;
       setStatus('视图已保存。');
       renderMapList();
       renderCurrentMeta();
       return true;
     } catch (error) {
-      if (requestId !== state.viewRequest || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
+      const stillCurrentOnError = mapId === state.selectedMapId && state.map?.map_id === mapId
+        && (state.active || allowInactive);
+      if (requestId !== state.viewRequest || !stillCurrentOnError) return;
       state.positionsDirty = true;
       setStatus(`视图保存失败：${errorAction(error, '请重新打开地图后再保存。')}`, 'error');
       return false;
@@ -6918,24 +7155,33 @@
     state.active = Boolean(active);
     if (state.active) {
       restoreDesktopPanelAccessibility();
-      loadMaps().then(() => {
+      // 切回同一张地图时，`!state.map` 分支（loadMaps 内的隐式选图）也要保留本
+      // 地改动，否则它会以默认选项重读并覆盖，再被下面那次 keepLocalView 重读
+      // 掩盖成「已保留」。跨地图/首次进入不受影响。
+      const keepLocalViewOnReturn = !wasActive && hadMap && Boolean(state.selectedMapId);
+      loadMaps({ keepLocalView: keepLocalViewOnReturn }).then(() => {
         // Re-entering the view re-reads the selected map/graph so a job that
         // finished while the user was elsewhere is immediately visible.
         if (!wasActive && hadMap && state.selectedMapId && state.map) {
-          selectMap(state.selectedMapId);
+          // 同一张地图切回：保留本地未落地的改动，不能被服务端旧值覆盖。
+          // 其它 selectMap 调用点（用户点另一张地图、409 重读等）仍不传，
+          // 跨地图必须清空本地状态，否则会串图。
+          selectMap(state.selectedMapId, { keepLocalView: true });
         } else if (state.job && !TERMINAL_JOB_STATES.has(state.job.status)) {
           startPolling();
         }
         renderJobActions();
       });
     } else {
+      // 离开视图前先 flush：过去这里只 clearTimeout(500ms 防抖)，把刚整理好的
+      // 位置/视口直接丢掉，切回来自然「又变初始的展示模式」。
+      flushPendingViewSave();
       closeExpansionPanel();
       closeAllMobilePanels(false);
       closeCreatePanel();
       stopPolling();
       stopAnalysisQueuePolling();
       stopPreviewPolling();
-      window.clearTimeout(state.saveTimer);
       renderJobActions();
     }
   }

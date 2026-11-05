@@ -34,6 +34,9 @@
 #literature-maps-view .literature-map-badge { display: inline-flex; width: fit-content; border-radius: 999px; padding: 3px 6px; background: var(--accent-soft); color: var(--accent); font: 9px 'DM Mono', monospace; }
 #literature-maps-view .literature-map-badge[data-status="ready"], #literature-maps-view .literature-map-badge[data-status="completed"] { background: #edf9f0; color: #287c43; }
 #literature-maps-view .literature-map-badge[data-status="partial"] { background: #fff7ed; color: #94621c; }
+/* 已有活动节点的历史 partial 在地图上显示为「可用」：沿用 ready 的绿色，
+   完整说明放在 title / aria-label 里（见 renderMapList 的局部映射）。 */
+#literature-maps-view .literature-map-badge[data-availability="usable"] { background: #edf9f0; color: #287c43; }
 #literature-maps-view .literature-map-badge[data-status="failed"] { background: #fff0f0; color: #a33232; }
 #literature-maps-view .literature-map-empty { margin: auto 12px; color: var(--muted); font: 10px/1.6 'DM Mono', monospace; text-align: center; }
 #literature-maps-view .literature-map-create-panel { margin: 0 10px 10px; padding: 12px; border: 1px solid #e2dcff; border-radius: 9px; background: #faf9ff; }

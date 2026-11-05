@@ -305,3 +305,170 @@ Task11已完成，Spec043由实施中转已完成。最终部署源码7364a26b�
 最终[Task11验收双签](../reviews/043-task11-acceptance-review.md)、[人工步骤](../plans/043/2026-10-29-expansion-manual-acceptance.md)、[运行时证据](../plans/043/2026-10-29-expansion-browser-validation.md)、[复盘](../retro/2026-10-29-literature-map-expansion.md)。主会话仅同步状态/部署和本地提交，不代表用户已亲自验收，未push或合并main。
 
 变更记录：2026-10-29｜主会话（编排/文档）、临时Luna xhigh（前端开发/独立复审/分端测试/QA/架构师）｜完成Task11、修复真实手机预览及触控回归，补齐真实产物、回归、签字、复盘及状态同步。
+
+## 2026-11-05 地图列表论文数显示缺陷（待确认）
+
+**状态：已完成（2026-11-06 验收通过、部署验证通过）。** 本段为 Spec043 收口后用户反馈的缺陷修订，按 Bug 处理规则不新建编号；主实现状态仍为「已完成」。用户已确认「卡片用只显当前篇数」并要求 `部分完成` 徽标一并修，自本条起转入实现；冻结范围见文末「用户确认与冻结范围」。
+
+### 复现证据（2026-11-05，当前部署版本，全部为只读核实）
+
+- 用户反馈（截图 `Screenshot 2026-11-05 at 22.59.28.png`）：地图卡片 `API E2E graph attention networks r2` 显示「部分完成 20 篇」，但用户刚通过 Task11「扩展关联论文」新增了 4 篇（可能更多），卡片数字未变。
+- `GET /api/literature-maps`：该 map 为 `requested_count: 20`、`status: "partial"`、`revision: 286`、`updated_at: 2026-11-05T15:02:44+00:00`；返回字段全集 `map_id / name / topic / owner_id / project_id / filters / requested_count / revision / status / view_settings / created_at / updated_at`，**不含任何当前节点数**。当前 7 张地图的 `requested_count` 均为 20。
+- `GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph`：`nodes: 32`、`edges: 29`、`removed: 0`。与 2026-10-29 验收快照 28 nodes / 25 edges 相比为 **+4 节点 / +4 边**，与用户描述一致。
+- 结论：**新增已成功写入、数据未丢失**；显示不变不是「没刷新」，而是计数口径错误。
+
+### 根因
+
+1. `frontend/literature-maps.js:1768` 的 `renderMapList()` 把 `map.requested_count` 直接渲染为 `${map.requested_count} 篇`。`requested_count` 是建图时用户选择的**目标篇数**（`backend/app/literature_maps/domain/models.py:69`，创建时写入 `literature_maps.requested_count`），属静态配置，不随节点增删变化。
+2. `GET /api/literature-maps`（`backend/app/api/routes_literature_maps.py:346-352`）只序列化 `item.to_dict()`；`store.list_maps()`（`backend/app/literature_maps/infrastructure/store.py:574-577`）只查 `literature_maps` 表。两处都不提供当前活动节点数。
+3. 批量确认后 `loadMaps()` 已被调用（`frontend/literature-maps.js:4428`），但拉回的仍是静态 `requested_count`，因此反复刷新列表也不会变成 32。
+4. 附带混淆：卡片「部分完成」是建图作业 `status: partial` 的旧状态，与 Task11 批次无关（`docs/sdd/plans/043/2026-10-29-expansion-manual-acceptance.md:59` 已说明）。本修订不顺带改它。
+
+影响范围：所有地图列表卡片；凡经 Task11 扩展、节点移出/恢复或其他增删节点后，卡片篇数都不反映实际。
+
+### 目标
+
+地图列表卡片显示**当前活动论文篇数**，与打开图谱所见节点数一致；新增/移出/恢复节点后随既有 `loadMaps()` 刷新同步更新，且不与「建图目标数」混淆。
+
+### 数据模型与接口（拟）
+
+- 不新增表、不新增迁移、不回写历史数据；`literature_maps.requested_count` 的值与语义保持不变。
+- `GET /api/literature-maps` 每个 map 新增只读派生字段 `node_count: int`，口径为 `SELECT COUNT(*) FROM literature_map_nodes WHERE map_id=? AND removed_at IS NULL`，与 `store.py:2587 / 2759 / 3212` 及 `service.export_map()` 的活动节点口径一致（排除移出墓碑）。要求一次批量查询得出，避免每张地图一次 N+1；响应其余字段保持向后兼容。
+- `GET /api/literature-maps/{map_id}/graph` 响应结构不变，`map` 对象不加字段。
+- 前端 `renderMapList()` 以 `node_count` 为主展示「N 篇」；`node_count` 缺失或非数时回落 `requested_count`（兼容旧后端与测试 fixture）。`requested_count` 仅在两者不同时作为辅助信息（如「目标 20」）或 `title` 提示，不覆盖主数字。
+- `normalizeMap()` 需透传/规范化 `node_count`；静态资源 `literature-maps.js?v=40 → 41`，同步 `frontend/index.html` 与既有版本断言。
+
+### 边界与明确不做
+
+- 不改 Task11 预览、分页、batch-apply、revalidate、后台补摘要与分析逻辑。
+- 不改建图作业状态徽标（`partial` 等）、不改 `status` 语义、不清理历史作业状态。
+- 不改 `requested_count` 持久化值、不新增 DB 迁移、不批量刷新历史地图。
+- 不新增前端轮询或 SSE；复用现有 `loadMaps()` 调用点（批量确认 4428、移出/恢复 6784、进入视图 6921）。
+- 不改移动端布局、卡片其他信息、导出 PNG/JSON 内容。
+- 不新建 spec 编号；本修订挂 Spec043（同 2026-10-27 修订先例）。
+
+### 验证方式（确认后执行）
+
+1. 后端定向：`GET /api/literature-maps` 每个 map 的 `node_count` 与对应 `.../graph` 活动节点数逐一相等；含 `removed_at` 墓碑时正确排除；多地图不串号、无 N+1；旧字段全部保留。
+2. 前端定向（node vm）：卡片渲染 `node_count`、缺失时回落、两者不同时辅助信息正确、非数输入不产生注入。
+3. 静态检查：`node --check`、ruff、既有前端版本断言同步。
+4. 当前部署版本真实服务 E2E：硬刷新后卡片显示 `32 篇`；只读 GET 列表与 graph 逐 ID 对照；再按 Task11 人工新增 1 篇后回到列表确认数字 +1（写操作仅在确认后执行），落盘请求、响应、实体 ID、最终状态与产物路径。
+5. 人工验收材料：逐步点击、点击后提示、等待条件、下一步、失败恢复（显示旧数字时先硬刷新并核对 `literature-maps.js` 版本号）与产物查看路径。
+6. 分端执行：跨端改动拆成 `backend-dev` / `frontend-dev` 两次分派，`backend-reviewer` / `frontend-reviewer` 复审，`backend-tester` / `frontend-tester` 单端回归；`tester` 汇总跨端验收并出具 `NNN-acceptance-review.md`，架构师签字后再部署验证。
+
+### 用户确认记录（2026-11-05）
+
+- **卡片计数**：用户明确「卡片用只显当前篇数」→ 主显 `node_count`，**不显示目标数辅助信息**；`requested_count` 仅作为 `node_count` 缺失／非数时的回落值。
+- **状态徽标**：用户明确「`部分完成` 徽标…修了」→ 纳入本轮范围，修法见文末「用户确认与冻结范围」第 2 条。
+- 本段状态：`待确认 → 已确认`。
+
+## 2026-11-05 人工验收阶段 UX 缺陷（二）：知识库跳转定位与地图视图保存（待确认）
+
+**状态：已完成（2026-11-06 验收通过、部署验证通过）。** 三项缺陷由用户一次性确认后一并转入实现；冻结范围见文末「用户确认与冻结范围」。本节两项均落在 Spec043 已确认范围内：产品使用步骤第 3 条「切换两种关系、缩放拖动并保存，离开后重开，节点/位置/筛选保留且不自动联网」（本 spec:134），以及第 5/6 条「点击加入知识库才进入原有导入流程…成功后节点状态更新；关于本篇提问跳转并预填草稿」（本 spec:136-137）。
+
+### 缺陷 A：地图节点「在知识库中查看」只切页面、不定位到该论文
+
+**用户原文**：「End-to-End Spectro-Temporal Graph Attention Networks for Speaker Verification Anti-Spoofing and Speech Deepfake Detection 这篇文章我已经点击加入知识库了，然后点击在知识库里查看会进行跳转，但不会跳转定位到这篇文章，知识页面变成知识库。」
+
+**只读复现与证据（2026-11-05，当前部署版本）**：
+
+- `GET /api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/graph`：该论文为 node `065389f0f0b64acda6c5a043cc9b6269`，`document_id = 1b967ed8638e46569d36e3f6565c51eb`，`download_status = indexed`。
+- `GET /api/kb/papers`：对应条目 `document_id = 1b967ed8638e46569d36e3f6565c51eb`、`paper_id = null`、`status = indexed`、标题完全一致 → **入库成功，文档确实在知识库**。
+- `frontend/literature-maps.js:6521-6529`：详情按钮把 `node.document_id` 传给 `openKnowledgeBaseDocument()`；`:6742-6749` 调用 `window.jumpToKnowledgeBase(documentId)`（`app.js` 为普通 script，函数挂在 window 上）。
+- `frontend/app.js:6339-6340`：KB 列表项为 `if (documentId) item.dataset.documentId = documentId; if (paper.paper_id) item.dataset.paperId = paper.paper_id;`。本例 `paper_id` 为 null，该 `<li>` **只有 `data-document-id`，没有 `data-paper-id`**。
+- `frontend/app.js:5106-5113`：`jumpToKnowledgeBase(paperId)` 仅用 `[data-paper-id]` 按 `=== String(paperId)` 查找；传入的是 `document_id`，必然匹配不到，于是不执行 `scrollIntoView` / `focus`，只执行 `showView('kb')`（导航项文案「▤ 知识库」，`frontend/index.html:100`）。与用户观察到的「知识页面变成知识库」一致。
+- `paperState.pendingKbPaperId` 在 `app.js:5107` 赋值后全仓无任何读取（仅 `:4061` 声明、`:5107` 赋值；`docs/sdd/specs/020-misc-bug-fixes.md:63` 记载历史决策「`jumpToKnowledgeBase` / `pendingKbPaperId` 函数本身保留不动」）→ 定位属半实现。前端已有规范化 helper `kbDocumentId(paper)`（`app.js:6211-6217`，优先 `document_id`）但未用于跳转。
+- 同一契约缺陷波及 `frontend/research-tasks.js:1691`「打开原文切片」，该处同样传 `document_id`。
+
+**根因**：跨模块跳转的标识符契约不一致（地图／深度研究传 `document_id`，KB 跳转只认 `paper_id`），且 `paper_id` 可为 null；`pendingKbPaperId` 从未被消费。
+
+**拟修法与边界**：
+
+- `jumpToKnowledgeBase` 改为优先按 `data-document-id`、`data-paper-id` 兼容匹配（可复用 `kbDocumentId()` 统一键）；命中后滚动到视口中央、focus 并给可见高亮／状态提示；未命中时明确提示「未在当前列表找到该文档」并给可操作下一步，不静默只切页。
+- 消费或删除 `pendingKbPaperId`：在 `loadKbPapers()` 渲染完成后重试定位，避免列表异步未就绪时错过。
+- 明确不做：不改 `/api/kb/*` 后端契约、不改导入／索引流程、不改 `paper_id` 生成规则、不改地图节点数据结构、不改知识库列表分页与搜索行为。
+
+### 缺陷 B：地图整理／移动后切走再回来丢失位置与视口
+
+**用户原文**：「在点击地图，那个地图我已经整理过间距，但跳转回去又变初始的展示模式，我希望对地图的操作是会保存的，不要移了位置之后下次查看又是原来的位置」。
+
+**只读复现与证据（2026-11-05，当前部署版本）**：
+
+- 后端**确实保存了视图**：`GET .../graph` 的 `map.view_settings.viewport = {scale: 2.8, x: -664.03, y: -785.24}`，32 个活动节点各有唯一 `position`（`positions_unique: 32/32`）。问题在保存时机与重新进入时的覆盖，不是后端不持久化。
+- `frontend/app.js:5319-5321`：`showView()` 每次切换都调 `window.LiteratureMaps.setActive(nextView === 'literature-maps')`；切到知识库即 `setActive(false)`。
+- `frontend/literature-maps.js:6938`：`setActive(false)` 分支直接 `window.clearTimeout(state.saveTimer)`，取消 `scheduleViewSave()` 的 500ms 防抖（`:5154-5157`），**未 flush** 待保存的 `positionsDirty / viewDirty`。
+- `frontend/literature-maps.js:5161` 与 `:5194`：`saveView()` 在 `!state.active` 时直接返回 false；即使 PATCH 已发出，响应回来时因 `state.active=false` 也不落地。
+- `frontend/literature-maps.js:6919-6925`：切回时 `setActive(true)` → `loadMaps().then(... selectMap(state.selectedMapId))`；而 `selectMap` 在 `:2300-2329` 清空 `state.positions` 并置 `positionsDirty=false / viewDirty=false`，再由 `applySavedView` / `loadMapGraph` 从后端读回**未保存的旧值**，本地改动被覆盖 → 用户看到「又变原来的位置」。
+- 另有放大该现象的既有逻辑：`:2388-2405` 的 `initialFitPending` 在 `savedScale <= 0.36` 或 `(x=0, y=0, scale=1)` 时为真，`:2446` 随即 `fitView(false)` 重算视口；而 `:1509-1512`「重置视图」按钮恰好写入 `(0,0,1)`，因此用户显式保存过的视图会被当成「未初始化」自动 fit，表现为「初始的展示模式」。
+
+**根因**：离开视图时丢弃未 flush 的保存 + 重新进入时用旧服务端值覆盖本地状态；叠加 `initialFitPending` 把显式保存的默认视口误判为未初始化。
+
+**拟修法与边界**：
+
+- `setActive(false)` 前对 dirty 状态执行一次性 flush（立即 `saveView()`，允许这次保存跨视图切换完成并落地），不再 `clearTimeout` 丢弃；切回时若本地仍有 dirty，不在 `selectMap` 中清空。
+- 区分「从未保存过视图」与「用户显式保存的默认视口」：`initialFitPending` 改由显式标记（如 `view_initialized`）或 revision 判定，不再以 `(0,0,1)` / 最小缩放猜测；用户手动重置视图后重开仍保持重置结果。
+- 明确不做：不改 `PATCH /api/literature-maps/{id}/view` 契约与 409 冲突策略、不改节点拖拽与「整理间距」交互、不改后端 `view_settings` 结构、不引入 localStorage 草稿、不改其他视图切换逻辑。
+
+### 验证方式（确认后执行）
+
+1. 前端定向（node vm）：A —— 用 `document_id` 命中 `data-document-id`、`paper_id` 兼容、两者皆无时给提示、列表异步渲染后仍能定位；B —— `setActive(false)` 触发 flush、`saveView` 不被 `!active` 吞掉、切回不覆盖 dirty、显式保存的 `(0,0,1)` 不触发 fit。
+2. 静态检查：`node --check`、前端版本断言（`app.js?v=68→69`、`literature-maps.js?v=40→41` 与 `frontend/index.html` 同步）；若触及后端再跑 ruff／后端定向 pytest。
+3. 当前部署版本真实服务 E2E（写操作仅在确认后执行）：地图节点点「在知识库中查看」→ KB 视图该条目滚动／高亮且 `data-document-id` 与节点一致；拖动或整理间距 → 切到知识库 → 切回 → 比对 `GET .../graph` 的 `position` / `view_settings.viewport` 与保存前一致，记录 revision、请求、响应、实体 ID、最终状态与产物路径。
+4. 人工验收材料：逐步点击、点击后提示、等待条件（列表加载完成、保存完成）、下一步、失败恢复（409 / 保存失败时的提示与重试）与产物查看路径。
+5. 分端执行：若确认为纯前端改动，按单端分派 `frontend-dev` → `frontend-reviewer` / `frontend-tester`，**不跑后端 pytest**；如确认需后端配合则拆成两端两次分派。跨端验收由 `tester` 汇总、架构师签字后再部署验证。
+
+### 用户确认记录（2026-11-05）
+
+用户逐条答复：「卡片用只显当前篇数。」「`部分完成` 徽标要不要一并修（默认不纳入，避免扩大范围）？修了」「A. 跳转不定位…这个问题修了」「B. 位置『回到初始』…这个问题修了」。按「修了 = 一并修掉」理解，认定为对上述三段修订的**明确确认**，等同「按这个执行」；三段状态由 `待确认` 转 `已确认`。用户未逐条回答的三个默认项按本文先前默认值执行（KB 跳转仅滚动+高亮、不自动展开详情；接受离开即保存；`initialFitPending` 一并改造）。
+
+## 2026-11-05 用户确认与冻结范围
+
+本轮只做以下 4 项，任何超出项须先回到 spec 重新确认：
+
+1. **卡片篇数**：`GET /api/literature-maps` 每项新增 `node_count`（口径 `removed_at IS NULL`）；卡片只显示 `${node_count} 篇`，**不显示「目标 20」等辅助信息**；`node_count` 缺失／非数时回落 `requested_count`（兼容旧后端与测试 fixture）。
+2. **状态徽标（用户新增要求）**：卡片不再把历史建图作业的 `partial` 直接渲染为「部分完成」。当 `status === 'partial'` 且该地图已有活动节点时，徽标显示「可用」，并以 `title` / `aria-label` 保留「初始建图部分完成，已保留可用节点；不影响已保存节点与后续扩展」说明；`generating` / `failed` / `stopped` 保持原样。**不改后端 `status` 值、不改持久化、不清理历史作业状态**，仅前端渲染层映射。
+3. **缺陷 A（跳转定位）**：`jumpToKnowledgeBase` 优先按 `data-document-id`、`data-paper-id` 兼容匹配；命中后滚动到视口中央、focus 并加可见高亮；未命中给明确提示。采用默认方案「仅滚动 + 高亮列表项」，**不自动展开／打开文档详情**；消费 `pendingKbPaperId`（`loadKbPapers` 渲染完成后重试定位）。`research-tasks.js` 同入口受益，不改其代码。
+4. **缺陷 B（视图保存）**：接受「离开视图时立即保存」的时机变化；`setActive(false)` 前 flush dirty，`saveView` 允许这一次跨视图切换完成并落地；切回时不覆盖本地 dirty；`initialFitPending` 改显式标记，不再以 `(0,0,1)` / 最小缩放猜测。
+
+**明确不做**：不改 `PATCH /view` 契约与 409 冲突策略、不改后端 `status` 语义、不改导入／索引流程与 `/api/kb/*`、不改 Task11 预览／批次／分析逻辑、不改节点拖拽与「整理间距」交互、不引入 localStorage 草稿、不改知识库列表分页／搜索、不改其他视图切换逻辑。
+
+### 执行配置（本轮增量）
+
+| 角色 | 选用模型 | 上下文上限 | 职责 |
+|---|---|---|---|
+| 架构师 | 自身（当前执行任务的 Agent） | 200k | 冻结范围、编排、落地校验、验收签字 |
+| 文档更新 `doc-updater` | 不适用（本轮为缺陷修订，无产品使用步骤变更） | — | — |
+| 评审／合并 `architect` | Deepseek-V4.1-Flash（读 `.codebuddy/agents/architect.md`） | 32k | 增量需求／技术评审、验收签字 |
+| 后端开发 `backend-dev` | Deepseek-V4.1-Flash（读 agent 文件） | 32k | 列表接口 `node_count` + 后端定向测试 |
+| 前端开发 `frontend-dev` | Deepseek-V4.1-Flash（读 agent 文件） | 32k | 卡片／徽标／跳转／视图保存 + 前端定向测试 |
+| 测试 `tester` | Deepseek-V4.1-Flash（读 agent 文件） | 32k | 跨端验收总控 |
+
+> 分端评审 `backend-reviewer` / `frontend-reviewer`、单端回归 `backend-tester` / `frontend-tester` 同档位按单端原则分派；纯前端回归不跑后端 pytest。
+
+### 任务拆分（每任务 ≤2 个文件）
+
+| 任务 | 文件 | 分派 |
+|---|---|---|
+| BE-1 | `backend/app/api/routes_literature_maps.py`、`backend/app/literature_maps/infrastructure/store.py` | `backend-dev` |
+| BE-2 | 后端定向测试（1 个 `tests/literature_maps/` 文件） | `backend-dev` |
+| FE-1 | `frontend/literature-maps.js`、`frontend/index.html` | `frontend-dev` |
+| FE-2 | `frontend/app.js` | `frontend-dev` |
+| FE-3 | 前端定向测试（`tests/frontend/`） | `frontend-dev` |
+| FE-4（评审 T-7 补登记） | `frontend/literature-maps.css`、`frontend/styles.css` | `frontend-dev` |
+| BE-3（后端复审 P1-1 补登记） | `backend/app/literature_maps/application/service.py` | `backend-dev` |
+
+补登记说明（2026-11-06）：① 增量技术评审 T-7 裁决 `styles.css` / `literature-maps.css` 的高亮与徽标样式是缺陷 A、缺陷 2 的**必要组成**，非范围扩张；② 后端复审裁决 `service.py:2584-2587` 的 `_export_view_settings` 透传 `view_initialized` 属**必要配套**——该白名单只在导出 JSON 一条通路生效，PATCH `/view` 与 GET `/graph` 走 `to_dict()` 原样输出；保留它是为避免导出与 API 口径分叉，须登记并补导出测试，后端已补 2 条导出用例（`240 passed`）。两项由主会话按评审意见纯文档补登记，无业务代码改动。
+
+验收材料、评审结论、状态与台账由主会话汇总落盘。
+
+## 2026-11-06 收口记录（三项 UX 缺陷修订）
+
+状态：**已完成**。三段修订均于 2026-11-06 通过验收并完成当前部署版本运行时验证；主 spec 状态维持「已完成」，本轮未新建编号。
+
+- 验收评审：`docs/sdd/reviews/043-ux-defects-acceptance-review.md`（PASS，准备度 10/10，P0=0 / P1=0）。
+- 架构师签字／合并裁决：`docs/sdd/reviews/043-ux-defects-merge-decision.md`（同意收口；增量评审为并行补做、不追认实现前拦截）。
+- 真实 E2E：`docs/sdd/reviews/043-ux-defects-live-e2e.md` —— 卡片「可用 32 篇」；跳转目标 `li` 高亮 + focus + 视口内；zoom-out 后 60ms 内切走仍落库（`revision 288`、`viewport.scale 2.3333`、`view_initialized=true`），切回视口保持；`/api/health 200`。
+- 分端复审与回归：`docs/sdd/reviews/043-ux-defects-{backend,frontend}-{review,regression}.md`；后端 `240 passed`、前端 `396 passed / 0 failed`、node vm `24 PASS / 0 FAIL`，ruff 4 条告警与 HEAD 基线一致。
+- 复盘：`docs/sdd/retro/2026-11-06-043-ux-defects-retro.md`（两轮 P1、两个 E2E 独有发现、流程偏差、7 条残余 P2）。
+- 最终静态资源版本：`app.js?v=70`、`literature-maps.js?v=42`、`literature-maps.css?v=27`、`styles.css?v=68`。
+- 边界复核：未改后端 `status` 值/语义、未改 `PATCH /view` 请求体与 409 策略、未改 `/api/kb/*`、未动 Task11 批次逻辑、未改 `research-tasks.js`、未引入 localStorage 草稿。

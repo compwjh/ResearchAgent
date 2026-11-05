@@ -346,10 +346,12 @@ def create_literature_map(payload: MapCreateRequest):
 @router.get("")
 def list_literature_maps(limit: int = Query(100, ge=1, le=100)):
     try:
-        maps = get_literature_map_service().store.list_maps(OWNER_ID, limit=limit)
+        store = get_literature_map_service().store
+        maps = store.list_maps(OWNER_ID, limit=limit)
+        node_counts = store.active_node_counts(OWNER_ID, [item.map_id for item in maps])
     except Exception as error:
         raise _error(error) from error
-    return _envelope(maps=[item.to_dict() for item in maps])
+    return _envelope(maps=[{**item.to_dict(), "node_count": node_counts.get(item.map_id, 0)} for item in maps])
 
 
 @router.get("/{map_id}")

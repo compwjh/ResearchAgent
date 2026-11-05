@@ -5103,13 +5103,89 @@ async function paperResume(item, button) {
   finally { button.disabled = false; }
 }
 
-function jumpToKnowledgeBase(paperId) {
-  paperState.pendingKbPaperId = paperId;
-  showView('kb');
-  loadKbPapers().then(() => {
-    const item = [...document.querySelectorAll('[data-paper-id]')].find((node) => node.dataset.paperId === String(paperId));
-    if (item) { item.scrollIntoView({ block: 'center' }); item.focus?.(); }
+const KB_JUMP_HIGHLIGHT_CLASS = 'kb-item-jump-target';
+const KB_JUMP_NOT_FOUND_TEXT = '未在当前知识库列表中找到该文档；可刷新列表后重试，或确认该论文已加入知识库。';
+const KB_JUMP_NEED_ID_TEXT = '无法定位该文档：缺少稳定 ID；请刷新列表后手动查找。';
+
+// 跨模块跳转的标识符契约不一致：地图 / 深度研究传 document_id，而 KB 列表项在
+// paper_id 为 null 时只有 data-document-id。这里优先按 data-document-id 匹配，
+// 再兼容 data-paper-id（旧链接与有 paper_id 的条目）。
+function selectKbJumpTarget(identifier) {
+  const key = typeof identifier === 'string' || typeof identifier === 'number'
+    ? String(identifier).trim()
+    : '';
+  if (!key) return null;
+  const items = [];
+  document.querySelectorAll('[data-document-id]').forEach((node) => items.push(node));
+  document.querySelectorAll('[data-paper-id]').forEach((node) => { if (!items.includes(node)) items.push(node); });
+  return items.find((node) => node.dataset.documentId === key)
+    || items.find((node) => node.dataset.paperId === key)
+    || null;
+}
+
+function clearKbJumpHighlight() {
+  document.querySelectorAll(`.${KB_JUMP_HIGHLIGHT_CLASS}`).forEach((node) => {
+    node.classList?.remove(KB_JUMP_HIGHLIGHT_CLASS);
   });
+}
+
+// 只做滚动 + 聚焦 + 可见高亮：不自动展开、不打开文档详情（冻结范围明确要求）。
+// 必须校验 isConnected：列表重渲染后旧节点已脱离文档，对它加 class / focus 既不可见
+// 也无效，只会把「已定位」写成假阳性。命中旧节点时返回 false，由调用方在
+// 下一次渲染后重试。
+function applyKbJumpFocus(item, identifier) {
+  if (!item || item.isConnected === false) return false;
+  clearKbJumpHighlight();
+  item.classList?.add(KB_JUMP_HIGHLIGHT_CLASS);
+  item.scrollIntoView?.({ block: 'center' });
+  item.focus?.();
+  if (kbStatus) kbStatus.textContent = `已定位到知识库中的该文档（${String(identifier)}）。`;
+  return true;
+}
+
+// 消费 paperState.pendingKbPaperId：列表异步未就绪时先记住目标，
+// 等 loadKbPapers() / renderKbPapers() 渲染完成后再重试定位，避免错过。
+// 注意**不清空** pending：它是「当前跳转目标」，每次重渲染都要对新 DOM 重新定位。
+// 若首次命中成功就清空，紧随其后的 renderKbPapers() 会把 class / focus / scroll
+// 一起冲掉，用户看到「已定位」却什么都没定位到（真实 Chromium 已复现）。
+// pending 的生命周期：只在真正离开知识库视图（showView 的 nextView !== 'kb' 分支）
+// 或下一次跳转覆盖时结束。
+function consumePendingKbJump() {
+  const pending = paperState.pendingKbPaperId;
+  if (!pending) return false;
+  const item = selectKbJumpTarget(pending);
+  if (!item) return false;
+  return applyKbJumpFocus(item, pending);
+}
+
+function jumpToKnowledgeBase(paperId) {
+  const key = typeof paperId === 'string' || typeof paperId === 'number' ? String(paperId).trim() : '';
+  paperState.pendingKbPaperId = key || null;
+  showView('kb');
+  // 进入知识库视图即清除上一次定位的高亮：同一时刻只应有一处「跳到这里」。
+  clearKbJumpHighlight();
+  if (!key) {
+    if (kbStatus) kbStatus.textContent = KB_JUMP_NEED_ID_TEXT;
+    return Promise.resolve(false);
+  }
+  // 不在这里对「跳转前已渲染的旧 DOM」做立即定位。showView('kb') 内部的
+  // loadKbPapers() 与下面这最后一次 loadKbPapers() 会各自异步 renderKbPapers()
+  // 重建列表，任何写进旧节点的 class / focus / scroll 都会被冲掉，状态文案却已经
+  // 说「已定位」——真实 Chromium 实测就是这种假阳性（top=10505，viewport 720）。
+  // 定位统一由 renderKbPapers() 末尾的 consumePendingKbJump() 对新 DOM 完成。
+  // 列表没读到（后端/网络故障）时，kbStatus 已由 loadKbPapers 写成「列表加载失败：…」；
+  // 此时不能再改写为「未找到该文档」，否则会把故障误报成「文档不在库里」。
+  const reportMiss = () => {
+    if (kbListLoadFailed) return false;
+    if (kbStatus) kbStatus.textContent = KB_JUMP_NOT_FOUND_TEXT;
+    return false;
+  };
+  return loadKbPapers().then(() => {
+    if (paperState.pendingKbPaperId !== key) return true; // 已被别的跳转接管
+    // 渲染链路已消费过 pending：以「当前 DOM 上确实有高亮目标」为准，避免重复报告未命中。
+    if (selectKbJumpTarget(key)) return true;
+    return reportMiss();
+  }, () => reportMiss());
 }
 
 async function loadPaperConferences() {
@@ -5292,6 +5368,11 @@ function showView(view) {
     renderKbSkeleton();
     loadKbPapers();
     loadKbHealth();
+  } else if (paperState.pendingKbPaperId) {
+    // 离开知识库视图即结束「当前跳转目标」：pending 会被每次 renderKbPapers() 重新
+    // 消费，留着会让下次进知识库时莫名高亮一条旧目标。
+    paperState.pendingKbPaperId = null;
+    clearKbJumpHighlight();
   }
   // spec-035 Task06：切到模型库时若尚未拉取过分组模型库，则拉一次（已拉过则不再重复）
   if (nextView === 'models' && !modelLibraryLoaded) {
@@ -6185,14 +6266,20 @@ function showKbCountError(retry) {
   }
 }
 
+// 列表是否加载失败：用于让「跳转未命中」不覆盖真实的加载失败文案，
+// 否则后端故障会被误报成「这篇文档不在库里」，误导用户去加文档。
+let kbListLoadFailed = false;
+
 async function loadKbPapers() {
   if (!kbList) return false;
   showKbCountLoading();
   try {
     const response = await fetch('/api/kb/papers');
     const data = await response.json();
+    kbListLoadFailed = false;
     return renderKbPapers(data.papers || []);
   } catch (error) {
+    kbListLoadFailed = true;
     if (kbStatus) kbStatus.textContent = `列表加载失败：${error.message}`;
     showKbCountError(() => loadKbPapers());
     return false;
@@ -6436,6 +6523,9 @@ function renderKbPapers(papers) {
 
   if (hasRunning) scheduleKbPoll();
   else stopKbPoll();
+  // 跳转定位可能在列表渲染前就发生（KB 列表异步加载 / 轮询刷新）：
+  // 渲染完成后消费 pendingKbPaperId 重试定位一次，避免错过。
+  consumePendingKbJump();
   return hasRunning;
 }
 

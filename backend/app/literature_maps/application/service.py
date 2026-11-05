@@ -2581,6 +2581,10 @@ def _export_view_settings(settings: Mapping[str, Any] | None) -> dict[str, Any]:
             exported["node_style"] = {"fill_mode": mode, "fill_opacity": opacity_value}
     if "node_style" not in exported:
         exported["node_style"] = {"fill_mode": "filled", "fill_opacity": 0.3}
+    # Internal marker written by the store on every view save; only present
+    # once the user has actually saved a view, so it is emitted by presence.
+    if settings.get("view_initialized") is True:
+        exported["view_initialized"] = True
     return exported
 
 

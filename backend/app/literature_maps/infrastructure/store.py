@@ -576,6 +576,28 @@ class LiteratureMapStore:
             rows = db.execute("SELECT * FROM literature_maps WHERE owner_id=? AND deleted_at IS NULL ORDER BY updated_at DESC, map_id DESC LIMIT ?", (owner_id, max(1, min(int(limit), 100)))).fetchall()
         return [_map(row) for row in rows]
 
+    def active_node_counts(self, owner_id: str, map_ids: Iterable[str]) -> dict[str, int]:
+        """Count live nodes per map in one statement.
+
+        Uses the same active-node predicate as the rest of the store
+        (``removed_at IS NULL`` tombstone exclusion) and keeps counts
+        owner-scoped, so a list request never degrades into N+1 queries.
+        """
+        ids = [str(map_id) for map_id in dict.fromkeys(map_ids)]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT n.map_id, COUNT(*) FROM literature_map_nodes n "
+                "JOIN literature_maps m ON m.map_id=n.map_id "
+                "WHERE n.map_id IN ("
+                + placeholders
+                + ") AND n.removed_at IS NULL AND m.owner_id=? AND m.deleted_at IS NULL GROUP BY n.map_id",
+                (*ids, owner_id),
+            ).fetchall()
+        return {str(row[0]): int(row[1]) for row in rows}
+
     def set_map_status(self, map_id: str, owner_id: str, status: str, *, job_id: str | None = None) -> LiteratureMap | None:
         """Guard map state changes by a currently running job.
 
@@ -646,6 +668,9 @@ class LiteratureMapStore:
                 view["label_mode"] = label_mode
             if validated_node_style is not None:
                 view["node_style"] = validated_node_style
+            # Internal evidence that the user explicitly saved a view at least
+            # once; the revision counter cannot serve as that evidence.
+            view["view_initialized"] = True
             for position in positions:
                 db.execute("UPDATE literature_map_nodes SET position_json=? WHERE map_id=? AND node_id=?", (_dump({"x": float(position["x"]), "y": float(position["y"])}), map_id, position["node_id"]))
             now = iso_now()

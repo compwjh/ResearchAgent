@@ -799,6 +799,15 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #kb-view .kb-item.status-failed { border-color: #f0b4b4; }
 #kb-view .kb-item.status-indexed_partial { border-color: #f0d8a8; background: #fffdf8; }
 
+/* 「在知识库中查看」跳转命中后的临时高亮：临时高亮 class 只在跳转瞬间存在，
+   便于用户确认「跳到的就是这篇」，不改变列表其它状态。 */
+#kb-view .kb-item.kb-item-jump-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  background: #f7f6ff;
+}
+#kb-view .kb-item.kb-item-jump-target:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* 标题整行独占并完整换行显示，不再截断（Bug 修复：标题展示不完全） */
 #kb-view .kb-item-head {
   display: block;
