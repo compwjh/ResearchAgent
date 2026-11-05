@@ -1,0 +1,168 @@
+{
+  "tick": 119,
+  "at": "2026-11-06T06:15:27.147026",
+  "pending_count": 1,
+  "pending": [
+    [
+      "1a3c542b3173",
+      "v2",
+      "failed"
+    ]
+  ],
+  "chunkers": {
+    "dc06fda1ab6d4a2d96e93f4d62228b9d": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 110,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 223,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "58fdc057d045489cb997b8434e3afff3": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 130,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 256,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "277758154feb492081ef84d33c5fcab3": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 114,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 246,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "6a23687c44704d68a0af8f9ab0972ab6": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 129,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 317,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "1a3c542b31734c45a541896a01d71528": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 134,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    "8cd741ab309f49aab79da46cc348d0f2": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 97,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 258,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "4aee4ac6675241ebabb70b60ddb6bb8c": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 133,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 311,
+        "progress": 100,
+        "error": "HOSTILE_FEATURES_NOT_EXECUTED"
+      }
+    },
+    "732fa292155e40c3b2cc35a3050d298b": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 142,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 314,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "a94ba3a045164915ab2153cc0b9807e5": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 145,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 491,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "c32fb0eb8c7d402d9b7750ae6e6ccaf4": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 124,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed_partial",
+        "chunk_count": 232,
+        "progress": 100,
+        "error": "SOURCE_RANGE_UNRESOLVED"
+      }
+    },
+    "1b967ed8638e46569d36e3f6565c51eb": {
+      "v1": {
+        "status": "indexed",
+        "chunk_count": 55,
+        "progress": 100,
+        "error": null
+      },
+      "v2": {
+        "status": "indexed",
+        "chunk_count": 135,
+        "progress": 100,
+        "error": null
+      }
+    }
+  }
+}

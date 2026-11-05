@@ -6286,9 +6286,41 @@ async function loadKbPapers() {
   }
 }
 
+// ===== 索引任务「被服务重启打断」的失败态识别 =====
+// 后端启动收敛会把残留的 indexing 写成 failed，error 取自 mark_interrupted_tasks(reason)
+// 的默认中文原因（backend store.py「服务重启导致中断」）。这类失败不是切分/索引逻辑出错，
+// 用户点「重试」即可恢复，所以必须给出可读、可行动的提示，而不是只把原因挂在 title 上。
+const KB_INTERRUPTED_ERROR_PREFIX = '服务重启导致中断';
+const KB_INTERRUPTED_BADGE_TEXT = '索引中断';
+const KB_INTERRUPTED_HINT_TEXT = '上次索引被服务重启中断，可点击「重试」重新建立索引';
+const KB_FAILED_GENERIC_TEXT = '索引重建未完成，请点击「重试」重建';
+// indexing 且 progress 一直为 0 时的兜底提示；只提示，不改轮询间隔与启停逻辑。
+const KB_IDLE_PROGRESS_HINT_TEXT = '索引进度长时间停在 0%，如长时间停留可点「重试」';
+
+function kbIsInterruptedError(message) {
+  return typeof message === 'string' && message.includes(KB_INTERRUPTED_ERROR_PREFIX);
+}
+
+// 返回 { text, interrupted }：调用方据此决定主文案 class，不在此处拼 HTML。
+function kbFailureNotice(paper, chunkers) {
+  const errors = [paper?.error];
+  for (const state of Object.values(chunkers || {})) {
+    if (state && state.error) errors.push(state.error);
+  }
+  const interrupted = errors.some(kbIsInterruptedError);
+  return {
+    text: interrupted ? KB_INTERRUPTED_HINT_TEXT : KB_FAILED_GENERIC_TEXT,
+    interrupted,
+  };
+}
+
 function chunkerBadgeText(name, state) {
   const label = KB_STATUS_TEXT[state.status] || state.status || '未知';
   if (state.status === 'indexing') return `${name} ${label} ${state.progress || 0}%`;
+  // 收敛后的「被重启打断」失败，徽标明确写成「中断」，不再让人以为索引还在跑。
+  if (state.status === 'failed' && kbIsInterruptedError(state.error)) {
+    return `${name} ${KB_INTERRUPTED_BADGE_TEXT}`;
+  }
   if (state.chunk_count) return `${name} ${label} · ${state.chunk_count} 片段`;
   return `${name} ${label}`;
 }
@@ -6511,12 +6543,27 @@ function renderKbPapers(papers) {
       item.appendChild(warning);
     }
     // 失败态主文案：中文可读、可行动，绝不直接暴露后端原始错误码（原始码保留在 item.title 供调试）。
+    // 「被服务重启中断」单独给一条可操作提示（上次被重启打断，点「重试」即可），
+    // 不再退化成通用文案；原始 error 仍只进 title。
     if (isFailed) {
+      const notice = kbFailureNotice(paper, chunkers);
       const failure = document.createElement('p');
-      failure.className = 'kb-item-error';
-      failure.textContent = '索引重建未完成，请点击「重试」重建';
-      if (paper.error) failure.title = paper.error;
+      failure.className = notice.interrupted ? 'kb-item-error kb-item-error-restart' : 'kb-item-error';
+      failure.textContent = notice.text;
+      if (paper.error || partialChunker?.error) failure.title = paper.error || partialChunker.error;
       item.appendChild(failure);
+    }
+    // 兜底提示：indexing 但 progress 一直为 0（典型是任务被重启吞掉、还没被收敛）。
+    // 只给提示，不改轮询间隔（2500ms）与 hasRunning 启停逻辑。
+    const idleChunker = ['v1', 'v2'].find((key) => {
+      const state = chunkers[key];
+      return state && state.status === 'indexing' && !state.progress;
+    });
+    if (!isFailed && idleChunker) {
+      const hint = document.createElement('p');
+      hint.className = 'kb-item-hint';
+      hint.textContent = KB_IDLE_PROGRESS_HINT_TEXT;
+      item.appendChild(hint);
     }
     kbList.appendChild(item);
   }

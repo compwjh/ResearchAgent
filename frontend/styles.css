@@ -935,6 +935,23 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   overflow-wrap: anywhere;
 }
 
+/* 「上次索引被服务重启中断」的失败提示：比通用失败文案更醒目（左侧色条 + 可点重试的措辞）。 */
+#kb-view .kb-item-error.kb-item-error-restart {
+  padding-left: 8px;
+  border-left: 3px solid #c0392b;
+  color: #8f2c20;
+}
+
+/* indexing 且进度长时间停在 0% 的兜底提示（非失败态，用中性色避免误报成故障）。 */
+#kb-view .kb-item-hint {
+  margin: 6px 0 0;
+  color: var(--muted-strong);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 #kb-view .kb-health {
   margin: 0;
   padding-top: 10px;

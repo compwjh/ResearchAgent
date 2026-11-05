@@ -1,0 +1,214 @@
+{
+  "finished_at": "2026-11-06T05:14:49.247783",
+  "results": [
+    {
+      "document_id": "58fdc057d045489cb997b8434e3afff3",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "cf9afeead962495f9a313baa4367f8a0",
+        "document_id": "58fdc057d045489cb997b8434e3afff3",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "277758154feb492081ef84d33c5fcab3",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "c95e7903f0bf45368c972b150f18ec61",
+        "document_id": "277758154feb492081ef84d33c5fcab3",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "6a23687c44704d68a0af8f9ab0972ab6",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "534be54da54444db80d69b529b5c62e5",
+        "document_id": "6a23687c44704d68a0af8f9ab0972ab6",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "1a3c542b31734c45a541896a01d71528",
+      "chunker": "v1",
+      "http_status": 202,
+      "response": {
+        "task_id": "8c16381f153c4431b6b093d180445568",
+        "document_id": "1a3c542b31734c45a541896a01d71528",
+        "chunker": "v1",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "1a3c542b31734c45a541896a01d71528",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "7936c489262f41239a17f184bce34058",
+        "document_id": "1a3c542b31734c45a541896a01d71528",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "8cd741ab309f49aab79da46cc348d0f2",
+      "chunker": "v1",
+      "http_status": 202,
+      "response": {
+        "task_id": "3270742e94594b2eaca30c44fda10e85",
+        "document_id": "8cd741ab309f49aab79da46cc348d0f2",
+        "chunker": "v1",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "8cd741ab309f49aab79da46cc348d0f2",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "2c083d68b8994fe7a7f4a1601f4fa2fe",
+        "document_id": "8cd741ab309f49aab79da46cc348d0f2",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "4aee4ac6675241ebabb70b60ddb6bb8c",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "fa2a7c83b57f4277b1501f508a371121",
+        "document_id": "4aee4ac6675241ebabb70b60ddb6bb8c",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 100,
+        "error": "QDRANT_UNAVAILABLE"
+      }
+    },
+    {
+      "document_id": "732fa292155e40c3b2cc35a3050d298b",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "1b776c3105a14883974e1a1a783736ec",
+        "document_id": "732fa292155e40c3b2cc35a3050d298b",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 0,
+        "error": "服务重启导致中断"
+      }
+    },
+    {
+      "document_id": "a94ba3a045164915ab2153cc0b9807e5",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "6b922a67845243eb8b80724e59d4869d",
+        "document_id": "a94ba3a045164915ab2153cc0b9807e5",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 0,
+        "error": "服务重启导致中断"
+      }
+    },
+    {
+      "document_id": "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "087838ce47ea43c2b355215bf394c911",
+        "document_id": "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      },
+      "attempts": 1,
+      "final_state": {
+        "status": "failed",
+        "chunk_count": 0,
+        "progress": 0,
+        "error": "服务重启导致中断"
+      }
+    }
+  ]
+}

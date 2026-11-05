@@ -1,0 +1,172 @@
+{
+  "started_at": "2026-11-06T05:11:14.167032",
+  "endpoint": "POST /api/kb/documents/{id}/reindex",
+  "requests": [
+    {
+      "document_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+      "chunker": "v2",
+      "http_status": 202,
+      "response": {
+        "task_id": "c6d4481e4b634aa29c0fecb5d5ff4134",
+        "document_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      }
+    },
+    {
+      "document_id": "58fdc057d045489cb997b8434e3afff3",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "7946070aa186487cadadc751adec3696",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "277758154feb492081ef84d33c5fcab3",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "f6c7c102ba7a41b7a54df6666d30484d",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "6a23687c44704d68a0af8f9ab0972ab6",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "8c183b823b9d4cb48d853e8834b9ea15",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "1a3c542b31734c45a541896a01d71528",
+      "chunker": "v1",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "27e34e073e4942819bc80b6886b6484a",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "1a3c542b31734c45a541896a01d71528",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "708a510d081346669bdf7b62212bdafb",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "8cd741ab309f49aab79da46cc348d0f2",
+      "chunker": "v1",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "c00cf18176f94c1d880743fed40e3e77",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "8cd741ab309f49aab79da46cc348d0f2",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "b6f940dda5a844b19b9b61ed312512e4",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "4aee4ac6675241ebabb70b60ddb6bb8c",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "d6cf92a60d784f899a794e7660b97adb",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "732fa292155e40c3b2cc35a3050d298b",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "823f00c99b4f4680b3d0bdb7fe8dac6c",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "a94ba3a045164915ab2153cc0b9807e5",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "dc628c3181b9449782f7ce2f7706889e",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    },
+    {
+      "document_id": "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+      "chunker": "v2",
+      "http_status": 503,
+      "response": {
+        "error_code": "INDEX_FINALIZE_REQUIRED",
+        "message": "索引代际尚未完成提交，请稍后重试或执行 rebuild_index --resume-finalize",
+        "retryable": true,
+        "request_id": "96d1b5649e204e3599d8e2a50867d2e7",
+        "details": {
+          "retry_after_seconds": 10
+        }
+      }
+    }
+  ]
+}

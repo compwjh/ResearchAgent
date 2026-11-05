@@ -786,7 +786,27 @@ def mark_interrupted_tasks(meta_path: Optional[Path] = None, reason: str = "服�
     """启动时把仍为 `indexing` 的版本标记失败，返回被标记的数量。
 
     异步任务无法跨进程存活，残留的 `indexing` 会永远卡住进度条，
-    因此启动时统一置为 `failed`，由用户点「重建索引」重新触发。
+    因此启动时统一置为 `failed`。
+
+    被本次收敛的 (document, chunker) 会同步清除顶层
+    `auto_requeued_chunkers[chunker]` 标记：它们是「被重启打断」而非「真跑失败」，
+    必须给启动自愈（`recover_failed_reindexes`）一次重排队机会。真失败记录的
+    标记一律保留，避免重启风暴 / 无限重试。
+
+    防重启风暴的上界：每次启动、每个 (document, chunker) 最多获得 1 次自动重排机会
+    （由顶层幂等标记 `auto_requeued_chunkers` 保证：自愈排队成功后立即落盘该标记，
+    同一次启动内不会二次排队，跨重启也最多再给一次）。
+
+    已知残余窗口（有界，不是缺陷）：`submit_document_reindex()` 返回到
+    `mark_chunker_auto_requeued()` 落盘之间不是原子的。若进程恰在这个毫秒级窗口内
+    被杀，该 (document, chunker) 已是 `indexing` 却没有标记，下次启动会先被本函数
+    收敛为 failed、再获得一次重排机会，即重复重排一次。后果有界：终态仍会收敛到
+    `indexed` 或 `failed`，不会永久卡在 `indexing 0%`。彻底闭合需要持久化队列（或让
+    标记与状态同一次原子落盘），而「不做持久化队列」是用户 2026-11-06 的明确裁决
+    （见 spec 012 风险区），故本函数只做收敛、不承担该窗口的闭合。
+
+    服务重启仍会丢失正在运行的线程任务（线程无法跨进程存活），代价由启动收敛加
+    一次性重排兜住。
     """
     marked = 0
     with _lock:
@@ -794,14 +814,32 @@ def mark_interrupted_tasks(meta_path: Optional[Path] = None, reason: str = "服�
         changed = False
         for item in papers:
             states = ensure_chunkers(item)
-            for name in CHUNKERS:
-                state = states.get(name)
-                if isinstance(state, dict) and state.get("status") == STATUS_INDEXING:
-                    state["status"] = STATUS_FAILED
-                    state["progress"] = 0
-                    state["error"] = reason
-                    marked += 1
-                    changed = True
+            interrupted = [
+                name
+                for name in CHUNKERS
+                if isinstance(states.get(name), dict)
+                and states[name].get("status") == STATUS_INDEXING
+            ]
+            for name in interrupted:
+                state = states[name]
+                state["status"] = STATUS_FAILED
+                state["progress"] = 0
+                state["error"] = reason
+                marked += 1
+                changed = True
+            if interrupted:
+                # 这些 failed 是「被重启打断」而非「真跑失败」：清掉本文档中
+                # 这些 chunker 的一次性重排标记，让紧随其后的
+                # `recover_failed_reindexes()` 能把它们重排队一次。
+                # 其它 chunker 的标记、以及未被本次收敛的真 failed 记录一律不动
+                # （保留防重启风暴 / 不无限重试的语义）。
+                markers = item.get(AUTO_REQUEUED_CHUNKERS)
+                if isinstance(markers, dict):
+                    kept = {name: value for name, value in markers.items() if name not in interrupted}
+                    if kept:
+                        item[AUTO_REQUEUED_CHUNKERS] = kept
+                    else:
+                        item.pop(AUTO_REQUEUED_CHUNKERS, None)
             item["chunkers"] = states
             if isinstance(states.get(CHUNKER_V1), dict):
                 item["status"] = states[CHUNKER_V1].get("status", item.get("status"))

@@ -843,7 +843,6 @@ def submit_document_reindex(
     task_id = uuid.uuid4().hex
     submitted: dict[str, bool] = {}
     for name in targets:
-        update_chunker_state(document_id, name, status=STATUS_INDEXING, progress=0, error=None, meta_path=meta)
 
         def runner(progress, selected=name):
             return index_port.index_document(
@@ -854,7 +853,36 @@ def submit_document_reindex(
                 meta_path=meta,
             )
 
-        submitted[name] = submit_index_task(document_id, name, runner)
+        # 提交前采样一次状态，用于提交后判定「runner 是否已经写过新状态」。
+        before = get_chunker_state(document_id, name, meta)
+        before_status = before.get("status") if isinstance(before, dict) else None
+        # 先提交、后置 indexing：任务被去重拒绝或提交抛异常时都不得留下
+        # `indexing`，否则进度条会永久卡在「索引中 0%」（只能靠重启收敛兜底）。
+        try:
+            accepted = submit_index_task(document_id, name, runner)
+        except Exception as error:
+            logger.warning("文档 %s 的 %s 索引任务提交失败：%s", document_id, name, error)
+            with contextlib.suppress(Exception):
+                update_chunker_state(
+                    document_id, name, status=STATUS_FAILED, progress=0,
+                    error="索引任务提交失败", meta_path=meta,
+                )
+            accepted = False
+        if accepted:
+            # 任务可能在 `submit_index_task()` 返回后、这里执行前就已跑完并落盘终态
+            # （极快失败：源文件被删、Qdrant 立刻拒写）。此时再把状态写回 `indexing 0%`
+            # 会覆盖掉真实终态且无人再写，重现本 spec 的卡死症状；因此写前与提交前
+            # 的采样比对一次，期间状态被 runner 改过就保留不动。
+            # `submitted[name]` 的布尔契约（路由据此返 409）不受影响：任务确实被接受。
+            # 注意不能用「当前是否 failed」判断：提交前的陈旧 failed（用户点「重试」
+            # 的正常路径）恰恰必须立刻转 indexing，否则排队期间仍显示「索引失败」。
+            current = get_chunker_state(document_id, name, meta)
+            current_status = current.get("status") if isinstance(current, dict) else None
+            if current_status == before_status:
+                update_chunker_state(
+                    document_id, name, status=STATUS_INDEXING, progress=0, error=None, meta_path=meta
+                )
+        submitted[name] = bool(accepted)
     return {"task_id": task_id, "document_id": document_id, "chunker": chunker, "submitted": submitted}
 
 

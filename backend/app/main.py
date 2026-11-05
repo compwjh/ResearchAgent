@@ -16,13 +16,14 @@ from backend.app.knowledge_base.application import (
     FinalizeBundleStore,
     recover_failed_reindexes,
 )
+from backend.app.knowledge_base.infrastructure import tasks
+from backend.app.literature_maps.application.runtime import recover_literature_map_jobs
 from backend.app.platform.capability_scheduler import (
     start_capability_scheduler,
     stop_capability_scheduler,
 )
 from backend.app.platform.config import FRONTEND_DIR, KB_DIR
 from backend.app.platform.warmup import start_warmup
-from backend.app.literature_maps.application.runtime import recover_literature_map_jobs
 
 
 @asynccontextmanager
@@ -55,6 +56,16 @@ async def lifespan(_app: FastAPI):
         # available for upload/list/health and never mutates the old
         # collection as a side effect of boot.
         print(f"[kb] index generation gate not ready: {getattr(error, 'code', 'INDEX_REBUILD_REQUIRED')}")
+
+    # 上次运行残留的 `indexing` 收敛为 `failed`：异步任务无法跨进程存活，
+    # 不收敛进度条会永远卡在「索引中 0%」。必须早于下面的启动自愈，
+    # 否则自愈看不到这些刚被收敛的 failed。失败只记日志、不阻塞启动。
+    try:
+        marked = tasks.mark_interrupted_on_startup()
+        if marked:
+            print(f"[kb] 已将 {marked} 个重启前残留的索引任务收敛为 failed")
+    except Exception as error:
+        print(f"[kb] 启动收敛残留索引任务失败（已忽略）：{error}")
 
     # spec-036 Task06：把环境故障期遗留的陈旧 failed 重建任务重排队一次
     # （幂等标记防重启风暴；单个文档或整体异常都只记日志，绝不阻塞启动）。

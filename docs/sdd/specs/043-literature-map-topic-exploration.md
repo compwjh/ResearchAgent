@@ -472,3 +472,391 @@ Task11已完成，Spec043由实施中转已完成。最终部署源码7364a26b�
 - 复盘：`docs/sdd/retro/2026-11-06-043-ux-defects-retro.md`（两轮 P1、两个 E2E 独有发现、流程偏差、7 条残余 P2）。
 - 最终静态资源版本：`app.js?v=70`、`literature-maps.js?v=42`、`literature-maps.css?v=27`、`styles.css?v=68`。
 - 边界复核：未改后端 `status` 值/语义、未改 `PATCH /view` 请求体与 409 策略、未改 `/api/kb/*`、未动 Task11 批次逻辑、未改 `research-tasks.js`、未引入 localStorage 草稿。
+
+## 2026-11-06 节点外观面板紧凑布局（待确认）
+
+**状态：暂缓（2026-11-06 用户裁定：不与本批次实施）。** 用户新提的 UI 优化需求，按 SDD 规则先在计划模式产出修订；与 `Spec012` 索引卡死缺陷修订并列为当前两项待确认事项。确认前不改业务代码、不升版本号、不部署。
+
+> **用户裁定（2026-11-06）**：针对本段「方案 2（可选叠加）：默认折叠成一行 `<details>`，有颜色预览时自动展开，默认只占 ~30px（-88%）；按钮文案、颜色预设、应用/取消/跟随分组逻辑、其它面板一律不动」，用户批复「**这个要跟下面的分组逻辑一起再次设计**」。因此本段**不进入本批次实施**，保持冻结；待「节点分组画布左下角入口改造」方向确认后，与分组样式逻辑一并重新设计（届时节点级调色板可能被整体移除，本段亦随之作废）。本批次仅实施「顶部操作按钮可读性与尺寸」与 Spec012 索引缺陷修订。
+
+> **联动提示（2026-11-06 用户最新方向澄清）**：用户后续明确「论文节点就不再单独设置可以调整它样式的功能了，它的样式跟着它的分组走」。若该方向确认，节点详情里的 `section.literature-map-node-color-section`（`renderNodeColorControls()`，`frontend/literature-maps.js:6655-6660`）将被**整体移除**，本段「紧凑化」的对象不再存在，本段应随之作废（无需再压缩一个已删除的面板）。是否作废请在下一段「待确认问题 7」中一并裁定；裁定前本段仍保持 `待确认`。
+
+### 实测证据（真实 Chromium，当前部署版本）
+
+用户截图 `Screenshot 2026-11-06 at 02.42.52.png`：右侧详情面板「节点外观」区块，含 12 个预设色点 + 最近使用色点（共 16 个、3 行）、「自定义 HEX」标签与输入框、大块留白、「应用到 1 篇 / 取消预览」与整行「恢复跟随分组」。
+
+浏览器实测（目标地图 `0baabeae…`，选中一个节点，桌面视口；此态 `getRecentColors()` 为空，是**最小占用**）：
+
+| 元素 | 尺寸 |
+|---|---|
+| `.literature-map-detail` | 248 × 497 |
+| `.literature-map-node-color-section` | 220 × **241**（占详情面板约 48%） |
+| `.literature-map-color-palette` | 220 × 207（`padding:8px`、grid `gap:7px`） |
+| `.literature-map-color-swatches` | 202 × 49（12 预设、2 行；色点 22px、`gap:5px`） |
+| `.literature-map-color-recents` | 202 × **0**（空，仍占一个 7px gap） |
+| `.literature-map-color-hex-label` | 202 × **43**（标签 9px + 4px gap + 26px 输入框，上下两行） |
+| `.literature-map-color-error` | 202 × **12**（空，仍因 `min-height:12px` 占位 + 7px gap） |
+| `.literature-map-color-actions` | 202 × 25 |
+| `.literature-map-node-color-follow-group` | 202 × 25（独立一行） |
+
+用户截图态最近颜色非空（`RECENT_COLOR_LIMIT=8`，实测 12 预设 + 4 最近 = 3 行），实际占用比上表更大。
+
+来源：`frontend/literature-maps.js:46-48`（12 预设 / 最近上限 8）、`:712-786` `createColorPalette('node')`、`:6655-6659` `renderNodeColorControls()`；`frontend/literature-maps.css:307-320`（色板 grid/gap/padding、hex label `display:grid`、error `min-height:12px`）、`:325-327`（移动端色点 25px）。
+
+### 目标
+
+在不减少功能、不缩小点击目标、不改变按钮文案与颜色契约的前提下，把节点外观区块高度降低约 40%（241px → ~145–160px，最近颜色非空时收益更大）；若选择折叠方案，默认高度再降至约 30px。
+
+### 数据模型与接口
+
+**不涉及**：不改后端、不改 API、不改 `papers.json` / `view_settings`、不改颜色预设与 `data-color` / class 契约、不改颜色草稿／应用／取消／跟随分组的业务逻辑。
+
+### 拟改范围（推荐方案 1：仅紧凑化，不引入折叠）
+
+CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影响分组色板 `target=group` 与多选色板 `target=selection`）：
+
+1. `.literature-map-color-hex-label` 由 `display:grid; gap:4px` 改为 `display:flex; align-items:center; gap:6px`，标签文本 `white-space:nowrap`，输入框 `flex:1; min-width:0; padding:4px 6px` → 43px → 约 26px。
+2. `.literature-map-color-recents:empty`、`.literature-map-color-error:empty` 设 `display:none`，error 同时 `min-height:0` → 去掉 12px 占位与两个 7px gap；有错误／有最近颜色时仍正常显示。
+3. palette `padding:8px→6px`、`gap:7px→5px`；`.literature-map-color-swatches/.recents` `gap:5px→4px`；**色点尺寸保持 22px（移动端仍 25px）**，不缩小点击目标。
+4. `.literature-map-node-color-section` `padding-top:11px→8px`、`gap:6px→4px`。
+5. 按钮行：把 `followGroup` 与 `actions` 合并到同一 flex 行（1 处最小 JS：`:785` 的 `palette.append(followGroup)` 改为 `actions.append(followGroup)`）；三个按钮仍可 `flex-wrap`，窄屏自动换行且不溢出 220px。
+
+预计 241px → 约 145–160px（-34% ~ -40%）。
+
+**备选方案 2（可选叠加）**：把「节点外观」改为 `<details>/<summary>` 折叠，默认收起、存在 `colorDraft` 时自动展开，与现有 `.literature-map-node-style-disclosure` 视觉一致；默认占用约 30px（-88%），代价是改颜色多一次点击。
+
+### 边界与明确不做
+
+- 不改颜色预设数量／色值、不删 HEX 输入、不删「取消预览」「恢复跟随分组」「应用到 N 篇」按钮、不改文案与禁用逻辑。
+- 不改 `target=group` / `target=selection` 色板布局（作用域限定），不改移动端抽屉布局、不改详情面板其它区块。
+- 不缩小色点点击区域（桌面 22px / 移动端 25px 保持不变）。
+- 不改 `PATCH /view` 与 409 策略、不改 Task11 逻辑、不改后端。
+- 确认前不升版本号、不部署。
+
+### 验证方式（确认后执行）
+
+1. 前端定向：DOM 契约（class / `data-color` / 按钮文案 / 作用域不影响其它色板）、HEX 非法值错误态仍显示、空 recents/error 隐藏、有最近颜色时正常显示、按钮行不溢出 220px。
+2. 真实浏览器前后对比：`.literature-map-node-color-section` 高度、色板行数、按钮是否溢出、色点可点区域；覆盖桌面（≥1180px）、1180–760px、移动端（≤760px 抽屉）三种宽度。
+3. 回归：`node --check`、`.venv/bin/python -m pytest tests/frontend -q`（396 passed 基线）、相关 node vm 用例；升 `literature-maps.css?v=27→28`，若改 JS 另升 `literature-maps.js?v=42→43` 并同步全部版本断言。
+4. 人工验收：选中节点 → （方案 2 时展开）→ 点色点预览 → 输入非法 HEX 看错误提示 → 应用／取消／恢复跟随分组 → 切走再回来状态正确；附失败恢复与产物路径。
+5. 分端执行：纯前端改动只分派 `frontend-dev` → `frontend-reviewer` / `frontend-tester`，**不跑后端 pytest**；主会话汇总并部署验证。
+
+### 待确认事项
+
+请确认：① 采用**方案 1（仅紧凑化，约 -40%）**还是叠加**方案 2（默认折叠，默认 -88%，多一次点击）**（默认：方案 1）；② 是否允许把「恢复跟随分组」并入同一按钮行（默认：是）；③ 保持色点尺寸不变、不缩小点击目标（默认：是）。用户明确确认后本段转 `已确认` 方可开始实现。
+
+## 2026-11-06 文献地图顶部操作按钮可读性与尺寸（待确认）
+
+**状态：已完成（2026-11-06 验收通过、真实浏览器验证通过、架构师签字同意收口）。** 用户新提的第二项 UI 优化需求。按本节默认方案实施：次级按钮统一提高对比 + 放大、移动端允许换行占两行且优先保证 ≥44px 触摸目标、不把「新建地图」提为主色实心按钮、不动全局 `.secondary-button`。
+
+> **批次调整（2026-11-06）**：上段「节点外观面板紧凑布局」经用户裁定**暂缓**，需与分组逻辑一起再次设计，因此本项**不再与之合并实施**，单独成批次；但仍是纯前端 CSS 改动，与 Spec012 索引缺陷修订共用同一轮前端分派与版本号升级（`literature-maps.css?v=27→28`）。
+
+### 实测证据（真实 Chromium，当前部署版本）
+
+用户截图 `Screenshot 2026-11-06 at 02.43.49.png`：标题栏右侧 4 个按钮「刷新状态 / 新建地图 / 继续搜索 / 刷新预览」，文字浅灰、按钮矮小、与背景几乎融为一体。
+
+浏览器实测（`#literature-maps-view` 顶部 `.literature-map-header-actions.literature-map-job-actions`）：
+
+| 项 | 实测值 |
+|---|---|
+| 按钮容器 | 338 × 28 |
+| 每个按钮 | **58 × 28**（4 个同尺寸） |
+| `font-size` | **10px** |
+| 文字色 | `rgb(139,142,150)` = `#8b8e96`（`var(--muted)`） |
+| 背景 | `rgb(245,245,247)` = `#f5f5f7`（`var(--paper)`） |
+| 文字/背景对比度 | **3.01 : 1**（低于 WCAG AA 正文 4.5:1） |
+| padding | `7px 9px` |
+| 边框色 | `rgb(139,142,150)` |
+| 触摸目标 | 28px（远低于 44px，也低于项目其它视图的 34px 下限） |
+
+来源：`frontend/literature-maps.js:975-994` 四个 `secondary-button` 与容器；`frontend/styles.css` 基础规则 `.secondary-button { border-radius:7px; padding:9px 12px; background:var(--paper); color:var(--muted); font-size:12px }`；`frontend/literature-maps.css:11`（容器 flex / gap 8）、`:170-171`（`.literature-map-job-actions button { padding:7px 9px; font-size:10px }` **把字号从 12px 压回 10px**）。
+
+注：`继续搜索`、`刷新预览` 在 JS 中初始 `hidden=true`，但实测当前状态两者均 `hidden=false`，截图亦为 4 个按钮，故按 4 个按钮布局验收。
+
+### 目标
+
+在**不改按钮文案、不改 id、不改点击行为**的前提下：字号 10px → 12px、高度 28px → ≥36px（移动端 ≥44px）、文字对比度 3.01:1 → ≥4.5:1（目标 ≥8:1），并给出清晰的 hover / focus-visible 状态。
+
+### 数据模型与接口
+
+**不涉及**：不改后端、不改 API、不改 DOM 结构 / id / class 契约、不改按钮显隐逻辑与事件绑定。
+
+### 拟改范围（CSS 作用域限定）
+
+只在 `#literature-maps-view .literature-map-job-actions button`（及 `.literature-map-header-actions`）作用域内覆盖，**不改全局 `.secondary-button`**（该 class 被会话、项目、论文、技能等大量视图复用）：
+
+1. `font-size:12px`、`font-weight:600`、`padding:9px 14px`、`min-height:36px`、`white-space:nowrap`。
+2. `color:#4a4560`（白底 9.09:1、`#f7f5ff` 8.42:1）、`background:#fff`、`border:1px solid #d8d2ff`、`border-radius:8px`。
+3. `:hover` 背景 `#f0edff` + 边框 `var(--accent)`；`:focus-visible` 加 `box-shadow:0 0 0 3px var(--accent-soft)`；`:disabled` 保持既有灰态。
+4. `@media (max-width:760px)`：按钮 `min-height:44px`、允许换行，确保 4 个按钮不溢出抽屉宽度；容器 `gap:8px→6px`。
+5. 可选（默认不做）：把「新建地图」提升为主色实心按钮做主次区分，需改 class / DOM，留待用户选择。
+
+预期：按钮 58×28 → 约 82×36（桌面），对比度 3.01:1 → ≥8:1。
+
+### 边界与明确不做
+
+- 不改 4 个按钮文案、`id`、`hidden` 显隐逻辑、事件绑定与全局 `.secondary-button` 样式。
+- 不改顶部标题／副标题、不改地图列表／图谱／详情面板、不侵入上段「节点外观」的优化范围。
+- 不新增图标、不改按钮顺序、不引入新组件或依赖。
+- 不改后端、不改 Task11 逻辑、不改 `PATCH /view` 与 409 策略。
+- 确认前不升版本号、不部署。
+
+### 验证方式（确认后执行）
+
+1. 前端定向：4 个按钮 id / 文案 / 显隐状态不变；作用域外的 `.secondary-button` 样式不受影响（回归断言）；hover / focus-visible / disabled 三态。
+2. 真实浏览器前后对比：每个按钮 w/h、`font-size`、`color`/`background` 对比度（≥4.5:1）、焦点环可见；覆盖桌面（≥1180px）、1180–760px、移动端（≤760px 抽屉）三档宽度，确认无横向溢出、无文字截断。
+3. 回归：`node --check`、`.venv/bin/python -m pytest tests/frontend -q`（396 passed 基线）、相关 node vm 用例；`literature-maps.css?v=27→28`，同步全部版本断言。
+4. 人工验收：硬刷新后核对 4 个按钮清晰可见、可点、键盘 Tab 有焦点环；点「刷新状态」「新建地图」功能正常；移动端抽屉内按钮不挤不溢出；附失败恢复与产物路径。
+5. 分端执行：与 Spec012 前端失败态修订**合并为同一次 `frontend-dev` 分派**（同属 `frontend/**`，共用一次版本号升级与同一轮回归），随后 `frontend-reviewer` / `frontend-tester` 单端评审回归；该前端任务不含任何后端改动。
+
+### 用户确认与冻结范围（2026-11-06）
+
+用户批复「这个做」，按默认方案冻结：① 次级按钮统一提高对比 + 放大（不把「新建地图」提为主色实心按钮）；② 移动端允许换行占两行，优先保证 ≥44px 触摸目标；③ **不与「节点外观面板紧凑布局」同批实施**（该项经用户裁定暂缓、需与分组逻辑一起再设计）。冻结范围仅 `frontend/literature-maps.css` 作用域限定覆盖 + `frontend/index.html` 版本号，不改按钮文案 / id / 显隐逻辑 / 事件绑定，不动全局 `.secondary-button`。
+
+## 2026-11-06 地图标签与卡片设置菜单（已由用户方向澄清取代，作废存档）
+
+> **⚠️ 2026-11-06 用户方向澄清：本段整体撤销，不再作为待实施范围。**
+> 用户原话：「我明白你有做地图节点分组的功能，**这个功能是要保留的**」。需求对象是**现有的地图内论文节点分组**（`literature_map_groups` / 节点 `group_id` / `/groups` API）的 UI 改造，**不是**新建「地图级标签」分类系统。
+> 因此本段拟建的 `literature_map_tags` / `literature_map_tag_bindings`、6 个端点、`GET /api/literature-maps` 的 `tags` 派生字段、列表标签筛选、卡片右下角 ⋯ 菜单、「分组」改叫「标签」、以及末尾「补充：卡片显示所属标签」子节**一并撤销**，不再实施，其中 8 个待确认问题不再回答。
+> 取代方案见「2026-11-06 节点分组画布左下角入口改造（待确认）」段。以下原文保留，仅作需求演进留痕。
+
+> **⚠️ 方向冲突待裁决（2026-11-06 用户批量批复）**：用户在随后一轮批量确认中，对本段原先的 3 个问题回复「**都按照你的默认**」（默认：地图级标签 / 两套并存且节点分组 UI 改叫「标签」/ 一张地图可多选标签），并对「卡片显示所属标签」的默认设计回复「**按照你的默认设计**」。这与用户**上一轮亲自澄清**的方向（节点分组功能保留、入口移到画布左下角 icon、点样式高亮分组节点、节点样式跟随分组、移除节点单独调样式）**直接冲突**：本段要新建地图级标签系统与卡片 ⋯ 菜单，上一轮明确不要这套、只改节点分组 UI。
+> 按 SDD「发现需求变化或范围扩大时先暂停、更新 spec 并再次请求确认」，主会话**不擅自恢复已作废方案、不实施本段**，本批次只做用户已确认且无冲突的两项（Spec012 索引缺陷 + 顶部按钮）。请用户用一句话指定以哪一轮为准：
+> - **A（默认推荐）**：以最新澄清为准 → 本段继续作废，实现「节点分组画布左下角入口改造」；本轮「都按照你的默认 / 按照你的默认设计」视为对历史清单的批量批复、不再执行。
+> - **B**：回到本段 → 恢复地图级标签 + 卡片 ⋯ 菜单 + 卡片标签徽标 + 列表标签筛选，作废「左下角 icon」方向。
+> - **C**：两套都要（地图标签系统与节点分组左下角入口并存）→ 范围显著扩大，需单独建档与再次确认。
+> 裁决前本段保持 `已取代（作废存档）`，不改业务代码、不改数据、不升版本号、不部署。
+
+**状态：已取代（作废存档）。** 原为 `待确认`；2026-11-06 用户澄清方向后整体撤销，需求演进见下一段。以下为该段产出时的原始记录（当时累计 4 项待确认：Spec012 索引卡死 + Spec043 节点外观紧凑化 / 顶部按钮可读性 / 本项），保留仅供追溯，不作为实施依据。
+
+> 编号说明：本项暂挂 Spec043 待确认修订；若用户确认方向后判定为独立子系统，再按建档流程新建 `045-…` spec 并同步 `docs/sdd/plans/045/`。`044` 已被 `architecture-boundary-guards` 在途分支占用（存在 `chore(spec-044)` 提交），不可复用。
+
+### 需求原文要点
+
+1. 「人工分组」面板放在地图列表**下方**太奇怪，要放到**上方**。
+2. 目前列表只有「按状态筛选」，希望**加上按标签筛选**；新增的标签都要显示在这个列表中。
+3. 给**地图**设置标签的入口移到地图卡片：卡片**右下角加三个点（⋯）图标**，点开设置菜单，其中一项是「设置标签」。
+4. 「设置标签」分两个操作：① 加入已有标签；② 新建标签（复用现有「名称 + 颜色 + 创建」表单设计）。
+5. 术语改名：**「分组」改叫「标签」**。
+
+### 现状与关键事实（只读核实）
+
+- 面板顺序（`frontend/literature-maps.js:1035-1085`）：`listFilters`（搜索框 + `listStatus` 状态下拉）→ `mapList` → `listEmpty` → **`groupsPanel`（人工分组）** → `createPanel`。确实在列表下方。
+- 筛选逻辑（`:1641-1648` `filteredMaps()`）：只有 `state.listQuery` 与 `state.listStatus` 两个条件；状态下拉选项为 全部状态 / 生成中 / 可用 / 部分完成 / 失败 / 已停止。
+- **现有「人工分组」是地图内论文节点的分组，不是地图分类**：`GET /api/literature-maps/{map_id}/groups`、`PUT /api/literature-maps/{map_id}/nodes/{node_id}/group`；表 `literature_map_groups(group_id, map_id, name, color)`（`backend/app/literature_maps/infrastructure/store.py:136-140`），节点表有 `group_id` 列（`:164`）。因此**不能直接拿它筛选地图列表**。
+- 卡片 `renderMapList()`（`:1833-1858`）每项是一个 `<button class="literature-map-list-item" data-map-id>`，内含标题 / 主题 / meta；CSS `display:grid`（`literature-maps.css:28`）。**`button` 内不能再嵌 `button`**，加 ⋯ 菜单必须调整卡片 DOM 结构（DOM 契约变化，现有 `[data-map-id]` 断言与点击行为需回归）。
+- 「分组」UI 文案在 `literature-maps.js` 共 23 处（面板标题、placeholder、aria-label、重命名 prompt、状态提示、节点详情选择器、导出图例等）。
+
+### 关键理解（默认方案，待用户确认）
+
+- **两套概念并存，不迁移**：现有节点分组的**后端表 / API / 节点 `group_id` 全部保持不变**，仅 UI 文案把「分组」改称「标签」；另新增**地图级标签**用于地图分类与列表筛选。这样不破坏已有地图的分组颜色与节点归属。
+- 列表上方的面板改为「标签」区：展示全部标签 + 作为筛选器（与状态筛选并存、可组合）。
+- 新建标签表单复用现有 `groupForm`（名称 + `type=color` + 创建按钮），放在卡片 ⋯ 菜单的「新建标签」分支里；列表上方不再放创建表单（避免两处入口）。
+
+### 数据模型（拟，新增，不改既有表）
+
+| 实体 | 字段 | 类型 | 约束 |
+|---|---|---|---|
+| `literature_map_tags` | `tag_id` | TEXT | PK |
+| | `owner_id` | TEXT | 必填，按 owner 隔离 |
+| | `name` | TEXT | 必填，去空白后非空，长度 ≤ `GROUP_NAME_MAX_LENGTH`，同一 owner 下唯一（大小写不敏感） |
+| | `color` | TEXT | `#RRGGBB`，默认 `#8d80e6` |
+| | `created_at` / `updated_at` | TEXT | RFC3339 |
+| `literature_map_tag_bindings` | `map_id` | TEXT | FK `literature_maps(map_id)`，软删地图不计 |
+| | `tag_id` | TEXT | FK `literature_map_tags(tag_id)` |
+| | | | `UNIQUE(map_id, tag_id)`，重复绑定幂等 |
+| `GET /api/literature-maps` 响应项 | `tags` | array | 只读派生 `[{tag_id, name, color}]`，旧字段全部保留 |
+
+**并发隔离（必须）**：标签绑定走独立表，**不得递增 `literature_maps.revision`**，否则会与 `PATCH /api/literature-maps/{id}/view` 的 409 乐观锁互相踩踏。标签自身用 `expected_revision` 或独立版本号做冲突控制。
+
+### 端点 / 接口（拟）
+
+| 动作 | 输入 | 成功返回 | 失败（状态码） |
+|---|---|---|---|
+| `GET /api/literature-maps/tags` | owner 上下文 | `200 {tags:[…]}` | 401 |
+| `POST /api/literature-maps/tags` | `{name, color}` | `201 {tag_id,name,color}` | 400 名称/颜色非法、409 重名 |
+| `PATCH /api/literature-maps/tags/{tag_id}` | `{name?, color?}` | `200 {…}` | 404 / 409 / 400 |
+| `DELETE /api/literature-maps/tags/{tag_id}` | — | `200 {deleted, unbound_maps}` | 404；解绑所有地图 |
+| `PUT /api/literature-maps/{map_id}/tags` | `{tag_ids:[…]}` | `200 {tags:[…]}` | 404 / 409 / 422 含不存在或越权 tag_id |
+| `GET /api/literature-maps` | owner | 每项含 `tags` | — |
+| 现有 `/groups`、`/nodes/{node_id}/group` | 不变 | — | — |
+
+### 边界（每条对应一条测试）
+
+- 空标签列表、无标签地图、标签名为空/超长/仅空白、重名（同 owner 冲突、跨 owner 允许）、颜色非法。
+- 绑定不存在/跨 owner 的 `tag_id` 一律 422，不产生越权可见性；重复绑定幂等；一次最多绑定数量上限（建议 20）。
+- 删除标签后所有地图自动解绑、筛选结果立即更新；已软删地图不出现在筛选结果。
+- 卡片 ⋯ 点击**不得**触发选图（`selectMap`）；菜单打开/关闭的键盘（Enter/Esc/焦点）、点击外部关闭；移动端抽屉内不溢出。
+- 标签筛选与状态筛选、搜索框三者可组合；取消标签筛选恢复全部。
+- 标签操作不改变 `literature_maps.revision`，不触发视图保存 409；节点分组功能（颜色/重命名/删除/归入）零回归。
+- XSS：标签名只用 `textContent` / `setAttribute`，禁止 `innerHTML`。
+
+### 明确不做
+
+- 不改 `literature_map_groups` 表、`/groups` API、节点 `group_id` 与节点分组的任何行为；**不把节点分组数据迁移成标签**。
+- 不做标签层级/嵌套、标签合并、拖拽排序、批量给多张地图打标签、标签导入导出。
+- 不改地图创建/删除/图谱/详情/Task11 逻辑，不改后端 `status` 语义，不改 `PATCH /view` 与 409 策略。
+- 不改现有「按状态筛选」下拉（保留），不改搜索框。
+- 不新增前端框架或第三方依赖；不改其它视图。
+- 不把「分组」改名扩展到后端字段名/URL（避免破坏性变更），仅 UI 文案与新增接口用「标签」。
+
+### 产品使用步骤（初稿，确认后由 doc-updater 补齐可执行验收案例）
+
+1. 打开「⌘ 文献地图」，列表**上方**看到「标签」区（与状态筛选并列），列出全部已有标签。
+2. 在某张地图卡片**右下角点 ⋯** → 菜单展开 → 选「设置标签」。
+3. 分支 ①「加入已有标签」：勾选/取消已有标签 → 保存 → 卡片显示标签徽标。
+4. 分支 ②「新建标签」：复用「名称 + 颜色 + 创建」表单 → 创建后自动把该地图加入新标签。
+5. 在列表上方点某标签 → 列表只显示带该标签的地图；可与状态筛选/搜索组合；再点一次取消筛选。
+6. 验收场景：空态、重名、删除标签后解绑、跨地图不串标签、卡片 ⋯ 不误触选图、键盘可操作、移动端不溢出。
+
+### 验证方式（确认后执行）
+
+1. 后端定向：标签 CRUD 边界（重名/越权/空值/颜色）、绑定幂等与上限、删除解绑、owner 隔离、**不改变 `revision`**、`GET /api/literature-maps` 的 `tags` 派生且旧字段保留。
+2. 前端定向：卡片 DOM 契约（`data-map-id` 保留、⋯ 不触发选图）、菜单开关与键盘、标签筛选三条件组合、23 处文案改名、无 XSS、无 `innerHTML`。
+3. 真实服务 E2E：新建标签 → 给地图打标签 → `GET /api/literature-maps` 返回 `tags` → 浏览器点标签筛选 → 数量与预期一致；落盘请求、响应、实体 ID、最终状态、产物路径。
+4. 三档宽度（≥1180 / 1180–760 / ≤760 抽屉）真实浏览器检查；回归 `node --check`、`.venv/bin/python -m pytest tests/frontend -q`（396 passed 基线）与后端 `tests/literature_maps`。
+5. 分端执行：后端 `backend-dev` → `backend-reviewer` / `backend-tester`；前端 `frontend-dev` → `frontend-reviewer` / `frontend-tester`；**跨端拆两次分派**。验收由 `tester` 汇总、架构师签字后部署验证。
+6. 人工验收材料：逐步点击、点击后提示、等待条件、失败恢复（重名/409/网络失败）、产物路径。
+
+### 待确认问题（请一并回答）
+
+1. **标签是给「地图」还是「论文节点」？** 默认按原文理解为**地图级标签**（用于筛选地图列表）；现有节点分组保留不迁移。若你其实想把节点分组整体改名/替换，请说明。
+2. **一套还是两套？** 默认「地图标签」与「论文节点分组」并存，UI 统一叫「标签」；若希望合并成一套，需另定迁移方案（范围显著扩大）。
+3. **菜单里「设置标签」是单选还是多选？** 默认多选（一张地图可有多个标签）；标签筛选默认单选、可取消。
+4. **列表上方是否仍保留「新建标签」表单？** 默认不保留，只在卡片 ⋯ 菜单里新建（避免两处入口）；若你希望上方也能直接新建，请说明。
+5. **术语改名范围**：默认只改 UI 文案（`分组`→`标签`），后端 `/groups` 路径与 `group_id` 字段名不动；若要求连 API/字段一起改名，需评估迁移成本。
+6. 本项与前 3 项待确认是否一次性确认、按依赖顺序实施（默认：是；本项含后端改动，单独成批次）。
+
+### 补充（2026-11-06，用户追加）：卡片显示所属标签
+
+用户原话：「这个标签添加上的话要在地图卡片中显示它属于的分组」。按本段术语约定，此处「分组」即**地图标签**。本条是对本段需求的补充，**状态仍 `待确认`**，上文的 6 个待确认问题仍待回答。
+
+**实测约束（真实 Chromium）**：`.literature-map-list-item` 当前 **192 × 72**，`display:grid; gap:4px; padding:9px 10px`；`meta` 行 **170 × 19**（`display:flex; gap:7px`），已含「可用」徽标 30×19 与「32 篇」25×13，仅余约 108px。右下角还要放 ⋯ 菜单，因此**不能把多个标签徽标直接塞进现有 meta 行**。CSS 见 `frontend/literature-maps.css:28-34`。
+
+**默认设计**：
+
+1. 卡片新增独立一行 `.literature-map-list-tags`（`flex-wrap:wrap; gap:4px`），位于 meta 行下方、⋯ 按钮左上侧；每个标签渲染为「色点 + 名称」小徽标（9px、`padding:2px 6px`、`border-radius:999px`），色点取 `tag.color`，文字用 `textContent` 固定深色（不拿标签色当文字色，保证对比度）。
+2. 每张卡片最多显示 **3 个**标签，超出显示 `+N`（`title` / `aria-label` 列出全部标签名）；**无标签时不渲染该行**，不占垂直空间。
+3. ⋯ 菜单按钮固定在卡片右下角，与标签行不重叠；标签徽标**默认不可点**（筛选统一走列表上方标签区），避免与选图点击冲突。
+4. 卡片高度预计 72px → 约 92px（有标签时）；移动端抽屉内标签行可换行，不横向溢出。
+5. 数据来源即 `GET /api/literature-maps` 每项新增的 `tags: [{tag_id,name,color}]`（见上文数据模型）；设置 / 删除标签成功后 `renderMapList()` 立即重绘，卡片徽标同步更新。
+
+**对上文条目的细化**：
+
+- **边界**新增：空标签不渲染、超长标签名截断并保留 `title` 全文、最多 3 个 + `+N`、删除标签后卡片立即移除该徽标、标签名 XSS（`textContent` / `setAttribute`，禁止 `innerHTML`）、⋯ 按钮不与徽标重叠、键盘焦点顺序、三档宽度不溢出。
+- **验证方式**新增：前端定向断言「有 N 个标签渲染 N 个徽标 / >3 个显示 `+N` / 空数组不渲染 / 删除后消失」；真实浏览器核对卡片高度、徽标不与 ⋯ 重叠、文字对比度；人工验收补「给地图打标签后回到列表查看卡片徽标」。
+- **产品使用步骤**第 3 步后补：「卡片上立即出现对应标签徽标；多个标签显示前 3 个 + `+N`；删除标签后徽标消失」。
+
+**新增待确认问题**：
+
+7. 卡片徽标最多显示几个（默认 3 个、超出 `+N`）？是否希望**点击卡片上的标签徽标直接筛选**（默认不可点，统一在上方标签区筛选；若要做需把卡片从 `<button>` 改成容器并 `stopPropagation`，范围略增）？
+8. 徽标用「色点 + 名称」还是只显示色点 + tooltip（更省空间）？默认「色点 + 名称」。
+
+用户明确确认后本段转 `已确认`，并按需要新建 `045` spec 与 `plans/045/` 建档，方可开始实现。
+
+---
+
+## 2026-11-06 节点分组画布左下角入口改造（待确认）
+
+**状态：待确认。** 用户最新一次方向澄清，取代上一段「地图标签与卡片设置菜单」（已作废存档）。本项**保留现有地图内论文节点分组功能**，只改造其入口、高亮交互与节点样式归属；**不新建地图级标签系统、不新增数据模型与公开接口**。确认前不改业务代码、不改数据、不升版本号、不部署、不重启服务。
+
+> 编号：继续挂 Spec043 待确认修订，不新建编号（属既有节点分组功能的 UI/行为收敛）。`044` 已被 `architecture-boundary-guards` 在途分支占用，不可复用；若用户后续要求把「分组样式」扩展成独立样式子系统，再评估建档 `045`。
+
+### 需求原文与拆解
+
+用户原话：「我明白你有做地图节点分组的功能，这个功能是要保留的。但我的想法是分组放在地图的左下角，用一个icon展示。点开icon可以展示有哪些分组和它们的颜色（样式），点击对应的样式会高亮该分组的所有节点（文章），除了这些颜色之外，还会展示设置新组的一个icon，里面可以设置它们的样式。同时已经有的节点也可以再次设置样式。论文节点就不再单独设置可以调整它样式的功能了，它的样式跟着它的分组走。」
+
+| # | 要点 | 落点 |
+|---|---|---|
+| 1 | **节点分组功能保留** | `literature_map_groups` 表、节点 `group_id`、`/groups` API、`PUT /nodes/{id}/group` 全部不动 |
+| 2 | 分组入口移到**地图（画布）左下角**，用一个 icon 展示 | 画布内新增常驻按钮；原列表下方管理面板移除 |
+| 3 | 点开 icon 展示**有哪些分组及其颜色（样式）** | 浮层列 `state.groups`，色块 + 名称 |
+| 4 | 点击对应样式 → **高亮该分组所有节点/文章** | 新增纯前端视图态高亮，不改后端 |
+| 5 | 除颜色外还展示**「设置新组」icon**，里面可设置样式 | 复用 `groupForm`（名称 + 颜色 + 创建） |
+| 6 | **已有的节点/分组也可以再次设置样式** | 歧义，见待确认问题 1 |
+| 7 | **论文节点不再单独提供调整样式的功能，样式跟随分组** | 移除节点详情调色板与多选颜色面板，颜色只取分组色 |
+
+### 现状与关键事实（只读核实，绝对路径 + 行号）
+
+**分组读写**
+
+- `frontend/literature-maps.js`：`renderGroups()` 1947–1982 → 容器 `#literature-map-groups`(1057–1059)、`#literature-map-group-list`(1080–1081)、空态 1082；行内含色块 `.literature-map-group-swatch.literature-map-group-color-trigger`(1955)、重命名(1968)、删除(1974)；创建表单 `#literature-map-group-form` / `-name` / `-color` / `-create`(1062–1079)。数据来自 `loadGroups()` 1994–2008，由 `selectMap()` 触发。
+- `renderGroupLegend()` 1924–1945 → `refs.groupLegend` 挂在 `div.literature-map-legend`(1269)，是**画布外的面板底部图例条**（`frontend/literature-maps.css:87-90, 230-232`），不在画布内、不悬浮。
+- 节点归入分组：`renderNodeGroupSelector(node)` 6631–6653 → `assignNodeGroup()` 6662–6700 → `PUT /nodes/{node_id}/group`。
+- 分组改色：`applyGroupColor()` 2242–2270 → `PATCH /groups/{group_id}`；色板 `createColorPalette('group', id)` 712–802。
+- 后端：`routes_literature_maps.py:401-462`、`service.py:818-864`、`store.py:788-900`（删除组 896 级联把节点 `group_id` 置 NULL）。
+
+**画布左下角挂点**
+
+- `div.literature-map-canvas`（JS 1246、CSS 74）**已 `position: relative`**，是天然定位上下文；其内目前只有 `#literature-map-svg` 与 `.literature-map-canvas-empty`（CSS 76–77 `position:absolute; inset:0; pointer-events:none`）。
+- 缩放按钮在头部 `canvasHead > .literature-map-tools`（CSS 66–68），非 absolute；`/frontend/literature-maps.css` 全文**没有任何 `bottom:` / `left:` 的画布内定位规则**。
+- 结论：可在画布内新增 `position:absolute; left/bottom` 的 icon 按钮（与 empty 同级，显式 `pointer-events:auto`），不与缩放控件、底部图例条重叠。
+
+**节点级样式入口（用户要求移除）**
+
+- `renderNodeColorControls()` 6655–6660 → `section.literature-map-node-color-section`（CSS 318–320）+ 「恢复跟随分组」775–786。
+- 多选颜色面板 `selectionPalette` 1242–1244、`renderMultiSelectControls()` 1860–1876、`toggleMultiSelectMode()` 1878–1906。
+- `createColorPalette()` 712–802 一函数三目标（`node` / `group` / `selection`）；全局「节点样式」disclosure `buildNodeStyleDisclosure()` 1333–1371（视图级 `fill_mode` / `fill_opacity`，非单节点）。
+- 颜色优先级 `nodeDisplayColor()` 657–668：草稿 > 已保存 `node.color_override` > `currentGroupColor()`(647–655) > `DEFAULT_NODE_COLOR`；`renderGraph()` 4958–4966 写 `data-node-color` / `data-color-override` / `data-group-color`。
+- 后端 `color_override` 链路：`routes_literature_maps.py:465-478`（`PATCH /node-styles`）、`service.py:866-892`、`store.py:733-783` + 迁移 353–357、`models.py:114/147`；导出 `sanitizeJsonExportBlob()` 5594–5631、`service._export_node()` 2749–2769、`_export_view_settings()` 2550–2583、`EXPORT_SCHEMA_VERSION='literature-map-export-v2'`（JS 51 / service 910）。
+
+### 关键理解（默认方案，待用户确认）
+
+1. **不新建数据模型、不新增端点**：复用 `GET/POST/PATCH/DELETE /api/literature-maps/{map_id}/groups` 与 `PUT /api/literature-maps/{map_id}/nodes/{node_id}/group`；分组仍是 `name + color`。
+2. **左下角 icon + 浮层**：画布内常驻 `<button class="literature-map-groups-fab" aria-label="分组" aria-expanded="false">`；点击展开 `.literature-map-groups-popover`（左下锚定、向上展开），含：分组行（色块 + 名称 + 可选节点数）、`＋ 新建组` icon（展开 `#literature-map-group-form` 复用表单）、已有分组的改色/重命名/删除入口、「未分组」项与「清除高亮」。Esc / 点击外部 / 再点 icon 关闭，`aria-expanded` 同步。
+3. **原列表下方 `#literature-map-groups` 管理面板移除**（用户最初抱怨「放在地图列表下方太奇怪」的根因）；画布外底部 `renderGroupLegend()` 图例条**默认保留**（只读、不承担管理）。是否也并入浮层见问题 6。
+4. **点击分组样式 → 高亮该组所有节点**：新增纯前端视图态 `state.groupHighlightId`（`null` / `group_id` / `'__ungrouped__'`），`renderGraph()` 给命中组 `<g>` 写 `data-group-highlight="on"`、其余写 `off`，CSS 淡化非命中节点与边（如 `opacity:.18`）+ 命中节点描边强调。色块本身是 `<button>`，`aria-pressed` 反映当前态；再点同一组 / 点「清除高亮」/ 切换地图 → 清除。**不写库、不递增 `revision`、不进导出、不影响选中态与多选集合**。
+5. **节点样式跟随分组**：移除节点详情调色板、多选颜色面板与「恢复跟随分组」；`nodeDisplayColor()` 简化为只取 `currentGroupColor(node.group_id)`。节点仍可通过详情里的 `#literature-map-node-group` 下拉**切换所属分组**，样式随新分组变化。
+6. **后端兼容保留（默认）**：`color_override` 列、`PATCH /node-styles`、导出 `color_override` / `node_style` 字段**不删除**，只是前端不再写入且渲染忽略历史值；避免 schema 迁移与旧 `literature-map-export-v2` 导出 JSON 不兼容。是否连根删除见问题 3。
+7. **全局「节点样式」disclosure 默认保留**：它是视图级 `fill_mode` / `fill_opacity`，不是「单个论文节点」的样式；是否一并移除见问题 4。
+
+### 边界（每条对应一条测试）
+
+- 左下角 icon 在画布缩放/拖动/空态、三档宽度（≥1180 / 1180–760 / ≤760 抽屉）下不错位、不遮挡缩放控件、不被 SVG 覆盖；`pointer-events` 正确；移动端抽屉内不溢出。
+- 浮层：无分组时显示空态 + 新建入口；分组多时滚动；键盘 Enter/Esc/焦点顺序、点击外部关闭；`aria-expanded` / `aria-pressed` 正确；不与底部图例条重复管理入口。
+- 高亮：只高亮目标分组节点（未分组不被误高亮）、再次点击/清除/切图恢复；**不改变** `data-group-id`、不写库、不触发视图保存、不递增 `revision`、不改变导出 JSON/PNG 内容；与多选模式、节点选中态互不干扰。
+- 新建/编辑分组样式：名称/颜色校验沿用 `validateGroupForm()`(804–814)；重名/非法色提示；成功后该组所有节点按新色立即重绘，高亮态保持；删除组沿用既有级联解绑（节点回落未分组/默认色）。
+- 节点详情**不再出现** `.literature-map-node-color-section` 与「恢复跟随分组」；多选工具栏不再出现颜色调色板；`renderNodeGroupSelector()` 仍可切换分组且颜色随之变化。
+- 颜色优先级：库中残留历史 `color_override` 时渲染仍只用分组色；导入含 `color_override` 的旧导出 JSON 不报错。
+- 零回归：节点分组的颜色/重命名/删除/归入、视图保存与 409 策略、`PATCH /view` 请求体、导出 JSON/PNG 分组图例。
+- XSS：分组名只用 `textContent` / `setAttribute`，禁止 `innerHTML`。
+
+### 明确不做
+
+- 不新建地图级标签系统、不加地图列表标签筛选、不加卡片右下角 ⋯ 菜单、不把「分组」改名「标签」、卡片不显示分组徽标（上一段整体撤销）。
+- 不新增前端框架或第三方依赖；不改其它视图；不改 `literature_map_groups` 表结构与 `/groups` 契约（除非问题 2 确认扩样式字段）。
+- 默认不删后端 `color_override` / `PATCH /node-styles` / 导出字段，不升 `EXPORT_SCHEMA_VERSION`。
+- 不改 `PATCH /view` 与 409 策略、不改节点位置/视图保存逻辑（`saveView()` / `view_initialized`）；高亮不持久化、不进导出。
+- 本轮不动 Spec012 索引缺陷与「顶部操作按钮可读性与尺寸」（除非问题 8 确认同批处理）。
+
+### 产品使用步骤（初稿，确认后由 doc-updater 补齐可执行验收案例）
+
+1. 打开「⌘ 文献地图」并选中一张地图，图谱**左下角**看到分组 icon；列表下方不再有「人工分组」面板。
+2. 点分组 icon → 浮层展开，列出全部分组及其色块/名称，另有「＋ 新建组」与「未分组」。
+3. 点某分组色块 → 画布中该分组所有节点高亮、其余节点淡化；顶部/浮层显示「清除高亮」，再点一次或点清除恢复。
+4. 点「＋ 新建组」→ 复用「名称 + 颜色 + 创建」表单设置样式 → 创建后浮层出现新组。
+5. 选中任一已有分组可再次改色/改名；在节点详情用「将此论文归入」切换分组 → 节点颜色随新分组立即变化。
+6. 选中一个节点：详情里**没有**「节点外观」调色板与「恢复跟随分组」；开启多选也不再出现颜色调色板。
+7. 验收场景：空态、重名、非法色、删除组后节点回落、跨地图不串分组、高亮不写库、键盘可操作、移动端不溢出。
+
+### 验证方式（确认后执行）
+
+1. 前端定向：左下角 DOM 契约（画布内 `position:absolute`、`pointer-events`）、浮层开关/键盘/`aria-*`、高亮节点集合与清除、切换地图清除、颜色只取分组色（含历史 `color_override` 忽略）、节点调色板移除断言、无 `innerHTML`；`node --check`、`.venv/bin/python -m pytest tests/frontend -q`（396 passed 基线）、版本断言同步。
+2. 后端定向：默认零改动，仅跑 `tests/literature_maps` 回归确认 `/groups`、`PUT /nodes/{id}/group`、`GET /export` 零回归（既有基线 240 passed）。若问题 3 确认删除链路，另补迁移/导入兼容用例。
+3. 真实服务 E2E（Playwright + 当前部署版本）：打开有分组的地图 → 点左下角 icon → 浮层列出分组与颜色 → 点某组色块 → 断言该组节点 `data-group-highlight="on"`、其余 `off` → 新建组并设颜色 → 通过节点详情下拉把节点归入新组 → 断言节点色随分组变化 → 清除高亮 → 断言恢复；落盘请求、响应、实体 ID、最终状态与产物路径。
+4. 三档宽度真实浏览器检查左下角不遮挡/不溢出；导出 JSON/PNG 核对分组色块与节点色一致且不含高亮态。
+5. 分端执行：改动若纯前端，只派 `frontend-dev` → `frontend-reviewer` / `frontend-tester`（**不跑后端 pytest**）；若确认要动后端，拆成后端一次、前端一次。验收由 `tester` 汇总、架构师签字后部署验证。
+6. 人工验收材料：逐步点击、点击后提示、等待条件、失败恢复（重名/409/网络失败）、产物路径；服务启动与 `/api/health` 验证后告知可访问地址与实际端口。
+
+### 待确认问题（请一并回答）
+
+1. **最关键歧义**：「同时已经有的节点也可以再次设置样式」与「论文节点就不再单独设置…样式跟着分组走」如何统一？默认解读为 **A+B**：A＝节点可**切换所属分组**（样式随新组变），B＝**已有分组可在浮层里再次编辑颜色/样式**（该组所有节点联动）；节点**不允许**单独调色。若你其实仍想在节点上直接改色，请明确（与末句冲突，需以哪句为准）。
+2. **「样式」的范围**：默认仅颜色（复用 `literature_map_groups.color`）。若要给分组增加填充/描边/透明度等，需扩表结构 + `GroupPatchRequest` + 导出 `groups[].style` + 评估 `EXPORT_SCHEMA_VERSION`，属范围扩大，请单独确认。
+3. **后端 `color_override` / `PATCH /node-styles` 链路**：默认只移除前端入口、后端保留兼容（历史数据与旧导出 JSON 仍可用），不做 schema 删除；是否要连后端列/API/导出字段一起删（风险最高，需升导出 schema 或做导入兼容）？
+4. **全局「节点样式」disclosure**（`fill_mode` / `fill_opacity`，视图级）是否也随「节点不再单独设置样式」一起移除？默认**保留**（它不是单节点设置）；若移除会连带 `node_style` 持久化、导出与 409 链路。
+5. **高亮语义**：默认「淡化其它节点 + 命中组描边强调」的临时视图态，不持久化/不进导出；再点同一组取消（默认）、关闭浮层**不**清除（便于观察，默认）、切换地图清除。是否接受？
+6. **原管理面板与图例条**：默认「列表下方 `#literature-map-groups` 移除、画布外底部 `renderGroupLegend()` 图例条保留」；是否希望图例条也并入左下角浮层（两处信息合一）？
+7. **既有待确认项如何裁定**：①「地图标签与卡片设置菜单」及其「卡片显示所属标签」补充 —— 默认**作废撤销**，请确认；②「节点外观面板紧凑布局」—— 默认随节点级调色板移除而**作废**（无需再压缩已删除的面板），请确认；③「顶部操作按钮可读性与尺寸」—— 默认**保留**待实施。
+8. **批次安排**：默认本项独立成批次，与 Spec012 索引卡死缺陷、「顶部按钮可读性」分别确认、按依赖顺序实施；是否希望一次性确认、一次性实施（共用一次版本号升级）？
+
+用户明确确认并回答上述歧义后，本段方可转 `已确认` 开始实现；确认前保持「仅文档」，不改业务代码、不改数据、不升版本号、不部署。

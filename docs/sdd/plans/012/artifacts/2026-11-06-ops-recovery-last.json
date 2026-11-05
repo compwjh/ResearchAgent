@@ -1,0 +1,24 @@
+{
+  "document_id": "1a3c542b31734c45a541896a01d71528",
+  "chunker": "v2",
+  "requests": [
+    {
+      "attempt": 1,
+      "http_status": 202,
+      "response": {
+        "task_id": "2b2485571f70411abb2861e2db658617",
+        "document_id": "1a3c542b31734c45a541896a01d71528",
+        "chunker": "v2",
+        "status": "queued",
+        "progress": 0
+      }
+    }
+  ],
+  "final_state": {
+    "status": "indexed_partial",
+    "chunk_count": 463,
+    "progress": 100,
+    "error": "SOURCE_RANGE_UNRESOLVED"
+  },
+  "at": "2026-11-06T06:24:16.199910"
+}

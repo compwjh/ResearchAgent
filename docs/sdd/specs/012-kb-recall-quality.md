@@ -182,3 +182,85 @@
 
 ---
 **五条自检**：①每条边界都能写成测试 ②2 分钟内可审完 ③范围已划死（不做 OCR / 不改 num_batch / 不做手动开关与全局切换）④执行配置五行齐全 ⑤产品步骤可映射到验收点。
+
+## 2026-11-06 索引任务重启后永久卡「索引中 0%」缺陷（待确认）
+
+**状态：已完成（2026-11-06 验收通过、部署验证通过、架构师签字同意收口）。** 本段为 Spec012 收口后用户反馈的缺陷修订，按 Bug 处理规则不新建编号；主实现状态仍为「已完成」。用户明确「这个确认做」，并对文末三点**全部确认默认是**：① 一次性批量恢复全部 13 个卡住版本（不只截图这一篇）；② 启动收敛后允许自动重排一次；③ 只做最小修复（启动收敛接线 + 提交竞态 + `auto_requeued` 标记语义），**不做持久化队列**。冻结范围见文末「用户确认与冻结范围」。确认前未修改业务代码、未执行写操作、未重启服务、未批量重排索引。
+
+### 复现证据（2026-11-06，当前部署版本，全部只读）
+
+- 用户截图 `Screenshot 2026-11-06 at 02.41.52.png`：文档 `2021-Conference-End-to-End-Spectro-Temporal-…pdf` 显示「已索引 · 0 页」、`v1 已索引 · 55 片段`（绿）、`v2 索引中 0%`（紫），「重建索引 / 删除」按钮可见。
+- `GET /api/kb/papers`：`document_id=1b967ed8638e46569d36e3f6565c51eb`、`status=indexed`、`page_count=0`、`chunk_count=55`；`chunkers.v1={status:indexed, chunk_count:55, progress:100, error:null}`；`chunkers.v2={status:indexing, chunk_count:0, progress:0, error:null}`；`auto_requeued_chunkers.v2="2026-11-05T15:47:39+00:00"`；顶层 **`error=null`**。
+- `GET /api/kb/health`：`qdrant=true`、`embedding=true`、`v2_llm.available=true`（qwen3.8-27b-q4）、`generation.ready=true` → 依赖与索引代次门当前均可用，**不是模型/Qdrant 故障**。
+- `deploy/run.log:1491450`：导入时 `论文导入失败：索引成功但收尾失败（代次漂移/元数据写回） … 索引返回=v1=indexed; v2=pending 异常=ManifestStoreError: INDEX_FINALIZE_REQUIRED` → v1 成功、v2 未启动，`page_count` 未写回（历史代次门未 finalize 故障期）。
+- `deploy/run.log:1506559`：用户点「重建索引」后 `POST /api/kb/documents/1b967ed…/reindex 202 Accepted`；此后日志**只有前端轮询 GET**，无任何索引任务执行/完成/失败记录，随后出现 FastAPI 启动 warning（服务重启）。
+- 全库扫描：共 **13 个切分版本卡在 `indexing 0%`**（12 篇文档，其中 `1a3c542b…`、`8cd741ab…` 两篇 v1+v2 双卡）。**非单篇问题。**
+
+### 根因链条
+
+1. **任务不持久化**：`backend/app/knowledge_base/infrastructure/tasks.py` 用模块级 `ThreadPoolExecutor(max_workers=1)` + 内存字典 `_running` 承载全部索引任务；`submit_document_reindex()`（`application.py:846-857`）**先把状态写成 `indexing`**，再提交到该线程池。
+2. **重启丢任务**：服务重启（`launchctl kickstart -k` / 部署）杀掉线程，`_running` 与队列消失，但 `papers.json` 里已落盘的 `indexing 0%` 不会回滚 → 进度条永久卡住。
+3. **启动收敛函数从未接线**：`store.mark_interrupted_tasks()`（`store.py:785-810`）与 `tasks.mark_interrupted_on_startup()`（`tasks.py:148-154`）都已实现，docstring 明写「启动时调用：把残留的 indexing 标记失败」，但**全仓无任何调用点**；`main.py` lifespan（:29-86）只调了 `recover_paper_catalog_searches` / `recover_research_tasks` / `require_generation` / `recover_failed_reindexes` / `recover_literature_map_jobs` / `start_warmup` / `start_capability_scheduler`，**漏掉了它**。
+4. **自愈只看 failed**：`recover_failed_reindexes()`（`application.py:861-907`）只遍历 `iter_failed_chunkers()`（`status=failed`），对 `indexing` 不处理；即便收敛成 `failed`，`is_chunker_auto_requeued()` 也会因本文已写过 `auto_requeued_chunkers.v2` 而跳过 —— 防重启风暴的幂等标记把「被中断的重排」误判成「已给过机会」。
+5. **前端持续误报**：`chunkers.v2.status=indexing` 使卡片一直显示「索引中 0%」；`isFailed=false` 时按钮文案为「重建索引」而非「重试」（`frontend/app.js:6476-6479`），用户重试后又可能被下一次重启打断。
+6. **v1 可用、v2 不可用**：顶层 `status` 由 v1 推导（`store.py:806-807`），所以文档看似「已索引」，实际 v2 检索无片段。
+
+### 目标
+
+① 让该文档与另外 12 个卡住版本恢复为可用索引；② 服务重启后不再出现永久 `indexing 0%`；③ 失败态对用户可见、可自助重试。
+
+### 数据模型与接口（拟）
+
+- 不新增表/字段/迁移；不改 `papers.json` schema；不改 `GET /api/kb/papers`、`GET /api/kb/health`、`POST /api/kb/documents/{id}/reindex` 的响应契约。
+- 在 `main.py` lifespan 中，于 `recover_failed_reindexes()` **之前**调用 `tasks.mark_interrupted_on_startup()`，把残留 `indexing` 收敛为 `failed`（带「服务重启导致中断」原因）。
+- 收敛时清除该 `(document, chunker)` 的 `auto_requeued_chunkers` 标记（或等价机制），使 spec-036 Task06 的一次性机会重排能用于「被重启打断的任务」；同时保留「真正跑失败过」不无限重试的语义。**必须区分两类 failed**。
+- `submit_document_reindex()` 消除「先写 `indexing` 再提交」竞态：`submit_index_task()` 返回 False 时不得把状态改成 `indexing`，返回明确 `INDEX_ALREADY_RUNNING`；提交异常时回滚为 `failed` 并记录原因。
+- 前端：卡片对「上次因服务重启中断」的 failed 显示可操作提示与「重试」按钮；启动收敛后不再残留「索引中 0%」。
+
+### 边界与明确不做
+
+- 不改切分算法（v1/v2 chunker）、不改 embedding / LLM 模型、不改 Qdrant collection 拓扑与代次门（`FinalizeBundleStore` / `require_generation`）逻辑。
+- 不把任务队列改为持久化队列（Celery / DB outbox 等），不做分布式调度。
+- 不自动无限重试；仍坚持「每 (document, chunker) 一次机会」，只补「被中断重排」的判定。
+- 不改知识库检索、引用、生成链路，不改文献地图 Task11 逻辑。
+- **确认前不批量重排 13 个任务、不修改 `papers.json`、不重启服务。**
+
+### 验证方式（确认后执行）
+
+1. **一次性运维恢复**（写操作，仅确认后）：收敛残留 `indexing` → 重排 13 个版本（或先修启动恢复再重启由自愈接管），逐个 `GET /api/kb/papers` 核对 `chunkers.*.status=indexed` 且 `chunk_count>0`，落盘请求、响应、实体 ID、最终状态与产物路径。
+2. 后端定向：启动收敛接线、`auto_requeued` 清除语义、`submit_document_reindex` 竞态、重启模拟（先写 `indexing` 再启动 → 收敛且重排）、真失败不无限重试。
+3. 前端定向：失败态文案 /「重试」按钮、无残留「索引中 0%」。
+4. 真实服务 E2E：重启服务 → `/api/kb/health 200` → 目标文档 `chunkers.v2` 由 `indexing 0%` 变为 `indexed` 且有片段 → 浏览器硬刷新核对卡片。
+5. 人工验收：逐步点击「重试」、点击后提示、等待条件、完成态判据、失败恢复与产物查看路径。
+
+### 用户确认与冻结范围（2026-11-06）
+
+用户批复「这个确认做」，三点**全部按默认是**：
+
+1. **批量恢复**：确认后一次性恢复全部 13 个卡住版本，不只截图这一篇。
+2. **自动重排一次**：启动收敛成 `failed` 后允许走既有 `recover_failed_reindexes()` 的一次性机会重排；不无限重试。
+3. **最小修复**：仅 ① `main.py` lifespan 接线 `tasks.mark_interrupted_on_startup()`；② 消除 `submit_document_reindex()` 的「先写 `indexing` 再提交」竞态；③ 收敛时区分「被重启打断」与「真失败」的 `auto_requeued_chunkers` 标记语义；④ 前端失败态可操作提示与「重试」。**不做持久化队列 / Celery / DB outbox / 分布式调度**。
+
+**冻结的实现边界**（只读核实，绝对路径 + 行号）：
+
+| # | 文件 | 改动点 |
+|---|---|---|
+| B1 | `backend/app/main.py` | `:15-18` 增加 `tasks` 导入；`:59` `recover_failed_reindexes()` **之前**插入 `tasks.mark_interrupted_on_startup()`（沿用每段 try/except 只记日志、不阻塞启动） |
+| B2 | `backend/app/knowledge_base/application.py` | `:845-857` 把 `update_chunker_state(status=indexing)` 移到 `submit_index_task()` 返回 True 之后；返回 False / 提交抛异常时不写 `indexing`，回滚 `failed` 并给明确原因（可复用 `:1224-1236` 既有回滚范式） |
+| B3 | `backend/app/knowledge_base/infrastructure/store.py` | `:785-810` `mark_interrupted_tasks()` 收敛 `indexing → failed` 时，仅对本次因「服务重启导致中断」的版本清除 `auto_requeued_chunkers[chunker]`，让 B1 之后的自愈重排能生效；**真失败不动标记**，保留防重启风暴 |
+| F1 | `frontend/app.js` | `:6417-6425` / `:6473-6479` / `:6513-6519`：被重启打断的 failed 显示可读提示 +「重试」；收敛后不再残留「索引中 0%」。不改 `POST /reindex` 契约、不改轮询间隔 |
+| F2 | `frontend/styles.css` | `#kb-view` 作用域新增 `.kb-item-error-restart` / `.kb-item-hint` 两条失败态与兜底提示样式（评审 A-9 已补反向 DOM 断言） |
+| V1 | `frontend/index.html` | `app.js?v=70→71`、`styles.css?v=68→69`，同步全部版本断言 |
+
+**明确不做**（沿用上节「边界与明确不做」）：不改切分算法/embedding/LLM/Qdrant 代次门、不新增表字段迁移、不改 `papers.json` schema、不改 `GET /api/kb/papers` / `GET /api/kb/health` / `POST /reindex` 响应契约、不改知识库检索与文献地图逻辑、不自动无限重试。
+
+### 风险区（2026-11-06，架构评审 A-1 / A-8 强制约束）
+
+1. **不做持久化队列是用户裁决**：用户 2026-11-06 明确「只做最小修复，不做持久化队列」。因此索引任务仍由 `tasks.py` 的模块级单线程池 + 内存 `_running` 承载，**服务重启仍会丢失正在运行的线程任务**；代价由「启动收敛 `mark_interrupted_on_startup()` + 一次性自愈重排 `recover_failed_reindexes()`」兜住，不再出现永久 `indexing 0%`，但需要一次重启触发。
+2. **防重启风暴上界**：每次启动、每个 `(document, chunker)` 最多获得 **1 次**自动重排机会，由顶层 `auto_requeued_chunkers` 幂等标记保证；收敛时仅清除「被本次重启打断」版本的标记，真 `failed` 记录的标记一律保留。
+3. **残余窗口（有界，不是缺陷）**：`submit_document_reindex()` 返回到 `mark_chunker_auto_requeued()` 落盘之间不是原子的；若进程恰在该毫秒级窗口被杀，下次启动会先收敛再重排一次，即**重复重排一次**。后果有界：终态仍收敛到 `indexed` 或 `failed`，不会永久卡 `indexing 0%`。彻底闭合需持久化队列或「标记与状态同一次原子落盘」，均已排除在本次范围外。
+4. **提交与状态写入的窄窗口**：`submit_index_task()` 返回 True 与写 `indexing` 之间，若 runner 瞬间跑完并落盘终态，提交方不得覆盖；实现用「提交前采样 `before_status`、提交后比对 `current_status`，仅当两者相同才写 `indexing`」。若 runner 在采样窗口内写回与 `before_status` 同名的状态（要求纳秒级跑完整轮索引，单线程池 + LLM 实际不可达），仍会由启动收敛兜底。
+5. **代次门瞬时竞态（运维观测）**：2026-11-06 批量恢复时，首个任务写 manifest 期间 `_live_manifests_digest()` 短暂失配，导致同一批其余 11 个 `POST /reindex` 返回 503 `INDEX_FINALIZE_REQUIRED`；串行重试后全部 202 并完成。属既有代次门 fail-closed 设计，未改其逻辑（明确不做），批量运维需串行提交。证据见 `docs/sdd/plans/012/artifacts/2026-11-06-ops-recovery*.json`。
+6. **已知前端性能基线**：`tests/frontend/test_frontend_map_feasibility.py::test_synthetic_svg_supports_sparse_graph_interactions` 在本机稳定超阈（`maxGestureWallMs` 1.4–1.9s vs 1s），干净 HEAD 同样失败、fixture 自包含不加载本批次资源，与本批次无因果，单独立项跟踪，不放宽阈值掩盖。
+
+**分端执行**：后端 `backend-dev`（B1–B3 + 后端定向测试）；前端 `frontend-dev`（F1 + V1 + 前端定向测试），**跨端拆两次分派**；随后 `backend-reviewer` / `frontend-reviewer`、`backend-tester` / `frontend-tester` 分端评审回归；最后由主会话执行一次性运维恢复 13 个版本、重启服务与真实 E2E，`tester` 汇总验收、架构师签字后收口。

@@ -9,7 +9,16 @@ from backend.app.paper_discovery.infrastructure.paper_discovery_store import Pap
 
 def test_startup_does_not_run_legacy_fixed_collection_mutations():
     source = inspect.getsource(main.lifespan)
-    assert "mark_interrupted_on_startup" not in source
+    # spec-018 退役的是 *application* 那一份同名 facade 符号
+    #（`upload-closure-matrix.json` 的 `service-startup-index-migration`：
+    # `main.lifespan -> application.mark_interrupted_on_startup`），它来自
+    # legacy `services.kb.tasks`，属于旧固定 Collection 变更。`tasks.` 之下
+    # 的同名函数只把 metadata 里的 `indexing` 收敛为 `failed`，不碰
+    # Qdrant / alias / source，是本批次 spec-012 要求的启动收敛接线，
+    # 必须保留。这里用带限定名的字面串，避免把两条路径混为一谈。
+    assert "application.mark_interrupted_on_startup" not in source
+    # 正向断言：启动收敛必须已接线，防止再次漏接（spec-012 缺陷根因）。
+    assert "tasks.mark_interrupted_on_startup" in source
     assert "backfill_chunker_defaults" not in source
     assert "index_paper" not in source
     assert "delete_paper" not in source
