@@ -7,10 +7,16 @@
 
 因此本文件断言的是**用户可见性**（computed style / 元素矩形），而不是 `open` 属性——
 只断言 `open` 的用例在本次缺陷下会误报通过。
+
+同一入口还承担一个用户验收路径：点「应用外观」**保存成功后浮层必须自动收起**
+（失败/冲突/未确认必须保持展开），这里用真实浏览器走完整保存链路验证；
+四条保存分支的细则（409 / 未确认 / 明确失败）由
+`test_frontend_node_style_panel_collapse_on_apply.js` 在 `node:vm` 沙箱里逐条执行真实实现来覆盖。
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -23,6 +29,7 @@ STYLES = (ROOT / "frontend/literature-maps.css").read_text(encoding="utf-8")
 
 DISCLOSURE = ".literature-map-node-style-disclosure"
 FIELD = "#literature-map-node-style"
+SUMMARY = f"{DISCLOSURE} > summary"
 
 # 折叠态下 `#literature-map-node-style` 的可见性快照：display / visibility / 矩形面积。
 _VISIBILITY_JS = """
@@ -153,6 +160,98 @@ def test_node_style_fieldset_visibility_survives_viewport_switch() -> None:
         )
         assert _is_hidden(page.eval_on_selector(FIELD, _VISIBILITY_JS)), "用户收起后必须重新隐藏"
 
+        browser.close()
+
+
+def test_applying_node_style_collapses_the_panel_after_save_succeeds() -> None:
+    """用户验收路径：展开面板 → 调外观 → 点「应用外观」保存成功 → 浮层自动收起且内容真的不可见。
+
+    同时守住「收起不是禁用」：summary 仍可点击，再次点击能重新展开并看到已保存的取值。
+    """
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        _open_map(page)
+        page.locator('[data-node-id="node-a"] circle').click()
+
+        disclosure = page.locator(DISCLOSURE)
+        disclosure.locator("summary").click()
+        page.wait_for_function(
+            "(selector) => document.querySelector(selector)?.getBoundingClientRect().width > 0",
+            arg=FIELD,
+        )
+        field = page.locator(FIELD)
+        field.locator('input[name="fill_opacity"]').evaluate(
+            "input => { input.value = '0.65'; input.dispatchEvent(new Event('input', { bubbles: true })); }"
+        )
+        assert page.evaluate("window.__viewBodies.length") == 0, "前置：预览阶段不得写服务端"
+
+        field.locator(".literature-map-node-style-apply").click()
+        page.wait_for_function("window.__viewBodies.length === 1")
+        page.wait_for_function(
+            "document.querySelector('#literature-map-status')?.textContent.includes('节点外观已保存')"
+        )
+        body = json.loads(page.evaluate("JSON.stringify(window.__viewBodies[0])"))
+        assert body["node_style"] == {"fill_mode": "filled", "fill_opacity": 0.65}, body
+
+        disclosure = page.locator(DISCLOSURE)
+        assert disclosure.get_attribute("open") is None, (
+            "「应用外观」保存成功后节点样式浮层必须自动收起（details.open === false）"
+        )
+        collapsed = page.eval_on_selector(FIELD, _VISIBILITY_JS)
+        assert _is_hidden(collapsed), f"收起后浮层内容必须真的不可见，实际 {collapsed}"
+        assert field.is_hidden(), "收起后 fieldset 必须对用户不可见（不得残留竖条/占位）"
+
+        # 收起不等于禁用：summary 仍可点击，且展开后取值为已保存的外观。
+        summary = page.locator(SUMMARY)
+        assert summary.is_visible(), "收起后 summary「节点样式」仍须可见可点"
+        summary.click()
+        page.wait_for_function(
+            "(selector) => document.querySelector(selector)?.getBoundingClientRect().width > 0",
+            arg=FIELD,
+        )
+        field = page.locator(FIELD)
+        assert field.locator('input[name="fill_opacity"]').input_value() == "0.65", "再次展开后必须看到已保存的透明度"
+        assert field.locator('input[name="fill_mode"][value="filled"]').is_checked(), "再次展开后必须看到已保存的填充模式"
+
+        browser.close()
+
+
+def test_applying_unchanged_node_style_is_not_a_dead_click_and_collapses_the_panel() -> None:
+    """用户什么都不改直接点「应用外观」：不得点了没反应。
+
+    真实验收观察：不改任何值时「应用外观」被 `disabled` 掉，点击毫无反馈，面板也不收起。
+    期望：按钮可点；点击后不发任何写请求、不改已保存外观，但收起浮层并给出「外观未变更」文案。
+    """
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        _open_map(page)
+        page.locator('[data-node-id="node-a"] circle').click()
+
+        disclosure = page.locator(DISCLOSURE)
+        disclosure.locator("summary").click()
+        page.wait_for_function(
+            "(selector) => document.querySelector(selector)?.getBoundingClientRect().width > 0",
+            arg=FIELD,
+        )
+        field = page.locator(FIELD)
+        apply = field.locator(".literature-map-node-style-apply")
+        assert apply.is_enabled(), "无改动时「应用外观」不得禁用，否则用户点了没有任何反馈"
+
+        apply.click()
+        page.wait_for_function(
+            "document.querySelector('#literature-map-status')?.textContent.includes('外观未变更')"
+        )
+        assert page.evaluate("window.__viewBodies.length") == 0, "外观未变更时不得写服务端"
+
+        status = page.locator("#literature-map-status").text_content() or ""
+        assert status == "外观未变更，已收起节点样式设置。", f"文案必须固定，实际：{status!r}"
+        assert disclosure.get_attribute("open") is None, "无改动点击同样必须收起浮层（不得点了没反应）"
+        assert _is_hidden(page.eval_on_selector(FIELD, _VISIBILITY_JS)), "收起后 fieldset 必须真的不可见"
+
+        # 收起不等于禁用：summary 仍可再次展开。
+        assert page.locator(SUMMARY).is_visible(), "收起后 summary 仍须可点"
         browser.close()
 
 

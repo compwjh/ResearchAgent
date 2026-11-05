@@ -375,3 +375,358 @@ grep -n "literature-map-node-style" frontend/literature-maps.css          # 285-
 grep -n "\.open =\|style\.display" frontend/literature-maps.js            # 无命中
 python -m pytest tests/frontend/test_frontend_node_style_visibility.py -q  # 需真实 Chromium
 ```
+
+---
+
+# 第三轮补修复审（文档 + 保存确认后自动收起）· 2026-11-05
+
+> 复审角色：`frontend-reviewer`（只读，未改任何代码，未 commit，未跑后端 pytest）。
+> 复审范围：`frontend/**`、`tests/frontend/**`；后端改动不在本轮范围。
+> 工作目录：`/Users/wjh/.codex/worktrees/map-usability/ResearchAgent`（主工作区未触碰）。
+> 日志：`.codebuddy/agent-logs/spec-043/task-00/frontend-reviewer/20261105-160456.md`
+
+## R8. 本轮真实落盘（git diff 核对，非描述采信）
+
+```
+frontend/index.html                                  | 2 +-   (:805 literature-maps.js?v=38 → v=39)
+frontend/literature-maps.js                          | 3 ++    (:5249-5251 三行，含注释)
+tests/frontend/fixtures/literature_map_component.html| 2 +-   (:1120 → v=39)
+tests/frontend/test_frontend_literature_map_contract.py       | 2 +-
+tests/frontend/test_frontend_literature_map_expansion.py      | 2 +-
+tests/frontend/test_frontend_map_analysis_contract.py         | 2 +-
+tests/frontend/test_frontend_map_groups_exports.py            | 6 +--  (:18、:44 含裸数字断言 "38"→"39")
+tests/frontend/test_frontend_map_mobile_contract.py           | 6 +--  (:94、:97、:119 含裸数字断言)
+tests/frontend/test_frontend_node_style_visibility.py         | 61 +++  (新增 1 个真实浏览器用例)
+tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js | 新增（**未跟踪**，见 M1）
+```
+
+`frontend/literature-maps.css` 零改动（`git diff` 无该文件），v=26 保持不变。与「本轮只改 JS 收起点」的描述一致。
+
+## R9. 必查项 1：收起时机正确性 — **PASS（含 1 项 LOW）**
+
+### R9.1 收起点位置与调用者
+
+| 事实 | 证据 |
+|---|---|
+| 新增行位于 `updateSavedNodeStyle()` 末尾，语义是「已采纳服务端返回值」 | `frontend/literature-maps.js:5249-5251` |
+| 该函数开头有早退保护，非当前地图直接 return（**不会**收起别人的面板） | `frontend/literature-maps.js:5237` `if (mapId !== state.selectedMapId \|\| !state.map \|\| state.map.map_id !== mapId) return;` |
+| 全文件仅两处调用，均为成功分支 | `:5280`（PATCH 成功主分支）、`:5297`（断连后重新读取、值与草稿一致的分支） |
+| 第三处 `nodeStyle` 相关读写不涉及关闭 | `:5439` 仅只读校验 |
+
+`grep -n "updateSavedNodeStyle\|nodeStyleDisclosure" frontend/literature-maps.js` 命中行：`1176`（解构）、`1262`（收进 refs）、`5236`（定义）、`5251`（新增写）、`5280`、`5297`。**无其它调用者**。
+
+### R9.2 逐路径核对（是否误收起 / 漏收起）
+
+| 路径 | 代码位置 | 是否到达 `:5251` | 结论 |
+|---|---|---|---|
+| PATCH 成功 | `:5279-5281` | 到达 | 收起 ✅ 符合预期 |
+| 断连 / 超时后重读，值与草稿一致 | `:5290-5298` | 到达 | 收起 ✅ 符合预期（已确认落库） |
+| 断连后重读，值与草稿**不一致**（结果未确认） | `:5299-5305` | 不到达 | 保持展开 ✅ 不漏收起 / 不误收起 |
+| 重读请求本身抛错 | `:5306-5308` | 不到达 | 保持展开 ✅ |
+| 409 冲突 → 重读成功并保留草稿 | `:5284-5288` → `rereadNodeStyleAfterConflict` `:5254-5264` | 不到达（该函数**不碰 open**） | 保持展开、草稿保留 ✅ |
+| 409 且重读也失败 | `:5285-5287` catch | 不到达 | 保持展开 ✅ |
+| 明确失败（非 409、非 retryable） | `:5311` | 不到达 | 保持展开 ✅ |
+| 响应回来时 `state.active` 失效 / 已切图 | `:5279`、`:5283`、`:5293` 三处 `return` | 不到达 | 不误收起 ✅ |
+| 点击时前置条件不满足（未 dirty / 无地图 / 在飞） | `:5267` | 不到达 | 不误收起 ✅ |
+
+**结论：收起严格等价于「服务端返回值已被采纳为当前地图已保存状态」，无任何失败/未确认分支能触发收起，也无成功分支漏收起。**
+
+### R9.3 `finally` 中的 `renderNodeStyleControls()` 是否会重新展开
+
+- `:5312-5316` 的 `finally` 只做三件事：复位 `state.nodeStyleSaveInFlight`、恢复按钮 `disabled`、调 `renderNodeStyleControls()`。
+- `renderNodeStyleControls()`（`:5205-5219`）只写 `input.checked`、`input.value`、`output.textContent` 与两个按钮的 `disabled`，**不触碰 `.open`，也不重建 details**。
+- `buildNodeStyleDisclosure()` 未对 details 设 `open`（`:1311-1313`），details 只在 `:1176-1177` mount 一次，保存流程不会重建它。
+
+**结论：不会重新展开。** 收起后 draft 已在 `:5246` 被同步为已保存值，重开时 `renderNodeStyleControls()` 展示的是已保存取值。
+
+## R10. 必查项 2：与既有 CSS 折叠规则（v=26）配合 — **PASS**
+
+| 检查 | 证据 | 结论 |
+|---|---|---|
+| `open=false` 后内容真的不可见 | `frontend/literature-maps.css:293` `#literature-maps-view .literature-map-node-style-disclosure:not([open]) > .literature-map-node-style { display: none; }` | ✅ 与第二轮同一条规则，本轮未改 |
+| 该规则特异性压过 `:285` 的 `display:flex` | (1,3,0) vs (1,2,0)，且多一个属性选择器条件 | ✅ |
+| summary 仍可再次展开 | `:287` 仅 `list-style:none`（去三角）+ `cursor:pointer`，未设 `pointer-events:none`、未 disable；`:1312` summary 始终是 details 的直系子节点 | ✅ 原生 `details` 语义生效 |
+| 收起后 `[open]` 高亮态是否残留 | `:289` `[open] > summary` 只在展开时生效，`open=false` 自动回落 `:287` 的白底样式 | ✅ 视觉一致 |
+| 是否存在其它 CSS 覆盖 | `grep -n "literature-map-node-style" frontend/literature-maps.css` → 285-299 共 15 行，只有 `:285`（flex）与 `:293`（条件 none）两条 display 声明 | ✅ |
+
+## R11. 必查项 3：`?v=N` 与 XSS — **PASS**
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| JS 唯一真实引用为 v=39 | `grep -n "?v=" frontend/index.html` | `:805 <script src="/assets/literature-maps.js?v=39">` ✅ |
+| 断言 / fixture 同步（共 8 处，+1 真实引用 = 9 处） | `grep -rn "literature-maps.js?v=39"` | `index.html:805`、`test_frontend_map_analysis_contract.py:34`、`test_frontend_map_groups_exports.py:18,44`、`test_frontend_literature_map_contract.py:28`、`test_frontend_literature_map_expansion.py:28`、`test_frontend_map_mobile_contract.py:94,97`、`fixtures/literature_map_component.html:1120` ✅ |
+| 裸数字断言同步 | `re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "39"` | `test_frontend_map_groups_exports.py:45`、`test_frontend_map_mobile_contract.py:119` 均改为 `"39"` ✅ |
+| **v=38 源码残留** | `grep -rn "literature-maps.js?v=38"`（排除 `.git`/`__pycache__`） | **源码 0 命中**；仅 `docs/sdd/reviews/*`、`docs/sdd/spec-status-changelog.md` 的历史快照（时间点记录，**不可改**）| ✅ |
+| CSS 保持 v=26 | `frontend/index.html:9` + `git diff` 无 css 文件 | ✅ |
+| 历史 compatibility 注释保留 | `index.html:7,796-810` 各条 Task05/Task09/Task10/Legacy/Spec037 marker 全在，本轮 diff 未删任何一行注释 | ✅ |
+| 新增行无 `innerHTML` | `grep -c "innerHTML" frontend/literature-maps.js` → `0`；新增 3 行为注释 + `if (...) refs.nodeStyleDisclosure.open = false;` | ✅ |
+| 语法 | `node --check frontend/literature-maps.js` | `JS_OK` ✅ |
+
+## R12. 必查项 4：行为边界 — **PASS**
+
+| 边界 | 证据 | 结论 |
+|---|---|---|
+| 「取消预览」不顺带收起 | `cancelNodeStyleDraft()`（`:5230-5234`）只做 `state.nodeStyleDraft = {...state.nodeStyle}` + 两次重绘，完全不涉 open；按钮绑定 `:1306-1309` 直连该函数，不经过 `saveNodeStyle` | ✅ 原行为不变 |
+| 视口切换不改写开合 | `grep -n "\.open ="` 全文件只有 `:5251` 一处（新）；`buildNodeStyleDisclosure` 无 open 初始化；第二轮已删除的两处强制 `open=true` 未见回归 | ✅ |
+| 节点样式预览（拖动滑杆）不受影响 | `updateNodeStyleDraft()`（`:5221-5228`）只更新草稿并 `renderGraph()`；收起发生在保存成功之后 | ✅ |
+| 导出行为 | `hasUnappliedVisualDraft()`（`:5379-5381`）依赖 `nodeStyleIsDirty()`；保存成功后草稿已同步（`:5246`）故 dirty=false，导出不被误拦；失败路径草稿保留故仍正确拦截 | ✅ 无回归 |
+| 移动端 | 收起逻辑与视口无关，读写同一 `refs.nodeStyleDisclosure`；`literature-maps.css` 的 `@media` 段内无 `.literature-map-node-style` 覆盖 | ✅ 无回归 |
+| js 合同全量 | `for f in tests/frontend/*.js; do node "$f"; done` | **14/14 exit 0**（含新增用例）✅ |
+
+## R13. 风险问答
+
+**Q1：`updateSavedNodeStyle` 会不会在「保存失败」路径被调用，导致误收起？**
+不会。该函数只在 `:5280` 与 `:5297` 两处调用，两处的前置条件分别是「PATCH 返回成功」与「重读值与草稿逐字段相等」。409、未确认、明确失败、`!state.active` 四条路径在到达之前都已 `return`（见 R9.2 表）。函数自身还有 `:5237` 的 mapId 早退保护，异步回调落在已切换地图时不会收起当前面板。
+
+**Q2：收起后用户会不会以为数据没保存？**
+有 `setStatus('节点外观已保存。')`（`:5281`）与「已重新读取核实」（`:5298`）两条成功提示作为确认反馈，收起同时 status 落地。实测新用例断言了 status 文案，避免「静默收起」。
+
+**Q3：收起是否会让「草稿仍保留、可重试」的路径失去上下文？**
+不会。所有保留草稿的路径（409 / 未确认 / 失败）都**不收起**，面板保持展开，用户可直接再点「应用外观」。这正是本轮刻意选择的边界，且被 `test_frontend_node_style_panel_collapse_on_apply.js` 用例 3/4/5 分别锁死。
+
+**Q4：`finally` 里再渲染一次会不会把 open 又设回 true？**
+不会，`renderNodeStyleControls()` 与 details 的 `open` 无交集（见 R9.3）。这是本轮最需要确认的「隐含反转」点，已逐行核对。
+
+**Q5：CSS 未改、JS 变了，缓存是否正确失效？**
+JS `?v=38→39` 已升，浏览器会重新拉取改动后的 JS。CSS 无改动故 v=26 不动是正确的最小化选择（反向「为了看起来一致而乱升版本」才是坏味道）。
+
+**Q6：COST / 复杂度**
+本轮 +3 行（含 2 行注释）、0 新增抽象、0 新增全局状态，复用既有 `updateSavedNodeStyle` 成功汇聚点而非在两个分支各写一遍（DRY 正确）。不引入模型成本相关逻辑。
+
+## R14. 四项必守逐条判定（第三轮）
+
+| # | 必守项 | 判定 | 核对依据（命令 + 命中行） |
+|---|---|---|---|
+| 1 | **DOM 契约** | **PASS** | `grep -n "literature-map-node-style" frontend/literature-maps.css` → `:285-299`；`grep -n "literature-map-node-style" frontend/literature-maps.js` → `:1277,1278,1281,1291,1300,1302,1306,1311`。本轮新增行只引用既有 ref（`refs.nodeStyleDisclosure`，来自 `:1262` 的 `literature-map-node-style-disclosure`，CSS `:286` 存在），**未新增任何 class 名**，无孤儿钩子 |
+| 2 | **版本号 `?v=N`** | **PASS** | `grep -n "?v=" frontend/index.html` → `:9 css?v=26`、`:805 js?v=39`；`grep -rn "literature-maps.js?v=38"`（排除 .git/__pycache__）源码 0 命中，仅 docs 历史记录；9 处断言/fixture 一致（见 R11） |
+| 3 | **XSS** | **PASS** | `grep -c "innerHTML" frontend/literature-maps.js` → `0`；新增 3 行不含任何 HTML 字符串、不含 `innerHTML/outerHTML/insertAdjacentHTML/document.write`；`node --check` → `JS_OK` |
+| 4 | **CSS 作用域** | **PASS** | 本轮 **CSS 零改动**（`git diff` 无 `frontend/literature-maps.css`）；既有规则 `:293` 仍以 `#literature-maps-view` 限定，无裸标签选择器，`!important` 0 处 |
+
+## R15. 问题清单（第三轮）
+
+| 级别 | 问题 | 位置 | 说明 / 建议 |
+|---|---|---|---|
+| **MEDIUM** | 新增 js 测试**未被 git 跟踪**，且无任何 `.py`/CI 显式执行它 | `tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js` | `git ls-files --error-unmatch` 报 "Did you forget to 'git add'?"。项目对 js 合同的既定跑法是 `node tests/frontend/*.js` 全量 glob（`tests/e2e/README.md:7`、本报告 R6 第二轮命令），**工作区跑会执行、但若按文件清单提交即整文件丢失**，本轮最关键的回归护栏会静默消失。修复：`git add` 该文件，并在交付说明显式写出 `node tests/frontend/*.js`。注：这是打包/交付风险，不影响已落盘的实现正确性 |
+| LOW | 用例 6「取消预览」是**恒真断言** | `tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js:279-286` | 块内只 `makeHarness` + `assert.equal(h.details.open, true)` 两次，**未调用真实 `cancelNodeStyleDraft()`**，无论实现对错都会通过。建议从源码抽 `cancelNodeStyleDraft()` 进沙箱、执行后断言 open 仍为 true（与用例 7 同一手法）。当前不掩盖本轮缺陷（用例 1-5 已覆盖收起语义），故 LOW |
+| LOW | 任务描述「9 处断言/fixture」实际为 8 处测试/fixture + 1 处真实引用 | `tests/frontend/**` + `frontend/index.html:805` | 口径差异，实际同步更完整，无遗漏 |
+| LOW | 第二轮 LOW「`refs.nodeStyleDisclosure` 只写不读」**已消解** | `frontend/literature-maps.js:5251` | 本轮该 ref 已成为功能读点（写 `.open`），此 LOW 关闭 |
+| note | `docs/**` 与历史日志仍存 `literature-maps.js?v=38` | `docs/sdd/reviews/043-*`、`docs/sdd/spec-status-changelog.md:622` | 时间点快照，**不应修改**，不构成源码残留 |
+
+无 CRITICAL / HIGH 问题。
+
+## R16. 第三轮结论
+
+**通过（Approve），可合并；1 项 MEDIUM 建议合入前顺手处理。**
+
+- 根因修复到位：收起点放在「成功路径唯一汇聚函数」`updateSavedNodeStyle()` 的末尾，且该函数自带 mapId 早退保护，语义上等价于「已确认落库才收起」，不需要在两个成功分支各写一遍（避免漏改其一）。
+- 边界选择正确：失败 / 409 / 结果未确认 / 草稿保留 / `state.active` 失效五类路径全部「保持展开」，用户重试上下文不丢；`finally` 的重渲染与 `open` 无交集，不存在「收起又被展开」的隐含反转。
+- 与 v=26 CSS 规则咬合完好：`open=false` → `:not([open]) > fieldset { display:none }` 生效，summary 未被禁用，`:289` 的高亮态随 open 自动回落。
+- 版本号最小化正确：只升 JS（38→39），CSS 零改动故 v=26 不动；9 处一致，源码无 v=38 残留。
+- 唯一实质风险是**测试文件未跟踪**（MEDIUM），属交付完整性而非实现正确性；建议 `git add` 后按 `node tests/frontend/*.js` 全量复跑（本轮实测 14/14 exit 0）。
+- 阻塞项：**无 CRITICAL/HIGH**。若项目要求「新增回归测试必须入库」作为合并门禁，则 M1 应视作合入前必办项。
+
+### 第三轮评审摘要
+
+| 严重级别 | 数量 | 状态 |
+|----------|-------|------|
+| CRITICAL | 0 | pass |
+| HIGH | 0 | pass |
+| MEDIUM | 1 | warn（测试未跟踪，合入前 `git add`） |
+| LOW | 3 | note |
+
+Verdict: **Approve** —— 实现无阻塞；MEDIUM 为交付/打包风险，一行 `git add` 即可消解，不阻塞逻辑正确性判定。
+
+### 第三轮复现用校验命令
+
+```bash
+cd /Users/wjh/.codex/worktrees/map-usability/ResearchAgent
+node --check frontend/literature-maps.js                                  # JS_OK
+grep -n "?v=" frontend/index.html                                        # :9 css v=26, :805 js v=39
+grep -rn "literature-maps.js?v=38" --include=*.py --include=*.html --include=*.js .   # 0 命中
+grep -n "updateSavedNodeStyle\|nodeStyleDisclosure" frontend/literature-maps.js        # 1176/1262/5236/5251/5280/5297
+grep -n "\.open =" frontend/literature-maps.js                           # 仅 :5251
+grep -c "innerHTML" frontend/literature-maps.js                          # 0
+grep -n "literature-map-node-style" frontend/literature-maps.css         # 285-299；仅 :293 为折叠隐藏
+node tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js  # ok
+for f in tests/frontend/*.js; do node "$f" || exit 1; done               # 14/14 exit 0
+git ls-files --error-unmatch tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js  # ← 当前报错（M1）
+```
+
+---
+
+# R17. 第四轮独立复审（人工验收阶段第四轮 UX 缺陷修复）
+
+- **复审时间点**：main @ `6307d0db`，工作区含未提交改动（第四轮修复）。
+- **复审对象**：缺陷 A「节点样式展开后不改值点『应用外观』毫无反应、详情不收起」；缺陷 B「多选模式下点『应用到 N 篇』后颜色设置面板不消失」。
+- **复审方式**：只信代码事实。逐一 Read `frontend/literature-maps.js` 真实行段、`frontend/index.html`、`frontend/literature-maps.css`、fixture 与全部新增测试；实跑 `node --check`、15 个 `tests/frontend/*.js`、`.venv` 下 pytest；并在 **临时副本** 上做变异验证（未触碰业务代码）。
+- **评审边界**：仅 `frontend/**`；`backend/**` 不在本轮范围（由 `backend-reviewer` 负责）。
+
+## R18. 第四轮结论
+
+**通过（Approve），可合并。P0 = 0，P1 = 0，阻塞 = 0。**
+
+两个缺陷的修复在代码事实上均成立，且失败/冲突/未确认路径未被误收起（保留重试上下文）。遗留 2 项 MEDIUM（交付/测试质量问题，不影响实现正确性判定）。
+
+### 第四轮评审摘要
+
+| 严重级别 | 数量 | 状态 |
+|----------|-------|------|
+| CRITICAL | 0 | pass |
+| HIGH | 0 | pass |
+| MEDIUM | 2 | warn（测试未跟踪；一处用例断言偏弱） |
+| LOW | 2 | note |
+
+Verdict: **Approve** —— 无阻塞项。MEDIUM 均为交付完整性/测试强度问题，一行 `git add` 与一处断言收紧即可消解。
+
+## R19. 六项复审重点逐项结论
+
+### 1. DOM 契约 — **PASS**
+
+| 契约点 | 核对命令 | 事实 | 判定 |
+|---|---|---|---|
+| `.literature-map-node-style-disclosure` | `grep -n "node-style-disclosure" frontend/literature-maps.css` | CSS `:286-293`（`:293` 为 `:not([open]) > .literature-map-node-style{display:none}`）；JS `:1314` 生成 | PASS |
+| `#literature-map-node-style` | 同上 | `fieldset` 由 `buildNodeStyleDisclosure()` 生成，JS `:5224` `refs.nodeStyle` 读取 | PASS |
+| `.literature-map-node-style-apply` | `grep -n "node-style-apply" frontend/literature-maps.js` | `:1305` 创建、`:5225` 查询，class 两侧一致 | PASS |
+| `.literature-map-color-palette[data-target="selection"]` | `grep -n "literature-map-color-palette" frontend/literature-maps.css` | CSS `:304/:305`；JS `:659-660` `dataset.target = target`；`:1188` 创建 selection 实例 | PASS |
+| `#literature-map-multi-select-toggle` | 测试选择器 | `.venv/bin/python -m pytest tests/frontend/test_frontend_selection_color_palette_ux.py` → 2 passed（真实点击该 id） | PASS |
+| 新增 `hidden` 是否真隐藏 | `grep -n "\[hidden\]" frontend/literature-maps.css` | `:305` `.literature-map-color-palette[hidden]{display:none!important}`，同特异性 `!important` 压过 `:304` 的 `display:grid` | PASS |
+| 是否引入新 DOM class | `git diff frontend/literature-maps.js \| grep "^+" \| grep createElement/class` | 空。本轮只改 `hidden`/`.open`/`disabled`/`textContent`，**零新增 class** | PASS |
+
+补充：`selectionPalette` 初始 `hidden = true`（`:1189`），`renderMultiSelectControls()` 是唯一隐藏入口（`renderGraph()` 首行 `:4713` 调用它），不存在两套隐藏逻辑打架。
+
+### 2. `?v=N` 与测试断言 — **PASS**
+
+- `grep -rn "literature-maps\.js?v=39" frontend/ tests/`（排除 `__pycache__`）→ **0 命中**；仅 `docs/` 历史报告与变更日志保留 38/39，属时间点快照，不应回改。
+- `frontend/index.html:805` = `/assets/literature-maps.js?v=40` ✅
+- `literature-maps.css?v=26`（`:9`）、`app.js?v=67`（`:807`）**未被误改** ✅
+- `tests/frontend/fixtures/literature_map_component.html:1120` = `v=40` ✅
+- 两处正则断言已升 40：`test_frontend_map_groups_exports.py:45`、`test_frontend_map_mobile_contract.py:119`（`re.findall(...)[-1] == "40"`）✅
+- 静态断言实测：`'/assets/literature-maps.js?v=40' in INDEX` = True；`re.findall(r'literature-maps\.js\?v=(\d+)', INDEX)[-1]` = `40` ✅
+- 6 个 py 契约文件 + fixture 与 `index.html` 版本一致，共 8 处断言/引用同步，无遗漏 ✅
+
+### 3. XSS / 注入 — **PASS**
+
+- `grep -c "innerHTML" frontend/literature-maps.js` → **0**；`git diff frontend/literature-maps.js | grep innerHTML` → 空。
+- 本轮新增三条文案均为**静态字符串字面量**，经 `setStatus()` → `refs.status.textContent = message`（`:219-223`），无拼接、无用户输入：
+  - `'颜色已保存，设置面板已收起。'`（`frontend/literature-maps.js:2121`）
+  - `'颜色已保存（已重新读取核实），设置面板已收起。'`（`:2139`）
+  - `'外观未变更，已收起节点样式设置。'`（`:5283`）
+- `git diff | grep "console\."` → 空，无调试残留。
+
+### 4. 行为边界 — **PASS**（本轮重点，逐条实测）
+
+**4.1 无变更分支早退保护**（缺陷 A 修复核心）
+
+```js
+// frontend/literature-maps.js:5277-5283
+if (!state.map?.map_id || !state.active || state.nodeStyleSaveInFlight) return;
+if (!nodeStyleIsDirty()) {
+  if (refs.nodeStyleDisclosure) refs.nodeStyleDisclosure.open = false;
+  setStatus('外观未变更，已收起节点样式设置。');
+  return;
+}
+```
+
+- 三条件早退保护**保留在无变更分支之前**，无变更分支不可绕过 map 未选/页面失活/保存中三种前置 ✅
+- 无变更分支**零网络请求**（`request()` 在其后 `:5290` 才调用）、**零 state 写入**（不碰 `nodeStyle` / `map` / `nodeStyleDraft`）✅
+- 浏览器实测：`test_frontend_node_style_visibility.py::test_applying_unchanged_node_style_is_not_a_dead_click_and_collapses_the_panel` 断言 `window.__viewBodies.length == 0` 且 `status == "外观未变更，已收起节点样式设置。"`，已通过。
+- `cancel` 按钮 disabled 逻辑 `!dirty || inFlight`（`:5229`）**未被误改**；只有 `apply` 去掉了 `!dirty`（`:5228`）✅ 一处改动面收得极准。
+
+**4.2 失败 / 409 / 未确认路径仍保持展开（节点样式）**
+
+收起点收敛在 `updateSavedNodeStyle()` 末尾（`:5262`），而该函数只有两个调用者：`:5297`（主成功）、`:5314`（重读取核实成功）。逐路径核对：
+
+| 路径 | 是否调用 `updateSavedNodeStyle` | 是否收起 | 期望 | 判定 |
+|---|---|---|---|---|
+| PATCH 成功 | 是（`:5297`） | 收起 | 收起 | PASS |
+| 409 冲突 → `rereadNodeStyleAfterConflict` | 否（`:5265-5277`，仅重置草稿并提示重试） | 保持展开 | 保持展开 | PASS |
+| 网络异常 + 核实一致 | 是（`:5314`） | 收起 | 收起 | PASS |
+| 网络异常 + 核实不一致/核实抛错 | 否（`:5316-5325`） | 保持展开 | 保持展开 | PASS |
+| 明确失败（4xx/5xx 非 409） | 否（`:5327`） | 保持展开 | 保持展开 | PASS |
+| `finally` 重渲染 | `renderNodeStyleControls()` 不触碰 `open` | 无反转 | 无反转 | PASS |
+
+**4.3 `selectionPaletteDismissed` 生命周期自洽（缺陷 B 修复核心）**
+
+- 置 `true`：仅两个**确认成功**分支 —— `:2117`（主成功）、`:2137`（核实成功）✅
+- 重置 `false`：`:1801`（开启多选）、`:1814`（退出多选）、`:1838`（`toggleMultiSelectNode` 调选择）✅
+- 失败 / 409 / 未确认：**不写入**，故面板保持可见 ✅ 浏览器用例 `test_selection_palette_keeps_visible_when_conflict` 断言 `palette.is_visible()` 已通过。
+- 「应用后立刻又被 render 显示」漏洞：**不存在**。`applyNodeColor()` 的成功分支设 `true` → `finally` 调 `renderMultiSelectControls()`（`:2155`）读到的就是 `true` → 隐藏；`finally` 末尾的 `.literature-map-color-apply` disabled 重算（`:2156`）只改 `disabled` 不改 `hidden`。
+- 「永远打不开」漏洞：**不存在**。用户只要再点任一节点触发 `toggleMultiSelectNode`（`:1838`）即重置为 `false`；开关多选（`:1801`/`:1814`）同样重置。浏览器用例已实测「收起 → 再点节点 → `palette.is_visible()`」全链路通过。
+- 语义边界说明：应用成功后用户**再点色板改色**不会重开面板（面板已隐藏，点不到），需先点节点；这是既定交互（面板是「选择驱动」而非「常驻」），与 `setStatus` 文案「设置面板已收起」一致，不视为缺陷。
+
+**4.4 是否误伤既有行为 — PASS**
+
+- 单选节点颜色（`target='node'`）：`renderMultiSelectControls()` 只动 `refs.selectionPalette`（多选专用）；`target='node'` 走 `renderNodeDetail` 内的 `.literature-map-node-color-section .literature-map-color-palette`，不受 `selectionPaletteDismissed` 影响 ✅
+- 分组颜色（`target='group'`）：`applyGroupColor()`（`:2162` 起）完全未触碰新标记 ✅
+- 「取消预览」：`cancelNodeStyleDraft()` 未改，仍 `nodeStyleDraft = {...nodeStyle}` + 重渲染，不收起 ✅
+- 退出多选：`:1814` 在两处清理后仍 `renderGraph()` 且 `selectionPaletteDismissed` 归 `false`，下次进入不受污染 ✅
+- `MAX_MAP_NODES` 超限提示路径（`:1832-1834`）在重置语句**之前** `return`，不会误重置标记 ✅（顺序正确，不影响「收起中」状态）
+
+### 5. 测试有效性 — **PASS**
+
+- **执行真实源码，非复制实现**：两个新 JS 用例用 `extract(name)` 正则从 `frontend/literature-maps.js` **原样摘出函数体**（`updateSavedNodeStyle` / `saveNodeStyle` / `rereadNodeStyleAfterConflict` / `renderMultiSelectControls` / `toggleMultiSelectMode` / `toggleMultiSelectNode`），放进 `node:vm` 沙箱执行；且额外断言 `const state = {...}` 块内**必须含** `selectionPaletteDismissed` 字段，实现删字段时测试会失败而非静默通过 ✅
+- **变异验证（决定性证据）**：在 `mktemp -d` 临时副本上把修复回退（palette `hidden` 去掉 `selectionPaletteDismissed`、`apply.disabled` 加回 `!dirty`）→ `test_frontend_selection_palette_dismiss_on_apply.js` **立即失败**（`strictEqual` expected true）。证明该测试真能咬住本缺陷，不是恒真断言。临时副本已删除，业务代码未改 ✅
+- **py 用例断言用户可见性**：`test_frontend_selection_color_palette_ux.py` 用 `palette.is_hidden()` / `palette.is_visible()` / `getBoundingClientRect().width > 0`；`test_frontend_node_style_visibility.py` 用 `_is_hidden(computed)` + `field.is_hidden()` + `summary.is_visible()`，不是只断言 `open` 属性 ✅
+- **实跑结果**：`.venv/bin/python -m pytest`（6 个 py 文件）→ **62 passed in 65.59s**；`test_frontend_selection_color_palette_ux.py` → **2 passed**；15 个 `tests/frontend/*.js` 连续 6 轮全绿 ✅
+- **命名合规**：4 个新增/改动测试文件 `grep "spec0[0-9][0-9]\|task[0-9][0-9]"` → **0 命中**，文件名与函数名不含 spec/task 编号 ✅
+
+### 6. 交付风险 — **有 MEDIUM**
+
+- 3 个**未纳入版本控制**的新测试文件（主会话提交前须显式 `git add`）：
+  1. `tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js`
+  2. `tests/frontend/test_frontend_selection_palette_dismiss_on_apply.js`
+  3. `tests/frontend/test_frontend_selection_color_palette_ux.py`
+- 另有 2 个与本任务无关的 untracked 目录/文件（`.playwright-cli/`、`artifacts/jd-agent-infra-capability-map.md`），**建议不要一并提交**。
+- 跑法覆盖：项目对 JS 合同测试的既定跑法是 `node tests/frontend/*.js` 全量 glob（无 pytest 收集器、无 Makefile 目标），两个新 JS 文件**会被 glob 覆盖**，不属于「孤岛测试」；但**必须显式写进交付说明**，否则按文件清单提交时极易漏。py 用例由 pytest 正常收集。
+
+## R20. 问题清单（第四轮）
+
+| 级别 | 问题 | 文件:行 | 证据与最小修复建议 |
+|---|---|---|---|
+| MEDIUM | 3 个新增测试文件**未跟踪**，交付时若不 `git add` 则本轮最关键的回归护栏整文件丢失 | `tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js`、`..._selection_palette_dismiss_on_apply.js`、`..._selection_color_palette_ux.py` | `git status --porcelain` 显示 `??`。修复：提交前 `git add` 这三个文件，并在交付说明写明 `node tests/frontend/*.js` + `.venv/bin/python -m pytest tests/frontend/` |
+| MEDIUM | 用例 6「失败路径不得收起」断言偏弱：块内只连调两次 `renderMultiSelectControls()`，未让 `applyNodeColor()` 的 catch 分支真实执行，「失败路径不置位标记」这一关键不变量**未被执行性验证** | `tests/frontend/test_frontend_selection_palette_dismiss_on_apply.js:217-226` | 注释自承「失败分支不会置位收起标记（本轮实现要求）」——靠约定而非执行。修复：像 collapse 用例那样从源码抽 `applyNodeColor()`，注入 `request` 抛出 409/网络错的桩，执行后断言 `hidden === false` 且 `colorDraft` 保留（浏览器侧已有 409 用例兜底，故不升级为 HIGH） |
+| LOW | 「无改动点击」用例是**首次运行偶发失败**、后续 26 次批量 + 20 次单跑均无法复现；测试无时序/随机依赖，倾向宿主资源抖动（该次与并行变异脚本同窗口） | `tests/frontend/test_frontend_selection_palette_dismiss_on_apply.js` | 无法稳定复现，如实记录。建议 CI 中该文件跑 2 次或加 `--test-reporter` 留证，避免误判为 flaky 或被 flaky 掩盖 |
+| LOW | 应用成功后用户无法**直接再调色**（面板已隐藏，需先点节点才重现） | `frontend/literature-maps.js:1787`、`:1838` | 属既定「选择驱动」交互，与文案一致，不判缺陷。若后续验收希望「保存后仍可微调」，可改为成功后仅折叠色板保留 HEX 输入 |
+
+## R21. 四项必守逐条判定（第四轮）
+
+| 必守项 | 判定 | 核对依据（命令 + 命中行） |
+|---|---|---|
+| 1. DOM 契约（class 双向存在） | **PASS** | `grep -n "literature-map-color-palette" frontend/literature-maps.css` → `:304/:305`；`grep -n "node-style-disclosure" frontend/literature-maps.css` → `:286-293`；`grep -n "node-style-apply" frontend/literature-maps.js` → `:1305/:5225`；本轮 diff **零新增 class**，新增 `hidden` 由 `:305` 的 `[hidden]{display:none!important}` 保证真隐藏 |
+| 2. `?v=N` 同步递增 | **PASS** | `grep -n "?v=" frontend/index.html` → `:805 literature-maps.js?v=40`（38→40）；`:9 literature-maps.css?v=26` 未动；`:807 app.js?v=67` 未动；`grep -rn "literature-maps\.js?v=39" frontend/ tests/` → 0 命中（`__pycache__`/`docs` 除外） |
+| 3. XSS（禁 innerHTML 拼用户输入） | **PASS** | `grep -c "innerHTML" frontend/literature-maps.js` → `0`；新增 3 条文案均为静态字面量经 `setStatus()`（`:219-223` `textContent`） |
+| 4. CSS 作用域 | **PASS** | 本轮 **CSS 零改动**（`git diff --stat` 无 `literature-maps.css`）。核对既有规则均以 `#literature-maps-view` 前缀限定（`:286-320`），无裸全局标签选择器 |
+
+## R22. 残留风险与建议
+
+1. **必须 `git add` 三个新测试文件**（MEDIUM M1），否则缺陷 A/B 的回归护栏在提交后消失。这是本轮唯一有实质后果的交付项。
+2. **收紧「失败路径不收起」用例**（MEDIUM M2）：当前靠注释约定，建议改为执行真实 `applyNodeColor()` 的 catch 分支。
+3. 「应用成功后不直接重开色板」是产品交互选择，若下一轮验收仍有异议，按 R20 的 LOW 建议改为「折叠色板保留 HEX」。
+4. 偶发首次失败未能复现（LOW L1），建议 CI 对该文件重复执行以留证，避免今后被误标 flaky。
+
+## R23. 第四轮复现用校验命令（全部实跑通过）
+
+```bash
+cd /Users/wjh/ResearchAgent
+node --check frontend/literature-maps.js                                    # SYNTAX_OK
+grep -n "?v=" frontend/index.html                                          # :9 css v=26, :805 js v=40, :807 app.js v=67
+grep -rn "literature-maps\.js?v=39" frontend/ tests/ | grep -v __pycache__  # 0 命中
+grep -c "innerHTML" frontend/literature-maps.js                            # 0
+grep -n "selectionPaletteDismissed" frontend/literature-maps.js            # :76 :1787 :1801 :1814 :1838 :2117 :2137
+grep -n "nodeStyleDisclosure" frontend/literature-maps.js                  # :1179 :1265 :1314-1316 :5262 :5281
+node tests/frontend/test_frontend_node_style_panel_collapse_on_apply.js     # ok
+node tests/frontend/test_frontend_selection_palette_dismiss_on_apply.js     # ok
+for f in tests/frontend/*.js; do node "$f" || exit 1; done                 # 15/15 exit 0（连续 6 轮）
+.venv/bin/python -m pytest tests/frontend/test_frontend_literature_map_contract.py \
+  tests/frontend/test_frontend_literature_map_expansion.py \
+  tests/frontend/test_frontend_map_analysis_contract.py \
+  tests/frontend/test_frontend_map_groups_exports.py \
+  tests/frontend/test_frontend_map_mobile_contract.py \
+  tests/frontend/test_frontend_node_style_visibility.py -q                 # 62 passed
+.venv/bin/python -m pytest tests/frontend/test_frontend_selection_color_palette_ux.py -q  # 2 passed
+git status --porcelain                                                     # 3 个 ?? 新测试（M1）
+```
+
+> 注：系统 `python3` 无 playwright，pytest 须用项目 `.venv/bin/python`，否则 44 个用例 collection error。
+
+- **进展日志**：`.codebuddy/agent-logs/spec-043/task-00/frontend-reviewer/20261105-172320.md`

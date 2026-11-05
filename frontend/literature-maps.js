@@ -71,6 +71,9 @@
     groups: [],
     multiSelectActive: false,
     multiSelectedNodeIds: new Set(),
+    // 多选颜色面板在保存成功后主动收起（否则挡住刚上好色的节点）；
+    // 用户再次调整选择或开关多选模式时重置，让面板能重新出现。
+    selectionPaletteDismissed: false,
     colorDraft: null,
     colorSaveInFlight: false,
     recentColorBuckets: new Map(),
@@ -1781,7 +1784,7 @@
     const count = state.multiSelectedNodeIds.size;
     if (refs.selectionCount) refs.selectionCount.textContent = `已选 ${count} 篇`;
     if (refs.selectionPalette) {
-      refs.selectionPalette.hidden = !state.multiSelectActive || count === 0;
+      refs.selectionPalette.hidden = !state.multiSelectActive || count === 0 || state.selectionPaletteDismissed;
       const apply = refs.selectionPalette.querySelector('.literature-map-color-apply');
       if (apply) {
         apply.textContent = `应用到 ${count} 篇`;
@@ -1795,6 +1798,7 @@
     if (!state.multiSelectActive) {
       state.multiSelectActive = true;
       state.multiSelectedNodeIds.clear();
+      state.selectionPaletteDismissed = false;
       state.selectedNodeId = null;
       state.selectedNode = null;
       state.nodeRequest += 1;
@@ -1807,6 +1811,7 @@
     const selectedNodeId = [...state.multiSelectedNodeIds].find((nodeId) => activeNodes().some((node) => node.node_id === nodeId)) || null;
     state.multiSelectActive = false;
     state.multiSelectedNodeIds.clear();
+    state.selectionPaletteDismissed = false;
     state.colorDraft = null;
     renderGraph();
     if (selectedNodeId) selectNode(selectedNodeId);
@@ -1829,6 +1834,8 @@
       state.multiSelectedNodeIds.add(nodeId);
     }
     if (state.colorDraft?.target === 'selection') state.colorDraft.nodeIds = [...state.multiSelectedNodeIds];
+    // 用户又点了节点调整选择：重新显示颜色面板，否则收起后就再也打不开。
+    state.selectionPaletteDismissed = false;
     renderGraph();
   }
 
@@ -2106,10 +2113,12 @@
       updateGraphColorOverrides(nodeIds, colorOverride, Array.isArray(payload.nodes) ? payload.nodes : []);
       if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
       state.colorDraft = null;
+      // 保存成功才收起多选颜色面板；失败 / 409 / 未确认不走这里，面板保持可见以便重试。
+      state.selectionPaletteDismissed = true;
       renderGraph();
       renderGroups();
       if (!state.multiSelectActive && state.selectedNode) renderNodeDetail(state.selectedNode);
-      setStatus('颜色已保存。', 'waiting');
+      setStatus('颜色已保存，设置面板已收起。', 'waiting');
     } catch (error) {
       if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
       if (error.status === 409) {
@@ -2125,9 +2134,10 @@
             if (Number.isInteger(revision)) state.map = { ...state.map, revision };
             if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
             state.colorDraft = null;
+            state.selectionPaletteDismissed = true;
             renderGraph();
             if (!state.multiSelectActive && state.selectedNode) renderNodeDetail(state.selectedNode);
-            setStatus('颜色已保存（已重新读取核实）。', 'waiting');
+            setStatus('颜色已保存（已重新读取核实），设置面板已收起。', 'waiting');
             return;
           }
           setStatus('保存结果未能确认；已重新读取地图，颜色草稿仍保留。请核对后重试。', 'error');
@@ -5214,7 +5224,8 @@
     const dirty = nodeStyleIsDirty();
     const apply = refs.nodeStyle.querySelector('.literature-map-node-style-apply');
     const cancel = refs.nodeStyle.querySelector('.literature-map-node-style-cancel');
-    if (apply) apply.disabled = !state.map?.map_id || !dirty || state.nodeStyleSaveInFlight;
+    // 「应用外观」不再因「无改动」而禁用：无改动点击也必须给出反馈并收起面板，而不是点了没反应。
+    if (apply) apply.disabled = !state.map?.map_id || state.nodeStyleSaveInFlight;
     if (cancel) cancel.disabled = !dirty || state.nodeStyleSaveInFlight;
   }
 
@@ -5246,6 +5257,9 @@
     state.nodeStyleDraft = { ...nextStyle };
     renderNodeStyleControls();
     renderGraph();
+    // 保存已确认成功（主成功或重新读取核实成功）后收起面板，让出画布；
+    // 只有走到这里的成功路径才会收起：失败 / 409 / 结果未确认仍保持展开以便重试。
+    if (refs.nodeStyleDisclosure) refs.nodeStyleDisclosure.open = false;
   }
 
   async function rereadNodeStyleAfterConflict(mapId, draft) {
@@ -5261,7 +5275,13 @@
   }
 
   async function saveNodeStyle(button) {
-    if (!state.map?.map_id || !state.active || state.nodeStyleSaveInFlight || !nodeStyleIsDirty()) return;
+    if (!state.map?.map_id || !state.active || state.nodeStyleSaveInFlight) return;
+    // 外观没有任何改动时也必须有响应：不发请求、不动已保存外观，只收起面板并说明。
+    if (!nodeStyleIsDirty()) {
+      if (refs.nodeStyleDisclosure) refs.nodeStyleDisclosure.open = false;
+      setStatus('外观未变更，已收起节点样式设置。');
+      return;
+    }
     const mapId = state.map.map_id;
     const draft = { ...state.nodeStyleDraft };
     const expectedRevision = Number(state.map.revision);
