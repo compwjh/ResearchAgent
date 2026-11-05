@@ -9,12 +9,13 @@
 存储坏了最多退回实时探测，绝不影响聊天主链路。
 """
 
+import contextlib
 import json
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from backend.app.platform.config import BASE_DIR
 
@@ -41,13 +42,29 @@ def set_db_path(path: Optional[Path]) -> None:
         _db_path = Path(path) if path is not None else None
 
 
-def _connect() -> sqlite3.Connection:
+@contextlib.contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
+    """以事务语义打开连接，并在退出时**始终关闭**，避免 SQLite FD 泄漏。
+
+    ``sqlite3.Connection.__exit__`` 只 commit/rollback、不 close，连接只能等 GC；
+    长跑服务反复读写能力库会累积未释放的 ``model_capabilities.sqlite3`` FD
+    （与 paper_discovery / task_store 同根因）。
+    """
     path = _db_path or _DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout=5000")
-    return connection
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=5000")
+        try:
+            yield connection
+        except BaseException:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+    finally:
+        connection.close()
 
 
 def _ensure_schema(connection: sqlite3.Connection) -> None:

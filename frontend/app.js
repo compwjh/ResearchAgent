@@ -5321,6 +5321,41 @@ function showView(view) {
   }
 }
 
+// 位置 hash → showView() 入参（短 view 名）。
+// 只登记本文件掌管的视图：`#research-view` 由 research-tasks.js 自己同步（它监听
+// hashchange、初始化时自行 showView、并用 replaceState 写 hash），这里刻意不收，
+// 否则两个视图切换器会互相打架。
+// 未命中（未知 hash / 空 hash / `#research-view`）返回 null，由调用方决定回落策略。
+const HASH_VIEW_MAP = Object.freeze({
+  '#chat': 'chat',
+  '#models-view': 'models',
+  '#memory-view': 'memory',
+  '#kb-view': 'kb',
+  '#papers-view': 'papers',
+  '#literature-maps-view': 'literature-maps',
+  '#skill-tool-view': 'skill-tool',
+});
+
+function viewForLocationHash(hash) {
+  if (typeof hash !== 'string' || hash === '') return null;
+  const key = hash.trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(HASH_VIEW_MAP, key) ? HASH_VIEW_MAP[key] : null;
+}
+
+// 初始化与 hashchange 共用入口：把当前 location.hash 反映到主内容区。
+// 一律走 showView()，因此 papers 在 paperState.enabled=false 时回落 chat、
+// hideAllMainAreas() 保证单视图互斥等既有语义都被保留。
+function syncViewFromLocationHash(hash) {
+  const view = viewForLocationHash(hash);
+  if (view) {
+    showView(view);
+    return;
+  }
+  // `#research-view`（以及任何未知 hash）这里不切换，交给 research-tasks.js 处理。
+  if (typeof hash === 'string' && hash.trim().toLowerCase() === '#research-view') return;
+  showView('chat');
+}
+
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', (event) => {
     event.preventDefault();
@@ -5339,9 +5374,13 @@ document.querySelectorAll('.nav-item').forEach((item) => {
     item.click();
   });
 });
-
-showView('chat');
-
+// 初始化：按 location.hash 直达对应视图（此前无条件 showView('chat')，导致带
+// `#literature-maps-view` 刷新后仍停在「对话」）。hashchange 时同样同步，
+// 且只处理本文件掌管的视图（`#research-view` 仍归 research-tasks.js）。
+syncViewFromLocationHash(window.location.hash);
+window.addEventListener('hashchange', () => {
+  syncViewFromLocationHash(window.location.hash);
+});
 // ===== Skill / Tool 管理视图（spec-023 Task08） =====
 let stSkills = [];
 let stTools = [];

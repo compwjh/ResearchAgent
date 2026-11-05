@@ -20,6 +20,10 @@ RERANKER_START="$ROOT_DIR/deploy/reranker/start.sh"
 RERANKER_STOP="$ROOT_DIR/deploy/reranker/stop.sh"
 RERANKER_RUNTIME_ENV="$ROOT_DIR/deploy/reranker/.runtime/runtime.env"
 RERANKER_ENABLED="${RERANKER_ENABLED:-true}"
+# 文件描述符软限制：默认 4096，可用环境变量覆盖。
+# macOS 的 launchctl 默认 maxfiles 软限制为 256，长跑服务会因 SQLite/静态资源句柄
+# 累积触发 "Too many open files"（表现为前端 CSS/JS 0 字节、数据库打不开）。
+RA_FD_SOFT_LIMIT="${RA_FD_SOFT_LIMIT:-4096}"
 
 if [ ! -d "$VENV" ]; then
   echo "未找到虚拟环境 ${VENV}，请先创建：python -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
@@ -58,7 +62,7 @@ if [ "$RERANKER_ENABLED" = "true" ]; then
        [[ "$runtime_url" =~ ^http://\[::1\]:[0-9]+$ ]]; then
       export RERANKER_BASE_URL="$runtime_url"
       RERANKER_STARTED=true
-      echo "使用 Reranker：$RERANKER_BASE_URL"
+      echo "使用 Reranker：${RERANKER_BASE_URL}"
     else
       echo "警告：Reranker 未提供有效的本机运行地址，FastAPI 将降级启动。" >&2
       [ -x "$RERANKER_STOP" ] && "$RERANKER_STOP" || true
@@ -70,12 +74,40 @@ else
   echo "Reranker 已禁用，跳过启动与质量探针。"
 fi
 
+# 在启动 uvicorn 之前**只抬升、不降级** FD 软限制。
+# 无条件 `ulimit -n 4096` 会把开发终端已经很宽松的限制（如 1048575）向下压，
+# 与加固意图相反；这里仅在当前软限制低于目标时才设置。失败只告警、不中断启动
+# （`set -e` 下用 if 保护）。`unlimited` / 空值按「已足够」处理，不做数字比较。
+current_fd_soft="$(ulimit -Sn 2>/dev/null || echo "")"
+case "$current_fd_soft" in
+  ""|unlimited)
+    echo "FD 软限制当前为 ${current_fd_soft:-unknown}（不限制），已不低于目标 ${RA_FD_SOFT_LIMIT}，保持不变。"
+    ;;
+  *)
+    # 非数字目标视为非法：不做比较（避免 "integer expression expected"），直接尝试设置。
+    case "$RA_FD_SOFT_LIMIT" in
+      ""|*[!0-9]*) needs_raise=1 ;;
+      *) if { [ "$current_fd_soft" -lt "$RA_FD_SOFT_LIMIT" ]; } 2>/dev/null; then needs_raise=1; else needs_raise=0; fi ;;
+    esac
+    if [ "$needs_raise" = "1" ]; then
+      if ulimit -n "$RA_FD_SOFT_LIMIT" 2>/dev/null; then
+        echo "FD 软限制已从 ${current_fd_soft} 抬升到 ${RA_FD_SOFT_LIMIT}（当前 ulimit -n = $(ulimit -n)）。"
+      else
+        echo "警告：无法将 FD 软限制从 ${current_fd_soft} 抬升到 ${RA_FD_SOFT_LIMIT}，继续以降级限制启动（当前 ulimit -n = $(ulimit -n 2>/dev/null || echo unknown)）。" >&2
+      fi
+    else
+      echo "FD 软限制当前为 ${current_fd_soft}，已不低于目标 ${RA_FD_SOFT_LIMIT}，保持不变。"
+      true
+    fi
+    ;;
+esac
+
 if [ "${1:-}" = "-d" ]; then
-  echo "后台启动中… 日志：$LOG"
+  echo "后台启动中… 日志：${LOG}"
   nohup "$VENV/bin/uvicorn" backend.app.main:app --host "$HOST" --port "$PORT" > "$LOG" 2>&1 &
   APP_PID=$!
   printf '%s\n' "$APP_PID" > "$PID_FILE"
-  echo "PID $APP_PID"
+  echo "PID ${APP_PID}"
 else
   cleanup() {
     status=$?

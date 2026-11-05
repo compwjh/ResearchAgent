@@ -8,7 +8,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, Iterator, List, Optional
 
 from backend.app.paper_discovery.domain.paper_discovery import (
     CatalogPaper,
@@ -503,13 +503,29 @@ class PaperDiscoveryStore:
             (json.dumps(USENIX_DISCOVERY_ROUTES), "usenix-security"),
         )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """以事务语义打开连接，并在退出时**始终关闭**，避免 SQLite FD 泄漏。
+
+        ``sqlite3.Connection.__exit__`` 只 commit/rollback、不 close，连接只能等 GC；
+        服务长时间运行会累积大量 ``state.sqlite3`` / ``-wal`` FD（曾触发
+        ``OSError: [Errno 24] Too many open files``）。这里复刻其事务语义并补上 close。
+        """
         connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=5000")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("PRAGMA busy_timeout=5000")
+            try:
+                yield connection
+            except BaseException:
+                connection.rollback()
+                raise
+            else:
+                connection.commit()
+        finally:
+            connection.close()
 
     def list_conferences(self) -> List[ConferenceSource]:
         with self._connect() as connection:

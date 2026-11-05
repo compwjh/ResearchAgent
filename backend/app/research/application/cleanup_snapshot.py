@@ -10,22 +10,37 @@ reported as ``unverified`` so the caller remains fail-closed.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from backend.app.platform.config import BASE_DIR, KB_META_PATH
 from backend.app.platform.settings.settings_repository import load_article_settings
 
 
-def _read_only_connection(path: Path) -> sqlite3.Connection:
-    """Open an existing SQLite database without creating or mutating it."""
+@contextlib.contextmanager
+def _read_only_connection(path: Path) -> Iterator[sqlite3.Connection]:
+    """Open an existing SQLite database without creating or mutating it.
+
+    ``sqlite3.Connection.__exit__`` only commits/rolls back and never closes, so
+    entering the raw connection in a ``with`` block leaks one descriptor per
+    snapshot.  This context manager keeps the ``mode=ro`` uri and timeout, and
+    always closes the connection.  No commit is attempted: the handle is
+    read-only by contract.
+    """
     resolved = Path(path).expanduser().resolve()
     if not resolved.is_file():
         raise FileNotFoundError(str(resolved))
-    return sqlite3.connect(f"file:{resolved}?mode=ro", uri=True, timeout=5.0)
+    connection = sqlite3.connect(f"file:{resolved}?mode=ro", uri=True, timeout=5.0)
+    try:
+        yield connection
+    except BaseException:
+        raise
+    finally:
+        connection.close()
 
 
 def _table_count(path: Path, table: str, *, owner_id: str | None = None) -> int:
