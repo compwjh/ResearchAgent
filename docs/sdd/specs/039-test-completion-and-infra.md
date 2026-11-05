@@ -2,7 +2,16 @@
 
 ## 状态
 
-**当前状态：已确认**（2026-09-19 用户授权「直接进行文件的改名和相关 skill 的沉淀，不需要评审」）
+**当前状态：`已完成`（2026-11-05 有条件收口）**
+
+> **收口条件（`architect` 裁决 `docs/sdd/reviews/011-036-039-closure-review.md` §3.4，C1–C3）**：
+> - **C1**：任务 **T4（补具体用例缺口）明示未完成并外置**，不在本 spec 收口范围；本 spec 只收口「分类重组 + 命名规则固化 + 门禁脚本」，**不宣称全部 DoD 达成**。
+> - **C2**：2026-09-19 用户授权「不需要评审」仅覆盖改名与 skill 沉淀，属**受权例外、不作先例**；本 spec 无独立需求 / 技术 / 验收评审与复盘，证据以 `docs/sdd/plans/039-test-infra-validation.md` 与本轮运行时复核为准。
+> - **C3**：**编号撞号** —— `docs/sdd/reviews/039-requirement-review.md`、`039-tech-review.md`、`039-acceptance-review.md` 三份**全部属于 `039-api-e2e-manual-acceptance-protocol`**（且验收结论为 BLOCKED），**不属于本 spec**；不得把那些结论嫁接到本 spec。
+>
+> 当前部署版本复核：`check_test_layout.py` 退出 0、`check_test_naming.py` 退出 0、`pytest --collect-only` **3875 collected / 0 errors**；证据见 `docs/sdd/reviews/011-036-039-closure-live-e2e.md`。
+>
+> 原状态：`已确认`（2026-09-19 用户授权「直接进行文件的改名和相关 skill 的沉淀，不需要评审」）。
 
 ## 一句话目标
 
@@ -86,7 +95,7 @@ tests/
 | T1 | 创建分类目录 + 各 `__init__.py` 功能说明 | — | ✅ 完成 |
 | T2 | 违规文件改名 + 分类（42 个含 spec/task 数字）+ 路径修正 | T1 | ✅ 完成 |
 | T3 | 其余测试文件按功能分类放置（保留原名） | T1 | ✅ 完成 |
-| T4 | 补具体用例缺口（见「二」） | — | ⏸ 待做（A 类需先实现后端，建议并入 spec032 收口） |
+| T4 | 补具体用例缺口（见「二」） | — | ⏸ **外置，不在本 spec 收口范围**（A 类需先实现后端，并入 spec032 收口或单独功能任务；2026-11-05 `architect` 裁决 C1） |
 | T5 | `pytest --collect-only` 验证收集数不变 | T2/T3 | ✅ 完成（2613 → 2613，无 ERROR） |
 
 ## 执行记录（2026-09-19）
@@ -112,7 +121,7 @@ tests/
 - `tests/` 按功能分子目录，无平铺；每目录 `__init__.py` 有功能说明。
 - 全仓无 `test_*spec\d+*` / `test_*task\d+*` 文件。
 - `pytest --collect-only -q` 收集数与整理前一致，无导入错误。
-- T4 补齐的用例通过。
+- ~~T4 补齐的用例通过~~ → **不适用**：T4 已按 C1 外置，本 spec 收口不含该判据（2026-11-05 `architect` 裁决）。
 
 ## 执行配置
 
@@ -135,3 +144,11 @@ tests/
   定向收集（202 项）、Python 定向测试（202 passed）及 8 个 JS 合同均通过；全量
   收集/回归在当前 `chore/update-archify` 基线因缺失 Spec032 的
   `source_registry.py` 阻塞（37 个既有导入错误），未修改业务代码绕过。
+
+## 评审记录 / 收口记录（2026-11-05）
+
+- 本 spec **无独立的需求 / 技术 / 验收评审与签字**：2026-09-19 用户授权「直接进行文件的改名和相关 skill 的沉淀，不需要评审」，门禁跳过有依据，属**受权例外、不作先例**（C2）。
+- **编号撞号声明（C3）**：`docs/sdd/reviews/039-requirement-review.md`、`039-tech-review.md`、`039-acceptance-review.md` 三份均属于 **Spec039 `039-api-e2e-manual-acceptance-protocol`**（验收结论为 BLOCKED），与本 spec `039-test-completion-and-infra` 无关；本 spec 的评审材料只有 `docs/sdd/reviews/011-036-039-closure-review.md`（`architect` 2026-11-05 收口复核裁决）。
+- **T4 外置（C1）**：补具体用例缺口未完成，外置到 spec032 收口或单独功能任务，不在本次收口范围；因此本 spec **不宣称全部 DoD 达成**。
+- 当前部署版本运行时复核：`check_test_layout.py` / `check_test_naming.py` 均退出 0；`pytest --collect-only -q` **3875 tests collected / 0 errors**（历史 37 errors 属旧隔离分支基线问题，已消解）。证据：`docs/sdd/reviews/011-036-039-closure-live-e2e.md`。
+- 裁决：`architect` **有条件同意转 `已完成`**（C1–C3 均已在本文件与台账落实），P0=0；状态 `已确认 → 已完成`，台账同步。无业务代码改动。

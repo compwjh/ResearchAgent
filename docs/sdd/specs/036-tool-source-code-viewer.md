@@ -2,9 +2,9 @@
 
 ## 状态
 
-**当前状态：已确认**
+**当前状态：`已完成`（2026-11-05 状态补录）**。实现、三份评审与验收双签在 2026-09-13 已齐备，`docs/sdd/spec-status-changelog.md:397` 亦已记录「已确认 → 已完成」；此前仅本文件状态行与评审记录段未同步。本轮由 `architect` 复核当前部署版本 **7/7** `GET /api/tools/{name}/code` 实时 200（证据见 `docs/sdd/reviews/011-036-039-closure-live-e2e.md`），裁决「同意转已完成」。
 
-> 确认依据：
+> 确认依据（历史）：
 > 1. 用户提出「Tool 模块加上可以查看内部 python 代码」，并明确选择 —— ① 展示范围 =
 >    **入口函数源码 + 文件路径/行号**（非整文件、非调用链）；② 交互方式 =
 >    **「代码」按钮 + 弹窗**（复用 Skill 详情弹窗样式，点击后按需请求）。
@@ -163,8 +163,11 @@
 ## 评审记录
 
 - 需求评审：`docs/sdd/reviews/036-requirement-review.md`（**通过（附意见）**，P0=0 / P1×4 已回填 / P2×5 / INFO×1）
-- 技术评审：`docs/sdd/reviews/036-tech-review.md`（待评审（未执行））
-- 验收评审：`docs/sdd/reviews/036-acceptance-review.md`（待评审（未执行））
+- 技术评审：`docs/sdd/reviews/036-backend-tech-review.md`（后端，通过附意见）与 `docs/sdd/reviews/036-frontend-tech-review.md`（前端，通过附意见）。
+  ⚠️ 修正（2026-11-05）：原文引用的 `036-tech-review.md` 并不存在，实际为上述两份分端评审报告，按真实文件名回填。
+- 验收评审：`docs/sdd/reviews/036-acceptance-review.md`（**通过**；场景 A/B/C 全达成、§4 验收总控与 tech-lead 双签、结论「达到 DoD，可转 `已完成`」）。
+  ⚠️ 修正（2026-11-05）：原文写「待评审（未执行）」与事实不符，按实际结论回填。
+- 收口复核：`docs/sdd/reviews/011-036-039-closure-review.md`（2026-11-05，`architect` 裁决同意转 `已完成`；当前部署版本 7/7 实时 200 见 `docs/sdd/reviews/011-036-039-closure-live-e2e.md`）。
 
 ## 变更日志（Changelog）
 
@@ -173,3 +176,4 @@
 | 2026-09-13 | 架构师(自身) | 编写本 spec；先实测 `inspect` 对全部 5 个注册 entry 的可解析性（含被装饰的 `kb_ask`）作为 Go/No-Go 前提；就展示范围与交互方式向用户确认 |
 | 2026-09-13 | `architect` | 需求评审：**通过（附意见）**，P0=0 / P1×4 / P2×5 / INFO×1；独立复跑 inspect 复核数字一致，并指出 M-01（`lineno` 装饰器行）、M-03（整模块文件泄漏）等 4 条阻塞项 |
 | 2026-09-13 | 架构师(自身) | 按评审意见回填 M-01～M-08（含暴露面前提、名称匹配语义、只读与回归冻结、前端 `?v=43→44` 与 `textContent` 硬约束）；状态转 `已确认` |
+| 2026-11-05 | `architect` / 主会话 | **状态补录收口**：复核 `036-acceptance-review.md` 已双签且结论达到 DoD、台账 `:397` 已记「已完成」，修正本文件状态行与评审记录段中失效的「待评审（未执行）」及不存在的 `036-tech-review.md` 引用；当前部署版本 7/7 `GET /api/tools/{name}/code` 实时 200 落盘 `docs/sdd/reviews/011-036-039-closure-live-e2e.md`；状态 `已确认 → 已完成`，台账同步。无业务代码改动。 |

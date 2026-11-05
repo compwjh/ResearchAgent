@@ -1,0 +1,842 @@
+data: {"type": "meta", "model": "qwen3.8:27b", "top_k": 3, "chunker": "v1", "project_id": null}
+
+data: {"type": "stage", "name": "retrieving", "message": "正在检索知识库"}
+
+data: {"type": "citations", "citations": [{"file_name": "How to Peel a Million- Validating and Expanding Bitcoin Clusters.pdf", "page": 3, "page_end": 3, "start_line": null, "end_line": null, "chunk_index": 14, "paper_id": "d4dfd2a620384ad5bece27320661f8f0", "document_id": "d4dfd2a620384ad5bece27320661f8f0", "chunk_id": "747530eb-08c9-590d-b1ba-a625cbec0443", "source_url": "/api/kb/documents/d4dfd2a620384ad5bece27320661f8f0/source", "score": 0.016393, "text": "fect of Coinjoin transactions, they showed that clustering heuristics can lead to false interpretation and pointed to the need for additional metrics to quantify the reliability of clustering results.2.2 Bitcoin entity classiﬁcation Bartoletti et al. [3] investigated data mining techniques to automatically detect Ponzi schemes carried out using Bitcoin.\nUsing supervised learning algorithms, the authors could correctly classify Ponzi schemes with a very low rate of false positives. A number of other studies use supervised learning in order to classify unknown addresses according to the entities they belong to [18, 49, 53]. Unsupervised learning methods have also been used in Bitcoin to attempt to identify fraud [40,41,56].\n2208 31st USENIX Security Symposium USENIX Association"}, {"file_name": "2024-USENIX-Security-When-the-User-Is-Inside-the-User-Interface-An-Empirical-Study-of-UI-Security-Properties-in-Augmented-Reality.pdf", "page": 17, "page_end": 17, "start_line": null, "end_line": null, "chunk_index": 95, "paper_id": "a773435cc0634e40b8a52770631738ee", "document_id": "a773435cc0634e40b8a52770631738ee", "chunk_id": "eeb1ef07-3ae3-5565-8272-664d83301b89", "source_url": "/api/kb/documents/a773435cc0634e40b8a52770631738ee/source", "score": 0.016393, "text": "[59] Kiron Lebeck, Tadayoshi Kohno, and Franziska Roesner. How to safely augment reality: Challenges and directions. In Proceedings of the 17th International Workshop on Mobile Computing Systems and Applications, pages 45–50, 2016.\n[60] Kiron Lebeck, Tadayoshi Kohno, and Franziska Roesner. Enabling multiple applications to simultaneously augment reality: Challenges and directions. In Proceedings of the 20th International Workshop on Mobile Computing Systems and Applications, pages 81–86, 2019.\n[61] Kiron Lebeck, Kimberly Ruth, Tadayoshi Kohno, and Franziska Roesner. Securing augmented reality output. In 2017 IEEE Symposium on Security and Privacy (SP), pages 320–337. IEEE, 2017.\n[62] Daehyeon Lee, Woosung Shim, Munyong Lee, Seunghyun Lee, Kye-Dong Jung, and Soonchul Kwon. Performance Evaluation of Ground AR Anchor with WebXR Device API. Applied Sciences, 11(17):7877, 2021."}, {"file_name": "How to Peel a Million- Validating and Expanding Bitcoin Clusters.pdf", "page": 2, "page_end": 2, "start_line": null, "end_line": null, "chunk_index": 1, "paper_id": "d4dfd2a620384ad5bece27320661f8f0", "document_id": "d4dfd2a620384ad5bece27320661f8f0", "chunk_id": "8a019155-914e-5337-abec-24ed301ae8db", "source_url": "/api/kb/documents/d4dfd2a620384ad5bece27320661f8f0/source", "score": 0.016129, "text": "How to Peel a Million: Validating and Expanding Bitcoin Clusters George Kappos1, Haaroon Yousaf1, Rainer Stütz2, Soﬁa Rollet2, Bernhard Haslhofer3, and Sarah Meiklejohn1 1University College London and IC3 2AIT - Austrian Institute of Technology 3Complexity Science Hub Vienna Abstract One of the deﬁning features of Bitcoin and the thousands of cryptocurrencies that have been derived from it is a globally visible transaction ledger. While Bitcoin uses pseudonyms as a way to hide the identity of its participants, a long line of research has demonstrated that Bitcoin is not anonymous.\nThis has been perhaps best exempliﬁed by the development of clustering heuristics, which have in turn given rise to the ability to track the ﬂow of bitcoins as they are sent from one entity to another."}]}
+
+data: {"type": "token", "content": "根据"}
+
+data: {"type": "token", "content": "提供的"}
+
+data: {"type": "token", "content": "上下文"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "知识库"}
+
+data: {"type": "token", "content": "中"}
+
+data: {"type": "token", "content": "关于"}
+
+data: {"type": "token", "content": "比特币"}
+
+data: {"type": "token", "content": "地址"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "验证"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "论文"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "主要"}
+
+data: {"type": "token", "content": "指"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "来源"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "论文"}
+
+data: {"type": "token", "content": "《"}
+
+data: {"type": "token", "content": "How"}
+
+data: {"type": "token", "content": " to"}
+
+data: {"type": "token", "content": " Peel"}
+
+data: {"type": "token", "content": " a"}
+
+data: {"type": "token", "content": " Million"}
+
+data: {"type": "token", "content": ":"}
+
+data: {"type": "token", "content": " Valid"}
+
+data: {"type": "token", "content": "ating"}
+
+data: {"type": "token", "content": " and"}
+
+data: {"type": "token", "content": " Exp"}
+
+data: {"type": "token", "content": "anding"}
+
+data: {"type": "token", "content": " Bitcoin"}
+
+data: {"type": "token", "content": " Cl"}
+
+data: {"type": "token", "content": "usters"}
+
+data: {"type": "token", "content": "》"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "主要"}
+
+data: {"type": "token", "content": "涉及"}
+
+data: {"type": "token", "content": "以下"}
+
+data: {"type": "token", "content": "方法和"}
+
+data: {"type": "token", "content": "背景"}
+
+data: {"type": "token", "content": "："}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "."}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": " **"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "Cl"}
+
+data: {"type": "token", "content": "ustering"}
+
+data: {"type": "token", "content": " He"}
+
+data: {"type": "token", "content": "ur"}
+
+data: {"type": "token", "content": "istics"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "验证"}
+
+data: {"type": "token", "content": "与"}
+
+data: {"type": "token", "content": "扩展"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "："}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "   "}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "该"}
+
+data: {"type": "token", "content": "论文"}
+
+data: {"type": "token", "content": "的核心"}
+
+data: {"type": "token", "content": "目标是"}
+
+data: {"type": "token", "content": "验证"}
+
+data: {"type": "token", "content": "和"}
+
+data: {"type": "token", "content": "扩展"}
+
+data: {"type": "token", "content": "比特币"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "背景"}
+
+data: {"type": "token", "content": "指出"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "这些"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "使得"}
+
+data: {"type": "token", "content": "追踪"}
+
+data: {"type": "token", "content": "比特币"}
+
+data: {"type": "token", "content": "从一个"}
+
+data: {"type": "token", "content": "实体"}
+
+data: {"type": "token", "content": "流向"}
+
+data: {"type": "token", "content": "另一个"}
+
+data: {"type": "token", "content": "实体"}
+
+data: {"type": "token", "content": "成为"}
+
+data: {"type": "token", "content": "可能"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "2"}
+
+data: {"type": "token", "content": "."}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": " **"}
+
+data: {"type": "token", "content": "指出"}
+
+data: {"type": "token", "content": "传统"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则的"}
+
+data: {"type": "token", "content": "局限性"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "："}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "   "}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "上下文"}
+
+data: {"type": "token", "content": "提到"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "之前的"}
+
+data: {"type": "token", "content": "研究表明"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "Coin"}
+
+data: {"type": "token", "content": "join"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "联合"}
+
+data: {"type": "token", "content": "交易"}
+
+data: {"type": "token", "content": "）**"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "的影响"}
+
+data: {"type": "token", "content": "会导致"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "产生"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "错误"}
+
+data: {"type": "token", "content": "解释"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "false"}
+
+data: {"type": "token", "content": " interpretation"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "因此"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "该"}
+
+data: {"type": "token", "content": "领域"}
+
+data: {"type": "token", "content": "需要"}
+
+data: {"type": "token", "content": "额外的"}
+
+data: {"type": "token", "content": "指标"}
+
+data: {"type": "token", "content": "来"}
+
+data: {"type": "token", "content": "量化"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "结果的"}
+
+data: {"type": "token", "content": "可靠性"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "."}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": " **"}
+
+data: {"type": "token", "content": "基于"}
+
+data: {"type": "token", "content": "监督"}
+
+data: {"type": "token", "content": "学习"}
+
+data: {"type": "token", "content": "/"}
+
+data: {"type": "token", "content": "无"}
+
+data: {"type": "token", "content": "监督"}
+
+data: {"type": "token", "content": "学习的"}
+
+data: {"type": "token", "content": "实体"}
+
+data: {"type": "token", "content": "分类"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "作为"}
+
+data: {"type": "token", "content": "相关"}
+
+data: {"type": "token", "content": "背景"}
+
+data: {"type": "token", "content": "）**"}
+
+data: {"type": "token", "content": "："}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "   "}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "虽然"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "中"}
+
+data: {"type": "token", "content": "提到的"}
+
+data: {"type": "token", "content": "具体"}
+
+data: {"type": "token", "content": "分类"}
+
+data: {"type": "token", "content": "工作"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "如"}
+
+data: {"type": "token", "content": " Bart"}
+
+data: {"type": "token", "content": "olet"}
+
+data: {"type": "token", "content": "ti"}
+
+data: {"type": "token", "content": " et"}
+
+data: {"type": "token", "content": " al"}
+
+data: {"type": "token", "content": "."}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "检测"}
+
+data: {"type": "token", "content": "庞"}
+
+data: {"type": "token", "content": "氏"}
+
+data: {"type": "token", "content": "骗局"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "是"}
+
+data: {"type": "token", "content": "作为"}
+
+data: {"type": "token", "content": "相关"}
+
+data: {"type": "token", "content": "研究"}
+
+data: {"type": "token", "content": "背景"}
+
+data: {"type": "token", "content": "介绍的"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "但它们"}
+
+data: {"type": "token", "content": "使用了"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "监督"}
+
+data: {"type": "token", "content": "学习"}
+
+data: {"type": "token", "content": "算法"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "sup"}
+
+data: {"type": "token", "content": "ervised"}
+
+data: {"type": "token", "content": " learning"}
+
+data: {"type": "token", "content": " algorithms"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "来"}
+
+data: {"type": "token", "content": "正确"}
+
+data: {"type": "token", "content": "分类"}
+
+data: {"type": "token", "content": "庞"}
+
+data: {"type": "token", "content": "氏"}
+
+data: {"type": "token", "content": "骗局"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "且"}
+
+data: {"type": "token", "content": "误"}
+
+data: {"type": "token", "content": "报"}
+
+data: {"type": "token", "content": "率"}
+
+data: {"type": "token", "content": "很低"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "此外"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "也有"}
+
+data: {"type": "token", "content": "研究"}
+
+data: {"type": "token", "content": "使用"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "无"}
+
+data: {"type": "token", "content": "监督"}
+
+data: {"type": "token", "content": "学习方法"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "uns"}
+
+data: {"type": "token", "content": "up"}
+
+data: {"type": "token", "content": "ervised"}
+
+data: {"type": "token", "content": " learning"}
+
+data: {"type": "token", "content": " methods"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "来"}
+
+data: {"type": "token", "content": "识别"}
+
+data: {"type": "token", "content": "欺诈"}
+
+data: {"type": "token", "content": "行为"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "这些"}
+
+data: {"type": "token", "content": "方法"}
+
+data: {"type": "token", "content": "被"}
+
+data: {"type": "token", "content": "提及"}
+
+data: {"type": "token", "content": "是为了"}
+
+data: {"type": "token", "content": "展示"}
+
+data: {"type": "token", "content": "在"}
+
+data: {"type": "token", "content": "比特币"}
+
+data: {"type": "token", "content": "实体"}
+
+data: {"type": "token", "content": "分类"}
+
+data: {"type": "token", "content": "中"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "除了"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "外"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "机器学习"}
+
+data: {"type": "token", "content": "技术"}
+
+data: {"type": "token", "content": "也被"}
+
+data: {"type": "token", "content": "用于"}
+
+data: {"type": "token", "content": "分类"}
+
+data: {"type": "token", "content": "未知"}
+
+data: {"type": "token", "content": "地址"}
+
+data: {"type": "token", "content": "所属"}
+
+data: {"type": "token", "content": "实体"}
+
+data: {"type": "token", "content": "或"}
+
+data: {"type": "token", "content": "识别"}
+
+data: {"type": "token", "content": "欺诈"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "总结"}
+
+data: {"type": "token", "content": "：**"}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "知识库"}
+
+data: {"type": "token", "content": "中"}
+
+data: {"type": "token", "content": "直接"}
+
+data: {"type": "token", "content": "针对"}
+
+data: {"type": "token", "content": "“"}
+
+data: {"type": "token", "content": "比特币"}
+
+data: {"type": "token", "content": "地址"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "验证"}
+
+data: {"type": "token", "content": "”"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "论文"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "侧重于"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "验证"}
+
+data: {"type": "token", "content": "和"}
+
+data: {"type": "token", "content": "扩展"}
+
+data: {"type": "token", "content": "现有的"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "并"}
+
+data: {"type": "token", "content": "强调了"}
+
+data: {"type": "token", "content": "由于"}
+
+data: {"type": "token", "content": " Coin"}
+
+data: {"type": "token", "content": "join"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "交易"}
+
+data: {"type": "token", "content": "的存在"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "需要"}
+
+data: {"type": "token", "content": "新的"}
+
+data: {"type": "token", "content": "指标"}
+
+data: {"type": "token", "content": "来"}
+
+data: {"type": "token", "content": "评估"}
+
+data: {"type": "token", "content": "这些"}
+
+data: {"type": "token", "content": "聚类"}
+
+data: {"type": "token", "content": "结果的"}
+
+data: {"type": "token", "content": "可靠性"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": ","}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "上下文"}
+
+data: {"type": "token", "content": "未"}
+
+data: {"type": "token", "content": "详细描述"}
+
+data: {"type": "token", "content": "该"}
+
+data: {"type": "token", "content": "特定"}
+
+data: {"type": "token", "content": "论文"}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "使用的"}
+
+data: {"type": "token", "content": "具体"}
+
+data: {"type": "token", "content": "算法"}
+
+data: {"type": "token", "content": "细节"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "如"}
+
+data: {"type": "token", "content": "具体的"}
+
+data: {"type": "token", "content": "验证"}
+
+data: {"type": "token", "content": "算法"}
+
+data: {"type": "token", "content": "或"}
+
+data: {"type": "token", "content": "扩展"}
+
+data: {"type": "token", "content": "算法"}
+
+data: {"type": "token", "content": "名称"}
+
+data: {"type": "token", "content": "），"}
+
+data: {"type": "token", "content": "仅"}
+
+data: {"type": "token", "content": "提到了"}
+
+data: {"type": "token", "content": "其"}
+
+data: {"type": "token", "content": "目标"}
+
+data: {"type": "token", "content": "和对"}
+
+data: {"type": "token", "content": "现有"}
+
+data: {"type": "token", "content": "启发"}
+
+data: {"type": "token", "content": "式"}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "局限"}
+
+data: {"type": "token", "content": "性的"}
+
+data: {"type": "token", "content": "关注"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": ","}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "debug", "debug": {"elapsed_ms": 68756.7, "hits": 3}}
+
+data: {"type": "done"}
+
