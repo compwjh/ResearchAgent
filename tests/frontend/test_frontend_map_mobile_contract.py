@@ -91,11 +91,11 @@ def _wait_for_scroll_settle(page: Page, selector: str) -> float:
 
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "/assets/styles.css?v=62" in INDEX
-    assert "/assets/literature-maps.js?v=42" in INDEX
-    assert "/assets/literature-maps.css?v=28" in INDEX
+    assert "/assets/literature-maps.js?v=43" in INDEX
+    assert "/assets/literature-maps.css?v=29" in INDEX
     assert "/styles.css?v=62" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.js?v=42" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=28" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.js?v=43" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=29" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",
@@ -116,7 +116,8 @@ def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "innerHTML" not in MODULE
     assert "touch-action: none" in STYLES
     assert "touch-action: pan-y" in STYLES
-    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "42"
+    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "43"
+    assert re.findall(r"literature-maps\.css\?v=(\d+)", INDEX)[-1] == "29"
 
 
 @pytest.mark.parametrize("width", [375, 390])
@@ -283,13 +284,19 @@ def test_mobile_drawer_and_detail_scroll_use_real_touch_gestures() -> None:
         page.locator("#literature-map-mobile-list-open").click(force=True)
         _select_map(page)
         page.locator("#literature-map-mobile-list-open").evaluate("el => el.click()")
-        groups = page.locator("#literature-map-groups")
-        page.wait_for_function("!document.querySelector('#literature-map-groups')?.hidden")
         _wait_for_panel_transition(page, ".literature-map-list-panel", True)
+        # Spec043 起分组列表搬到画布左下角 FAB 浮层；旧的 `#literature-map-groups` 面板已删除。
+        assert page.locator("#literature-map-groups").count() == 0, "旧的左侧分组面板必须已删除"
+        # FAB 在画布左下角，抽屉打开时（z-index 1070）会抢走 FAB 上的触摸；先关抽屉再点 FAB。
+        page.locator("#literature-map-list-close").click()
+        page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        page.locator("#literature-map-groups-fab").evaluate("el => el.click()")
+        page.wait_for_function("!document.querySelector('#literature-map-groups-popover')?.hidden")
+        groups = page.locator("#literature-map-groups-popover")
         assert groups.evaluate("el => el.scrollHeight > el.clientHeight")
         page.evaluate("""() => {
           window.__touchScrollEvents = [];
-          for (const id of ['literature-map-groups', 'literature-map-detail']) {
+          for (const id of ['literature-map-groups-popover', 'literature-map-detail']) {
             document.getElementById(id)?.addEventListener('scroll', event => {
               window.__touchScrollEvents.push({ id, scrollTop: event.currentTarget.scrollTop });
             });
@@ -304,12 +311,17 @@ def test_mobile_drawer_and_detail_scroll_use_real_touch_gestures() -> None:
         _touch_on_frame(page, cdp, "touchMove", [(10, x, group_box["y"] + group_box["height"] - 110)])
         _touch_on_frame(page, cdp, "touchMove", [(10, x, group_box["y"] + group_box["height"] - 200)])
         _touch_on_frame(page, cdp, "touchEnd", [])
-        page.wait_for_function("document.querySelector('#literature-map-groups')?.scrollTop > 0", timeout=3000)
-        assert _wait_for_scroll_settle(page, "#literature-map-groups") > scroll_before
-        assert page.evaluate("window.__touchScrollEvents.some(event => event.id === 'literature-map-groups')")
+        page.wait_for_function("document.querySelector('#literature-map-groups-popover')?.scrollTop > 0", timeout=3000)
+        assert _wait_for_scroll_settle(page, "#literature-map-groups-popover") > scroll_before
+        assert page.evaluate("window.__touchScrollEvents.some(event => event.id === 'literature-map-groups-popover')")
 
-        page.locator("#literature-map-list-close").click()
-        page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
+        # 浮层 absolute 覆盖画布左下，会挡住 node-a 的触摸；先收起再点节点。
+        page.locator('#literature-map-groups-fab').evaluate("el => el.click()")
+        page.wait_for_function("document.querySelector('#literature-map-groups-popover')?.hidden === true")
+
+        if page.evaluate("document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')"):
+            page.locator("#literature-map-list-close").click()
+            page.wait_for_function("!document.querySelector('.literature-map-list-panel')?.classList.contains('is-open')")
         _wait_for_panel_transition(page, ".literature-map-list-panel", False)
         node = page.locator('[data-node-id="node-a"] circle')
         node_box = node.bounding_box()

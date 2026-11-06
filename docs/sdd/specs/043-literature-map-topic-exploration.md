@@ -473,9 +473,9 @@ Task11已完成，Spec043由实施中转已完成。最终部署源码7364a26b�
 - 最终静态资源版本：`app.js?v=70`、`literature-maps.js?v=42`、`literature-maps.css?v=27`、`styles.css?v=68`。
 - 边界复核：未改后端 `status` 值/语义、未改 `PATCH /view` 请求体与 409 策略、未改 `/api/kb/*`、未动 Task11 批次逻辑、未改 `research-tasks.js`、未引入 localStorage 草稿。
 
-## 2026-11-06 节点外观面板紧凑布局（待确认）
+## 2026-11-06 节点外观面板紧凑布局（已作废存档）
 
-**状态：暂缓（2026-11-06 用户裁定：不与本批次实施）。** 用户新提的 UI 优化需求，按 SDD 规则先在计划模式产出修订；与 `Spec012` 索引卡死缺陷修订并列为当前两项待确认事项。确认前不改业务代码、不升版本号、不部署。
+**状态：已作废（2026-11-06 用户「按照A」裁决，问题 7② 默认值）。** 用户裁定「这个要跟下面的分组逻辑一起再次设计」后暂缓；随着「节点分组画布左下角入口改造」按 A 确认，节点详情调色板 `section.literature-map-node-color-section` 整体移除，本段「紧凑化」对象不再存在，故整体作废，不实施、不升版本号、不部署。原「暂缓」记录与下方实测证据保留仅供追溯，不作为实施依据。
 
 > **用户裁定（2026-11-06）**：针对本段「方案 2（可选叠加）：默认折叠成一行 `<details>`，有颜色预览时自动展开，默认只占 ~30px（-88%）；按钮文案、颜色预设、应用/取消/跟随分组逻辑、其它面板一律不动」，用户批复「**这个要跟下面的分组逻辑一起再次设计**」。因此本段**不进入本批次实施**，保持冻结；待「节点分组画布左下角入口改造」方向确认后，与分组样式逻辑一并重新设计（届时节点级调色板可能被整体移除，本段亦随之作废）。本批次仅实施「顶部操作按钮可读性与尺寸」与 Spec012 索引缺陷修订。
 
@@ -618,14 +618,13 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 > **⚠️ 2026-11-06 用户方向澄清：本段整体撤销，不再作为待实施范围。**
 > 用户原话：「我明白你有做地图节点分组的功能，**这个功能是要保留的**」。需求对象是**现有的地图内论文节点分组**（`literature_map_groups` / 节点 `group_id` / `/groups` API）的 UI 改造，**不是**新建「地图级标签」分类系统。
 > 因此本段拟建的 `literature_map_tags` / `literature_map_tag_bindings`、6 个端点、`GET /api/literature-maps` 的 `tags` 派生字段、列表标签筛选、卡片右下角 ⋯ 菜单、「分组」改叫「标签」、以及末尾「补充：卡片显示所属标签」子节**一并撤销**，不再实施，其中 8 个待确认问题不再回答。
-> 取代方案见「2026-11-06 节点分组画布左下角入口改造（待确认）」段。以下原文保留，仅作需求演进留痕。
+> 取代方案见「2026-11-06 节点分组画布左下角入口改造（**已确认**）」段。以下原文保留，仅作需求演进留痕。
 
-> **⚠️ 方向冲突待裁决（2026-11-06 用户批量批复）**：用户在随后一轮批量确认中，对本段原先的 3 个问题回复「**都按照你的默认**」（默认：地图级标签 / 两套并存且节点分组 UI 改叫「标签」/ 一张地图可多选标签），并对「卡片显示所属标签」的默认设计回复「**按照你的默认设计**」。这与用户**上一轮亲自澄清**的方向（节点分组功能保留、入口移到画布左下角 icon、点样式高亮分组节点、节点样式跟随分组、移除节点单独调样式）**直接冲突**：本段要新建地图级标签系统与卡片 ⋯ 菜单，上一轮明确不要这套、只改节点分组 UI。
-> 按 SDD「发现需求变化或范围扩大时先暂停、更新 spec 并再次请求确认」，主会话**不擅自恢复已作废方案、不实施本段**，本批次只做用户已确认且无冲突的两项（Spec012 索引缺陷 + 顶部按钮）。请用户用一句话指定以哪一轮为准：
-> - **A（默认推荐）**：以最新澄清为准 → 本段继续作废，实现「节点分组画布左下角入口改造」；本轮「都按照你的默认 / 按照你的默认设计」视为对历史清单的批量批复、不再执行。
-> - **B**：回到本段 → 恢复地图级标签 + 卡片 ⋯ 菜单 + 卡片标签徽标 + 列表标签筛选，作废「左下角 icon」方向。
-> - **C**：两套都要（地图标签系统与节点分组左下角入口并存）→ 范围显著扩大，需单独建档与再次确认。
-> 裁决前本段保持 `已取代（作废存档）`，不改业务代码、不改数据、不升版本号、不部署。
+> **✅ 方向冲突已裁决（2026-11-06 用户回复「按照A」）**：上一轮批量确认中，用户对本段原先 3 个问题回复「**都按照你的默认**」（地图级标签 / 两套并存且节点分组 UI 改叫「标签」/ 一张地图可多选标签），并对「卡片显示所属标签」回复「**按照你的默认设计**」；这与用户**亲自澄清**的方向（节点分组功能保留、入口移到画布左下角 icon、点样式高亮分组节点、节点样式跟随分组、移除节点单独调样式）直接冲突。主会话按 SDD 暂停并给出 A/B/C 三选项，用户裁决 **A**：
+> - **以用户最新一次亲自澄清为准**：本段**继续作废**，不恢复地图级标签系统、不建 `literature_map_tags` / `literature_map_tag_bindings`、不加 6 个端点、不加列表标签筛选、不加卡片 ⋯ 菜单与标签徽标、不做「分组」改名。
+> - 实施「节点分组画布左下角入口改造」段（8 个默认值已逐条冻结，见该段「用户确认与冻结范围」）。
+> - 本轮「都按照你的默认 / 按照你的默认设计」仅视为对历史清单的**批量批复**，不再单独执行；不采用 B、不采用 C，范围不扩大。
+> 本段终态 `已取代（作废存档）`，无业务代码、无数据、无版本号、无部署改动。
 
 **状态：已取代（作废存档）。** 原为 `待确认`；2026-11-06 用户澄清方向后整体撤销，需求演进见下一段。以下为该段产出时的原始记录（当时累计 4 项待确认：Spec012 索引卡死 + Spec043 节点外观紧凑化 / 顶部按钮可读性 / 本项），保留仅供追溯，不作为实施依据。
 
@@ -756,9 +755,11 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 
 ---
 
-## 2026-11-06 节点分组画布左下角入口改造（待确认）
+## 2026-11-06 节点分组画布左下角入口改造（已确认）
 
-**状态：待确认。** 用户最新一次方向澄清，取代上一段「地图标签与卡片设置菜单」（已作废存档）。本项**保留现有地图内论文节点分组功能**，只改造其入口、高亮交互与节点样式归属；**不新建地图级标签系统、不新增数据模型与公开接口**。确认前不改业务代码、不改数据、不升版本号、不部署、不重启服务。
+**状态：已完成（2026-11-06 用户「按照A」裁决 → 8 个默认值冻结 → Gate 2 双评审通过 → 实现与分端回归通过 → 真实 API/浏览器 E2E 与部署验证通过 → 验收评审通过、架构师签字同意收口）。** 用户最新一次方向澄清，取代上一段「地图标签与卡片设置菜单」（已作废存档）。本项**保留现有地图内论文节点分组功能**，只改造其入口、高亮交互与节点样式归属；**不新建地图级标签系统、不新增数据模型与公开接口**。范围冻结阶段仅文档，未改业务代码、未改数据、未升版本号、未部署、未重启服务。
+
+> **留痕说明**：下方「关键理解」「待确认问题」「明确不做」各段保留原始提案措辞（含「默认」「是否也见问题 N」「请确认」字样），**一律以上文「用户确认与冻结范围」的 8 条裁定与「Gate 2 强制约束清单」C1–C9 为准**，不再另行确认；原始问题仅作需求演进留痕。
 
 > 编号：继续挂 Spec043 待确认修订，不新建编号（属既有节点分组功能的 UI/行为收敛）。`044` 已被 `architecture-boundary-guards` 在途分支占用，不可复用；若用户后续要求把「分组样式」扩展成独立样式子系统，再评估建档 `045`。
 
@@ -773,7 +774,7 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 | 3 | 点开 icon 展示**有哪些分组及其颜色（样式）** | 浮层列 `state.groups`，色块 + 名称 |
 | 4 | 点击对应样式 → **高亮该分组所有节点/文章** | 新增纯前端视图态高亮，不改后端 |
 | 5 | 除颜色外还展示**「设置新组」icon**，里面可设置样式 | 复用 `groupForm`（名称 + 颜色 + 创建） |
-| 6 | **已有的节点/分组也可以再次设置样式** | 歧义，见待确认问题 1 |
+| 6 | **已有的节点/分组也可以再次设置样式** | **已裁定 A+B**（见冻结表 #1）：节点可切换分组、已有分组可在浮层再次改色；节点不可单独调色 |
 | 7 | **论文节点不再单独提供调整样式的功能，样式跟随分组** | 移除节点详情调色板与多选颜色面板，颜色只取分组色 |
 
 ### 现状与关键事实（只读核实，绝对路径 + 行号）
@@ -800,7 +801,7 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 - 颜色优先级 `nodeDisplayColor()` 657–668：草稿 > 已保存 `node.color_override` > `currentGroupColor()`(647–655) > `DEFAULT_NODE_COLOR`；`renderGraph()` 4958–4966 写 `data-node-color` / `data-color-override` / `data-group-color`。
 - 后端 `color_override` 链路：`routes_literature_maps.py:465-478`（`PATCH /node-styles`）、`service.py:866-892`、`store.py:733-783` + 迁移 353–357、`models.py:114/147`；导出 `sanitizeJsonExportBlob()` 5594–5631、`service._export_node()` 2749–2769、`_export_view_settings()` 2550–2583、`EXPORT_SCHEMA_VERSION='literature-map-export-v2'`（JS 51 / service 910）。
 
-### 关键理解（默认方案，待用户确认）
+### 关键理解（已按 A 裁决冻结，2026-11-06）
 
 1. **不新建数据模型、不新增端点**：复用 `GET/POST/PATCH/DELETE /api/literature-maps/{map_id}/groups` 与 `PUT /api/literature-maps/{map_id}/nodes/{node_id}/group`；分组仍是 `name + color`。
 2. **左下角 icon + 浮层**：画布内常驻 `<button class="literature-map-groups-fab" aria-label="分组" aria-expanded="false">`；点击展开 `.literature-map-groups-popover`（左下锚定、向上展开），含：分组行（色块 + 名称 + 可选节点数）、`＋ 新建组` icon（展开 `#literature-map-group-form` 复用表单）、已有分组的改色/重命名/删除入口、「未分组」项与「清除高亮」。Esc / 点击外部 / 再点 icon 关闭，`aria-expanded` 同步。
@@ -810,16 +811,18 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 6. **后端兼容保留（默认）**：`color_override` 列、`PATCH /node-styles`、导出 `color_override` / `node_style` 字段**不删除**，只是前端不再写入且渲染忽略历史值；避免 schema 迁移与旧 `literature-map-export-v2` 导出 JSON 不兼容。是否连根删除见问题 3。
 7. **全局「节点样式」disclosure 默认保留**：它是视图级 `fill_mode` / `fill_opacity`，不是「单个论文节点」的样式；是否一并移除见问题 4。
 
-### 边界（每条对应一条测试）
+### 边界（每条对应一条测试；2026-11-06 评审补断言锚点）
 
-- 左下角 icon 在画布缩放/拖动/空态、三档宽度（≥1180 / 1180–760 / ≤760 抽屉）下不错位、不遮挡缩放控件、不被 SVG 覆盖；`pointer-events` 正确；移动端抽屉内不溢出。
-- 浮层：无分组时显示空态 + 新建入口；分组多时滚动；键盘 Enter/Esc/焦点顺序、点击外部关闭；`aria-expanded` / `aria-pressed` 正确；不与底部图例条重复管理入口。
-- 高亮：只高亮目标分组节点（未分组不被误高亮）、再次点击/清除/切图恢复；**不改变** `data-group-id`、不写库、不触发视图保存、不递增 `revision`、不改变导出 JSON/PNG 内容；与多选模式、节点选中态互不干扰。
-- 新建/编辑分组样式：名称/颜色校验沿用 `validateGroupForm()`(804–814)；重名/非法色提示；成功后该组所有节点按新色立即重绘，高亮态保持；删除组沿用既有级联解绑（节点回落未分组/默认色）。
-- 节点详情**不再出现** `.literature-map-node-color-section` 与「恢复跟随分组」；多选工具栏不再出现颜色调色板；`renderNodeGroupSelector()` 仍可切换分组且颜色随之变化。
-- 颜色优先级：库中残留历史 `color_override` 时渲染仍只用分组色；导入含 `color_override` 的旧导出 JSON 不报错。
+- 左下角 icon 在画布缩放/拖动/空态、三档宽度（1440 / 1024 / 375）下不错位、不遮挡缩放控件、不被 SVG 覆盖；`pointer-events:auto`；移动端抽屉内不溢出。**可断言锚点**：FAB 与 `.literature-map-tools` 的 `getBoundingClientRect()` 无交叠；三档视口下 FAB 矩形完整包含在 `.literature-map-canvas` 矩形内；375 视口断言 `document.documentElement.scrollWidth <= innerWidth`。
+- 浮层：无分组时显示空态 + 新建入口；分组多时滚动（`MAX_GROUPS=200`）；键盘 Enter/Esc/焦点顺序、点击外部关闭；`aria-expanded` / `aria-pressed` 正确；不与底部图例条重复管理入口。
+- 高亮：只高亮目标分组节点（未分组不被误高亮）、再次点击/清除/换图恢复；**同图刷新不清高亮**；**不改变** `data-group-id`、不写库、不触发视图保存、不递增 `revision`、不改变导出 JSON 内容；与多选模式、节点选中态互不干扰。**不写库可断言锚点**：`window.__requestLog` 无新增 `POST/PATCH/PUT`。
+- **并存规则（R-P0-4 闭合）**：分组高亮与既有扩展高亮 `.is-expansion-highlighted`（`literature-maps.css:236` 的橙色 `!important` 描边）同时命中同一节点时，**扩展高亮优先**，分组高亮只作用于其余节点；退出扩展面板后分组高亮态不变。CSS:236 规则保持不变。
+- 新建/编辑分组样式：名称/颜色校验沿用 `validateGroupForm()`(804–814)；**重名提示走后端错误 + `errorAction()`，不得在前端自建重名规则**；非法色提示沿用前端校验；成功后该组所有节点按新色立即重绘、**浮层色块同步刷新**、高亮态保持；删除组沿用既有级联解绑（节点回落未分组/默认色）。
+- 节点详情**不再出现** `.literature-map-node-color-section` 与「恢复跟随分组」；多选工具栏不再出现颜色调色板；`renderNodeGroupSelector()` 仍可切换分组且颜色随之变化。**反向护栏（R-P0-3 闭合）**：节点详情的分组选择器 `#literature-map-node-group` 是**唯一**可改变单节点颜色的入口；全站不存在任何直接写 `node.color_override` 的 UI 路径 —— 验收用 `grep -c "updateGraphColorOverrides\|applyNodeColor" frontend/literature-maps.js` 为 0 或证明不可达。
+- 颜色优先级：库中残留历史 `color_override` 时渲染仍只用分组色；**本仓无 JSON 导入入口，边界改为「导出 JSON 仍含 `color_override` 字段（v2 schema 不变），下游消费者不因字段存在而报错」**（`sanitizeJsonExportBlob()` 5613–5616 白名单本就含该字段，前端不参与计算）。
+- **图例条只读（R-P1-5 闭合）**：`renderGroupLegend()` 保持只读，不承接点击高亮；**左下角浮层是唯一高亮入口**。
 - 零回归：节点分组的颜色/重命名/删除/归入、视图保存与 409 策略、`PATCH /view` 请求体、导出 JSON/PNG 分组图例。
-- XSS：分组名只用 `textContent` / `setAttribute`，禁止 `innerHTML`。
+- XSS：分组名只用 `textContent` / `setAttribute`（含 `title` 与 `aria-label` 插值），**禁止**字符串拼接进 `innerHTML` / `insertAdjacentHTML`；沿用 `test_frontend_map_groups_exports.py:38` 的反断言 `assert 'innerHTML' not in MODULE`。
 
 ### 明确不做
 
@@ -829,7 +832,7 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 - 不改 `PATCH /view` 与 409 策略、不改节点位置/视图保存逻辑（`saveView()` / `view_initialized`）；高亮不持久化、不进导出。
 - 本轮不动 Spec012 索引缺陷与「顶部操作按钮可读性与尺寸」（除非问题 8 确认同批处理）。
 
-### 产品使用步骤（初稿，确认后由 doc-updater 补齐可执行验收案例）
+### 产品使用步骤（2026-11-06 按 A 裁决确认；验收映射由主会话回填，不另派 doc-updater）
 
 1. 打开「⌘ 文献地图」并选中一张地图，图谱**左下角**看到分组 icon；列表下方不再有「人工分组」面板。
 2. 点分组 icon → 浮层展开，列出全部分组及其色块/名称，另有「＋ 新建组」与「未分组」。
@@ -839,10 +842,12 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 6. 选中一个节点：详情里**没有**「节点外观」调色板与「恢复跟随分组」；开启多选也不再出现颜色调色板。
 7. 验收场景：空态、重名、非法色、删除组后节点回落、跨地图不串分组、高亮不写库、键盘可操作、移动端不溢出。
 
+**步骤 → 验收点映射（R-P1-2 闭合）**：步骤 1 → 验证 1 的 FAB DOM 契约 + `#literature-map-groups` 不存在断言；步骤 2 → 验证 1 的浮层开关 / `aria-expanded` / 三档宽度；步骤 3 → 验证 1 + 验证 3 的 `data-group-highlight` on/off；步骤 4 → 验证 1 的 `validateGroupForm()` 复用 + 验证 3 的 `POST /groups` body；步骤 5 → 验证 1 + 验证 3 的 `PATCH /groups`、`PUT /nodes/{id}/group`；步骤 6 → 验证 1 的移除断言（选择器级）；步骤 7 → 验证 1 + 验证 2 + 验证 4。
+
 ### 验证方式（确认后执行）
 
-1. 前端定向：左下角 DOM 契约（画布内 `position:absolute`、`pointer-events`）、浮层开关/键盘/`aria-*`、高亮节点集合与清除、切换地图清除、颜色只取分组色（含历史 `color_override` 忽略）、节点调色板移除断言、无 `innerHTML`；`node --check`、`.venv/bin/python -m pytest tests/frontend -q`（396 passed 基线）、版本断言同步。
-2. 后端定向：默认零改动，仅跑 `tests/literature_maps` 回归确认 `/groups`、`PUT /nodes/{id}/group`、`GET /export` 零回归（既有基线 240 passed）。若问题 3 确认删除链路，另补迁移/导入兼容用例。
+1. 前端定向：左下角 DOM 契约（画布内 `position:absolute`、`pointer-events`）、浮层开关/键盘/`aria-*`、高亮节点集合与清除、切换地图清除、颜色只取分组色（含历史 `color_override` 忽略）、节点调色板移除断言、无 `innerHTML`；`node --check`、`.venv/bin/python -m pytest tests/frontend -q`、版本断言同步。**验收数字（R-P0-2 闭合）**：不得沿用历史「396 passed」；由 `frontend-dev` 实跑记录「改前实测值」，改动后 `tests/frontend` 全量应为 **N passed**，N 由首次全量实跑后回填本段；已知基线用例仍需单独标注 deselect 理由，不放宽阈值、不固化 skip。
+2. 后端定向：默认零改动，仅跑 `tests/literature_maps` 回归确认 `/groups`、`PUT /nodes/{id}/group`、`GET /export` 零回归（复现命令 `cd backend && source ../.venv/bin/activate && python -m pytest tests/literature_maps -q`），**报告须标注为「回归核对（零后端改动前提下）」**，本轮不新增后端用例。
 3. 真实服务 E2E（Playwright + 当前部署版本）：打开有分组的地图 → 点左下角 icon → 浮层列出分组与颜色 → 点某组色块 → 断言该组节点 `data-group-highlight="on"`、其余 `off` → 新建组并设颜色 → 通过节点详情下拉把节点归入新组 → 断言节点色随分组变化 → 清除高亮 → 断言恢复；落盘请求、响应、实体 ID、最终状态与产物路径。
 4. 三档宽度真实浏览器检查左下角不遮挡/不溢出；导出 JSON/PNG 核对分组色块与节点色一致且不含高亮态。
 5. 分端执行：改动若纯前端，只派 `frontend-dev` → `frontend-reviewer` / `frontend-tester`（**不跑后端 pytest**）；若确认要动后端，拆成后端一次、前端一次。验收由 `tester` 汇总、架构师签字后部署验证。
@@ -859,4 +864,177 @@ CSS（**仅作用于 `.literature-map-node-color-section` 作用域**，不影�
 7. **既有待确认项如何裁定**：①「地图标签与卡片设置菜单」及其「卡片显示所属标签」补充 —— 默认**作废撤销**，请确认；②「节点外观面板紧凑布局」—— 默认随节点级调色板移除而**作废**（无需再压缩已删除的面板），请确认；③「顶部操作按钮可读性与尺寸」—— 默认**保留**待实施。
 8. **批次安排**：默认本项独立成批次，与 Spec012 索引卡死缺陷、「顶部按钮可读性」分别确认、按依赖顺序实施；是否希望一次性确认、一次性实施（共用一次版本号升级）？
 
-用户明确确认并回答上述歧义后，本段方可转 `已确认` 开始实现；确认前保持「仅文档」，不改业务代码、不改数据、不升版本号、不部署。
+### 用户确认与冻结范围（2026-11-06，A 裁决）
+
+用户回复「**按照A**」，裁决为：① **以用户最新一次亲自澄清为准**；② 实施本节「节点分组画布左下角入口改造」；③ 「地图标签与卡片设置菜单」及其「卡片显示所属标签」补充**继续作废**，不恢复、不实施；④ 本轮「按默认」视为对历史清单的批量批复。据此，上列 8 个问题**全部按默认值冻结**，逐条裁定如下（任何偏离须先回到 spec 重新确认）：
+
+| # | 裁定（默认值） |
+|---|---|
+| 1 | 采用 **A+B**：节点可在详情里**切换所属分组**（样式随新组变）；**已有分组可在左下角浮层再次编辑颜色/名称**（该组所有节点联动）；节点**不允许**单独调色。 |
+| 2 | 「样式」**仅指颜色**，复用 `literature_map_groups.color`；不扩表、不改 `GroupPatchRequest`、不改导出 schema。 |
+| 3 | 后端 `color_override` / `PATCH /node-styles` / 导出 `color_override`·`node_style` 字段**保留兼容**，仅前端不再写入且渲染忽略历史值；不做 schema 删除。 |
+| 4 | 全局「节点样式」disclosure（`fill_mode` / `fill_opacity`，视图级）**保留**。 |
+| 5 | 高亮为「淡化其它节点 + 命中组描边强调」的**临时视图态**；不持久化、不进导出；再点同一组取消、关闭浮层不清除、切换地图清除。 |
+| 6 | 列表下方 `#literature-map-groups` 管理面板**移除**；画布外底部 `renderGroupLegend()` 图例条**保留**（只读、不承担管理），不并入浮层。 |
+| 7 | ①「地图标签与卡片设置菜单」及「卡片显示所属标签」**作废撤销**；②「节点外观面板紧凑布局」随节点级调色板移除而**作废**；③「顶部操作按钮可读性与尺寸」**保留**（已于 2026-11-06 完成，本批次不动）。 |
+| 8 | 本项**独立成批次**实施；Spec012 索引缺陷与顶部按钮批次均已收口，不再与本项合并、不共用版本号升级。 |
+
+**冻结的文件边界**：`frontend/literature-maps.js`、`frontend/literature-maps.css`、`frontend/index.html`（版本号）、`tests/frontend/` 定向测试；**零后端改动**（`backend/**` 不在本批次）。增量评审通过前不改业务代码。
+
+### 执行配置（本轮增量）
+
+| 角色 | 选用模型 | 上下文上限 | 职责 |
+|---|---|---|---|
+| 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | A 裁决冻结范围、编排、落地校验、验收签字 |
+| 文档更新 `doc-updater` | 不适用（产品使用步骤初稿已在本段给出，无需另补） | — | — |
+| 评审／合并 `architect` | Deepseek-V4.1-Flash（读 `.codebuddy/agents/architect.md`） | 32k | 增量需求／技术评审、验收签字、合并裁决 |
+| 后端开发 `backend-dev` | 不适用（零后端改动） | — | — |
+| 前端开发 `frontend-dev` | Deepseek-V4.1-Flash（读 agent 文件） | 32k | 左下角入口／浮层／高亮／节点样式收敛 + 前端定向测试 |
+| 测试 `tester` | Deepseek-V4.1-Flash（读 agent 文件） | 32k | 跨端验收总控 |
+
+> 分端评审 `frontend-reviewer`、单端回归 `frontend-tester` 按单端原则分派；**纯前端改动不跑后端 pytest**。验收阶段按「零回归」边界另跑一次 `tests/literature_maps` 核对 `/groups` 契约未受影响（属回归核对，非后端改动）。
+
+### 任务拆分（每任务 ≤2 个文件；2026-11-06 Gate 2 评审后重排，共 9 个真实文件）
+
+| 任务 | 文件 | 分派 |
+|---|---|---|
+| FE-1 | `frontend/literature-maps.js`、`frontend/literature-maps.css` | `frontend-dev` |
+| FE-2 | `frontend/index.html`、`tests/frontend/fixtures/literature_map_component.html` | `frontend-dev` |
+| FE-3 | `tests/frontend/test_frontend_map_groups_exports.py`、`tests/frontend/test_frontend_map_palette.py` | `frontend-dev` |
+| FE-4 | `tests/frontend/test_frontend_literature_map_expansion.py`、`tests/frontend/test_frontend_map_mobile_contract.py` | `frontend-dev` |
+| FE-5 | `tests/frontend/test_frontend_literature_map_contract.py`、`tests/frontend/test_frontend_map_analysis_contract.py` | `frontend-dev` |
+| FE-6 | `tests/frontend/test_frontend_map_header_actions_readability.py`、新增 1 个定向测试文件（文件名不含 spec/task 编号） | `frontend-dev` |
+
+> FE-1 与 FE-2 的 `literature-maps.js` 无重叠，可并行；FE-3 ~ FE-6 均依赖 FE-1 的最终 DOM 契约，按序执行。夹具 `tests/frontend/fixtures/literature_map_component.html`（1123 行）是浏览器用例唯一宿主，`:8` css / `:1120` js 版本号必须与 `index.html:9,805` 同步。
+
+**FE-1 落地后实测补充（2026-11-06，评审改动面二次低估）**：`pytest tests/frontend -q`（deselect 已知基线）实测 `20 failed / 388 passed / 1 deselected`，暴露 Gate 2 评审未列出的 3 个文件：
+- `tests/frontend/test_frontend_map_palette.py`（442 行 / 16 用例，其中 16 个失败）—— 依赖 `data-target="node"|"selection"` 色板、`PATCH /node-styles`、`__nodeStyleBodies`；
+- `tests/frontend/test_frontend_selection_color_palette_ux.py`（103 行 / 2 用例，2 个失败）—— 多选颜色面板行为；
+- `tests/frontend/test_frontend_selection_palette_dismiss_on_apply.js`（419 行 node:vm，用 `extract('renderMultiSelectControls')` 等从源码抽真实函数，函数体已收敛）。
+
+任务拆分据此**追加 FE-7**（`test_frontend_map_palette.py` + `test_frontend_selection_color_palette_ux.py`）、**FE-8**（`test_frontend_selection_palette_dismiss_on_apply.js` + 新增 1 个反向契约定向测试文件），并把 FE-6 的「新增 1 个定向测试文件」调整为 FE-8。
+
+**测试处置硬原则（不得绕过失败）**：① **禁止删除测试文件、禁止用 skip/xfail 掩盖**；② 断言「节点单独调色 / 多选调色板」行为的用例，改写为**反向契约断言**（节点调色板不存在、多选色板不存在、无 `PATCH /node-styles` 请求、`grep -c "applyNodeColor\|updateGraphColorOverrides" frontend/literature-maps.js === 0`、节点色只取分组色）；③ 断言**仍保留能力**的用例（分组改色 / recent colors / lost-response 复核 / 409 冲突 / JSON 导出保留 `color_override` / 视图级 `fill_mode`）**迁移到新入口**——先点 `#literature-map-groups-fab` 展开 `#literature-map-groups-popover` 再操作，不得删用例；④ 改前 `20 failed / 388 passed` 作为基线，改后 `tests/frontend` 全量（deselect 已知基线）必须 `0 failed` 且通过数不低于 388 + 新增定向用例数；⑤ 用例总数不得净减少（反向断言仍算用例）。
+
+### 实现期缺陷与架构裁决（2026-11-06，已确认范围内追加，不退回待确认）
+
+FE-1 + FE-2~FE-8 首轮落地后实测 `12 failed / 407 passed / 1 deselected`，剩余 12 个失败全部收敛到 FE-1 业务代码的 3 个真实缺陷：
+
+| 编号 | 缺陷 | 证据 |
+|---|---|---|
+| D-1 | **色块只绑 `toggleGroupHighlight()`，分组色板永不显示** → 裁定 1 的「已有分组可再次设置样式」能力整体失效 | `renderGroups()` 中 `swatch.addEventListener('click', () => toggleGroupHighlight(...))`；`palette.hidden = !colorDraftMatches('group', group_id)` 恒 true |
+| D-2 | `Object.assign(refs, {...})` 漏 `groupNameInput` / `groupColorInput` / `groupCreateButton` → `createGroup()` 会抛 TypeError | `createGroup()` 读 `refs.groupNameInput.value`；refs 注册行无这三个键 |
+| D-3 | `.literature-map-groups-popover` 缺 `touch-action: pan-y` → 375 视口 CDP 触摸拖动 `scrollTop` 恒 0 | 同文件 `#literature-map-list`(301) / `.literature-map-create-panel`(305) / `#literature-map-detail`(306) 均已显式声明；浮层漏写 |
+
+**架构裁决（解决「色块 = 高亮 vs 色块 = 改色」分叉）**：**不接受**把色块点击改为「打开色板」——那会推翻冻结裁定 5「点击分组样式 → 高亮该组所有节点」，且使 FE-8 的高亮断言失效。采用**双入口**：
+- `.literature-map-group-color-trigger`（色块）**保持高亮语义**不变，继续 `toggleGroupHighlight()` + `aria-pressed`；「未分组」行同样保持高亮。
+- 每个已命名分组行**新增显式「改色」按钮** `button.literature-map-group-color-open[data-group-id]`，点击 `setColorDraft(currentGroupColor(group_id), group_id)` 打开该行 `createColorPalette(group_id)`；再次点击 / 点「取消预览」收起。`renderGroups()` 仍是唯一渲染入口，`palette.hidden` 由 `colorDraftMatches()` 驱动。
+- 迁移用例 `_open_group_palette()` 改点 `.literature-map-group-color-open`；FE-8 的色块高亮断言保持不动。
+
+**版本号裁决**：`?v=43`（js）/ `?v=29`（css）是本批次首次升级且**尚未部署**，用户浏览器无该版本缓存，故批内续修不再次升版本；部署后仍以 `43/29` 为首次生效版本。若最终部署前又发生内容改动，仍需复核此结论。
+>
+> **版本号契约（T-P1-6 闭合，写死）**：`literature-maps.js?v=42→43`、`literature-maps.css?v=28→29`；同步 `frontend/index.html:9,805`、夹具 `:8,:1120`，以及 6 个测试文件的硬编码断言 —— `test_frontend_literature_map_contract.py:28-29`、`test_frontend_literature_map_expansion.py:28-29`、`test_frontend_map_analysis_contract.py:34-35`、`test_frontend_map_groups_exports.py:18-19,43-44`、`test_frontend_map_header_actions_readability.py:26,276,303`、`test_frontend_map_mobile_contract.py:94-98`。历史兼容 marker 注释不动。
+
+### Gate 2 强制约束清单（2026-11-06 评审意见沉淀，逐条可验证）
+
+> 来源：`docs/sdd/reviews/043-group-fab-requirement-review.md`（需求 13 条）、`docs/sdd/reviews/043-group-fab-tech-review.md`（技术 20 条）。以下合并去重为 9 组，**P0 全部在此闭合**，实现与验收逐条对照。
+
+**C1 高亮实现硬护栏（T-P0-2 / T-P1-1 / R-P0-4）**
+- `state.groupHighlightId` 只允许三个读写点：浮层交互、`resetMapSelectionState()`（2374–2460）、`renderGraph()`（4946–4979）；**禁止**写入 `state.colorDraft`（否则 `hasUnappliedVisualDraft()` 5633 会拦住导出）、禁止触发 `saveView()` / `request()`。
+- 高亮标记写在 `<g>`（`data-group-id` 附近 4954）或独立 class；**不得**改 `circle` 的内联 `stroke` / `fill`（4962 已被 `nodeStyle` 占用）。
+- 换图清高亮（`previousMapId !== mapId` 分支 2381–2386）、同图刷新不清；与裁定 5「切换地图清除」一致。
+- 与扩展高亮并存时扩展高亮优先（CSS:236 的 `!important` 保持不变）。
+
+**C2 颜色链路收敛（T-P0-3 / T-P0-4 / T-P0-5）**
+- `nodeDisplayColor()` 改为 `currentGroupColor(node?.group_id)`，**必须保留** `currentGroupColor()` 的 `colorDraft.target==='group'` 分支（647–653），否则分组色板实时预览失效。
+- `createColorPalette()` 收敛为 **group-only 单目标**：清理签名、`palette.dataset.target`、763 文案、766–769 `applyNodeColor` 分支、775–786 `followGroup` 分支；`applyNodeColor()` / `updateGraphColorOverrides()` 变无调用者后**必须删除**，不留死代码。
+- `refs.selectionPalette`（1242–1244、1319）与 `renderMultiSelectControls()`（1868–1875）同批清理，`querySelector` 不得指向已删节点。
+- 浮层改色 / 重命名 / 删除成功后，`applyGroupColor()`（2255–2258）、`cancelColorDraft()`（704–710）、`renameGroup()`、`deleteGroup()` 的回调必须**同时刷新浮层**（建议把浮层渲染并入 `renderGroups()`，保持单一入口）。
+
+**C3 FAB 与浮层布局（T-P1-2 / T-P1-3 / T-P1-4）**
+- FAB：`position:absolute`、显式 `pointer-events:auto`、append 在 `.literature-map-canvas-empty`（1267）之后、尺寸 ≤44px、带 `aria-label` / `aria-expanded` / `aria-controls`。
+- 浮层：`position:absolute`（**不用** `position:fixed`，避免与抽屉 `z-index:1070` / backdrop `1060` 冲突，CSS:299,313）；`max-height` + `overflow:auto` + `overscroll-behavior:contain`；向上展开用 `bottom` 锚定，**不得**依赖负 `top`（画布 `overflow:hidden`，CSS:74）。
+- 375 视口下画布可能仅 ~180px 高（CSS:289），浮层高度自适应且可滚动；Esc / 点击外部监听在 `state.active=false` 时必须解除，避免与其它视图快捷键打架。
+
+**C4 表单复用择一写死（T-P2-4 / T-P1-7）**
+- 采用 **(a) 搬 DOM**：把 `#literature-map-group-form` 从原面板搬到浮层容器，`refs.groupForm` 指针不变、`createGroup()` 零改动；`renderGroups()` 重写为「只渲染浮层行」。**禁止**另造第二套表单。
+- 重名 / 非法色文案走 `errorAction()` + 后端错误，不得在前端自建重名校验（`validateGroupForm()` 804–814 现状不含查重）。
+
+**C5 XSS 与可访问性（R-P2-3 / T-P2-3）**
+- 浮层渲染分组名沿用 `createElement()`（`textContent`，191–196）与 `setAttribute('title' / 'aria-label', ...)`（220–224）；禁止 `innerHTML` / `insertAdjacentHTML`。
+- 可断言锚点：FAB `aria-expanded`、浮层稳定 id `#literature-map-groups-popover` + `hidden`、色块 `aria-pressed`；Esc 断言「先开→`true`→点外部→`false`」，避免 Playwright mousedown 序导致 flaky。
+
+**C6 文件与版本号（R-P0-1 / T-P0-1 / T-P1-6）**：见上方任务拆分 6 格与版本号契约，不再另列。
+
+**C7 验收测试（R-P0-2 / T-P0-2 / T-P1-5）**
+- 新增用例文件名禁止含 spec/task 编号；测试基线数字由 dev 实跑后回填，不得沿用历史「396」。
+- 高亮「不写库」断言 `window.__requestLog` 无新增 `POST/PATCH/PUT`；导出 JSON 断言无 `groupHighlight` 字段。
+- 验收阶段 `tests/literature_maps` 须标注为**回归核对（零后端改动前提下）**并附 `.venv` 激活命令。
+- 已知基线 `test_frontend_map_feasibility.py::test_synthetic_svg_supports_sparse_graph_interactions` 不得放宽阈值、不得固化 skip。
+
+**C8 图例条与语义收口（R-P0-3 / R-P1-5 / T-2.3）**：见「边界」段的图例条只读、单节点颜色唯一入口、导出 JSON 保留 `color_override` 三条。
+
+**C9 批次（R-E13）**：独立成批次、不共用版本号升级，与裁定 8 一致，无需调整。
+
+### 实现与定向验证结果（2026-11-06，主会话读回校验）
+
+- **任务拆分 FE-1 ~ FE-8 全部完成**，共 10 个文件：`frontend/literature-maps.js` / `.css` / `index.html`、夹具、6 个既有测试文件、1 个 node:vm 测试、1 个新增定向测试 `tests/frontend/test_frontend_map_group_fab.py`（9 用例）。零后端改动。
+- **最终前端全量**：`.venv/bin/python -m pytest tests/frontend -q --deselect tests/frontend/test_frontend_map_feasibility.py::test_synthetic_svg_supports_sparse_graph_interactions` → **exit 0，`419 passed, 1 deselected, 0 failed in 131.73s`**（改前基线 `20 failed / 388 passed`；反向断言与迁移用例均保留，用例总数净增）。
+- `node --check frontend/literature-maps.js` exit 0；`node --check tests/frontend/test_frontend_selection_palette_dismiss_on_apply.js` exit 0 且真实执行输出 `ok`；`grep -c "applyNodeColor\|updateGraphColorOverrides" frontend/literature-maps.js` = 0；`innerHTML` = 0 命中。
+- **版本号契约**：`literature-maps.js?v=42→43`、`literature-maps.css?v=28→29`，`index.html:9,805` / 夹具 `:8,:1120` / 6 个测试断言全部同步；`app.js?v=71` / `styles.css?v=69` 未动。
+- **实现期缺陷闭合**：D-1（色块=高亮、新增 `.literature-map-group-color-open`=改色双入口）、D-2（refs 三键，FE-1 已含）、D-3（浮层 `touch-action: pan-y`）；另修 409 同图重读期间 `renderGroups()` 误收浮层（改用 `!state.selectedMapId` 判定），保留「409 后草稿与浮层可直接重试」既有契约。
+- **阻塞项**：仅 1 项 —— 已知性能基线 `test_frontend_map_feasibility.py::test_synthetic_svg_supports_sparse_graph_interactions` 本机稳定超阈，干净 HEAD 同样失败，fixture 自包含、不加载本批次资源；仅命令行 deselect，未放宽阈值、未固化 skip，单独立项跟踪。
+- **分派异常留痕**：实现共 6 次 `frontend-dev` 分派，其中 2 次遇账号级 429，按门禁规则重试后临时换档（任务结束已还原 `.codebuddy/agents/frontend-dev.md` 的 `model` 字段），1 次回传被截断但文件已落盘、由主会话读回确认；分端评审/回归另有 2 次 429，同样临时换档并已还原 `frontend-reviewer.md` / `frontend-tester.md`。所有「说改了」的产出均经主会话 `Read`/diff/`node --check`/真实 pytest 复核。
+- **后端零回归核对**：`.venv/bin/python -m pytest tests/literature_maps -q` → exit 0，`240 passed`（性质为**回归核对（零后端改动前提下）**，非后端改动验证；`/groups`、`PUT /nodes/{id}/group`、`GET /export` 契约未受影响）。
+- **分端评审 / 回归结论**：`docs/sdd/reviews/043-group-fab-frontend-review.md` —— **通过**（P0=0 / P1=0 / P2=0，四项必守逐条 PASS）；`docs/sdd/reviews/043-group-fab-frontend-regression.md` —— **READY**（10 条命令逐条记录退出码，`419 passed / 1 deselected / 0 failed`）。两份报告头部元数据由主会话代行纯文档校正并留痕，未改结论与数字。
+
+### 部署与运行时验证（2026-11-06，真实服务）
+
+- **服务**：`http://127.0.0.1:8000/`，`/api/health` = 200；服务已在运行且直接提供最终静态资源 `literature-maps.js?v=43` / `literature-maps.css?v=29`（零后端改动，无需重启）。
+- **真实浏览器 E2E 产物**（`playwright` + 当前部署版本）：
+  - `docs/sdd/plans/043/artifacts/2026-11-06-group-fab-live-e2e.json`（步骤 01–26、真实请求/响应、实体 ID、最终状态）；
+  - `...-live-e2e.png`（浮层展开）、`...-highlight.png`（未分组高亮）、`...-created-highlight.png`（新建组高亮）。
+- **关键实测**：目标地图 `0baabeae7268429c9f7e4de8098ae1d0`（32 节点 / 1 分组）；FAB `40×40` @ `(520.6,740)`，`position:absolute`、`pointer-events:auto`、完整位于画布内；浮层列出 `aaa` `#F06595` 与「未分组」；点「未分组」色块 `on=32 / off=0`、`aria-pressed=true`、「清除高亮」可见；清除后 `on=0 / off=0`；Esc 后 `hidden=true` / `aria-expanded=false`；三档宽度 1440 / 1024 / 375 均 `inside=true`、`h_overflow=false`；导出 JSON `schema_version=literature-map-export-v2`，含 `color_override` 字段、**不含高亮态**；高亮态下 JSON 85,535 B / PNG 70,336 B 均下载成功；高亮过程中**无任何新增 POST/PATCH/PUT**（唯一 POST 是选图时的 `analysis-queue/ensure` 202，与高亮无关）。
+- **真实 API 端到端成功案例**（当前部署版本，全部 200）：
+  `POST /groups` `{"name":"E2E验收分组-1106C","color":"#2e7d5b","expected_revision":321}` → 实体 `group_id=f5a79999233e40eba2a373a267536cee`；
+  `PUT /nodes/21041260a5394f42891b020128fa60fa/group` `{"group_id":"f5a799..."}` → 节点 `fill` 由 `#8d80e6` 变 `#2e7d5b`；
+  点新组色块 → `on=1 / off=31`、目标节点 `data-group-highlight=on`；
+  导出 JSON `groups_count=2`、`has_highlight_state=false`、`has_color_override_field=true`；
+  `PATCH /view`（归组后既有自动保存）→ `PUT .../group {"group_id":null}` → `DELETE /groups/f5a799...` 清理。
+  **最终状态**：`GET /groups` 仅剩 `aaa` 1 组、`revision=326`、32 节点 `group_id` 全部为 `None`（E2E 数据已完全恢复，无残留）。
+
+### 人工验收可复现步骤（交给用户前准备度自查）
+
+1. 浏览器打开 `http://127.0.0.1:8000/`，点左侧「⌘ 文献地图」→ **等待**地图列表出现（7 张卡）。
+2. 点「API E2E: Graph Attention Networks r2」卡片 → **等待**画布出现 32 个节点；右下角之外、画布**左下角**应出现 40×40 分组 icon；列表下方**不再有**「人工分组」面板。
+3. 点左下角 icon → **等待**浮层展开（标题「分组」，列出 `aaa` 粉红色块 +「未分组」白块 +「＋ 新建组」）。
+4. 点某分组色块 → **提示**：该组节点描边强调、其余淡化，头部出现「清除高亮」；再点同一色块或「清除高亮」→ **提示**：全部恢复默认。按 Esc 或点浮层外部 → 浮层收起但高亮保留。
+5. 点「＋ 新建组」→ 填名称与颜色 → 点「创建」→ **等待**浮层出现新组；点新组行「改色」→ 选色 → 点「应用」→ **提示**：该组所有节点立即变色。
+6. 先收起浮层（Esc），点任意节点 → **等待**右侧详情出现「将此论文归入」下拉；选新建组 → **提示**：该节点颜色立即变为该组颜色；详情里**应无**「节点外观」调色板。
+7. 开启多选 → **提示**：工具栏不再出现颜色调色板。点「导出 JSON」/「导出 PNG」→ **等待**浏览器下载完成；导出内容不含高亮态。
+8. 切换到另一张地图 → **提示**：高亮自动清除、浮层收起，分组列表不串图。
+9. **失败恢复**：重名时浮层显示后端错误提示、原值保留可重试；改色遇 409「地图版本已变化」时浮层与草稿**保持展开**，点「应用」即可重试；网络失败提示可重试且不覆盖他人修改。若浮层遮住节点，按 Esc 收起后再点。
+10. **产物查看**：`docs/sdd/plans/043/artifacts/2026-11-06-group-fab-live-e2e.json` 与同目录 3 张 PNG；评审报告在 `docs/sdd/reviews/043-group-fab-*.md`。
+
+### 评审记录（本轮增量）
+
+- 需求评审：`docs/sdd/reviews/043-group-fab-requirement-review.md` —— **通过（附 13 条强制约束）**，2026-11-06 `architect` 子代理出具；P0 4 / P1 5 / P2 3，P0 已在「Gate 2 强制约束清单」闭合。
+- 技术评审：`docs/sdd/reviews/043-group-fab-tech-review.md` —— **通过（附 20 条强制约束）**，2026-11-06 `architect` 子代理出具；P0 5 / P1 7 / P2 4，P0 已闭合；核心判断「零后端改动成立」。
+- 前端评审：`docs/sdd/reviews/043-group-fab-frontend-review.md` —— **通过**，2026-11-06 `frontend-reviewer` 子代理出具；P0=0 / P1=0 / P2=0，四项必守逐条 PASS。
+- 单端回归：`docs/sdd/reviews/043-group-fab-frontend-regression.md` —— **READY**，2026-11-06 `frontend-tester` 子代理出具；10 条命令逐条记录退出码。
+- 验收评审：`docs/sdd/reviews/043-group-fab-acceptance-review.md` —— **通过**，2026-11-06 `tester` 子代理出具；十项交付准备度 10 PASS / 0 FAIL、P0=0 / P1=0；架构师签字栏已填「同意验收通过，签字收口」。
+- 合并裁决：`docs/sdd/reviews/043-group-fab-merge-decision.md` —— **同意合并**，2026-11-06 `architect` 子代理出具；DoD 10/10 PASS。
+
+> 上述 4 份分端/验收/裁决报告因本地档位回传截断，头部元数据与个别事实表述由主会话（架构师）**代行纯文档校正并各留校正记录**；结论、P 项数量、E2E 数字、业务代码与测试均未改动。代行留痕三处：各报告头部/校正记录、本评审记录、下方变更日志。
+
+### 变更日志（本轮增量）
+
+- 2026-11-06 ｜ 架构师（自身，主会话代行纯文档）｜ 按用户「按照A」裁决把本段由 `待确认` 转 `已确认`，逐条冻结 8 个默认值，作废地图标签段与紧凑布局段，补执行配置／任务拆分／评审记录；**无业务代码改动**。
+- 2026-11-06 ｜ 主会话（架构师）｜ `spec-status-changelog.md` 追加状态流转记录。
+- 2026-11-06 ｜ `architect` 子代理（Deepseek-V4.1-Flash）｜ Gate 2 需求／技术评审双「通过附意见」，落盘两份评审报告（日志 `.codebuddy/agent-logs/spec-043/task-12/architect/20261106-121332.md`）。
+- 2026-11-06 ｜ 主会话（架构师，代行纯文档）｜ 回填 33 条评审意见为「Gate 2 强制约束清单」C1–C9，重排任务拆分为 6 格 / 9 文件，写死版本号契约，闭合 9 个 P0；**无业务代码改动**。
+- 2026-11-06 ｜ `frontend-dev` 子代理（6 次分派，含 2 次 429 换档）｜ FE-1~FE-8 全部实现：左下角 FAB / 浮层 / 高亮 / 改色双入口 / 移除节点级与多选调色板 / 版本号 `43/29` / 测试迁移与反向断言；闭合实现期缺陷 D-1~D-3 与 409 浮层保留。主会话逐次读回 diff 校验。
+- 2026-11-06 ｜ 主会话（架构师）｜ 部署与运行时验证：`/api/health` 200、`js?v=43`/`css?v=29` 生效；真实浏览器 E2E 26 步 + 真实 API 成功案例（实体 `f5a79999233e40eba2a373a267536cee`，最终 `revision=326` 已清理恢复）落盘到 `docs/sdd/plans/043/artifacts/`。
+- 2026-11-06 ｜ `frontend-reviewer` / `frontend-tester` / `tester` / `architect` 子代理｜ 前端评审通过、单端回归 READY、验收评审 10 PASS、架构师签字 + 同意合并裁决全部落盘。
+- 2026-11-06 ｜ 主会话（架构师，代行纯文档）｜ 校正 4 份报告的头部元数据、约束编号、裁定/步骤编号与改动清单等事实表述；**三处留痕**：各报告头部与校正记录、上方评审记录、本变更日志；**未改任何结论、数字、业务代码或测试**。
+- 2026-11-06 ｜ 主会话（架构师）｜ 本段状态由 `实施中` 转 `已完成`，`spec-status-changelog.md` 追加收口记录；`docs/sdd/retro/2026-11-06-043-group-fab-retro.md` 落盘复盘。

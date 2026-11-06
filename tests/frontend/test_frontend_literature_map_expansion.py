@@ -25,8 +25,8 @@ def _open_browser_or_skip(playwright):
 
 
 def test_expansion_contract_uses_versioned_safe_dom_and_frozen_routes() -> None:
-    assert "/assets/literature-maps.js?v=42" in INDEX
-    assert "/assets/literature-maps.css?v=28" in INDEX
+    assert "/assets/literature-maps.js?v=43" in INDEX
+    assert "/assets/literature-maps.css?v=29" in INDEX
     assert "innerHTML" not in MODULE
     for marker in (
         "/previews",
@@ -122,7 +122,15 @@ def test_component_fixture_shows_one_two_direction_expansion_panel_and_keeps_gro
 
         node = page.locator('[data-node-id="node-a"]')
         assert node.get_attribute("data-group-id") == "group-fixture"
-        assert page.locator('#literature-map-groups .literature-map-group-row[data-group-id="group-fixture"]').is_visible()
+        # 分组入口已搬到画布左下角 FAB 浮层；展开后该组行必须可见。
+        page.locator('#literature-map-groups-fab').click()
+        page.wait_for_selector('#literature-map-groups-popover:not([hidden])')
+        assert page.locator(
+            '#literature-map-groups-popover .literature-map-group-row[data-group-id="group-fixture"]'
+        ).is_visible()
+        assert page.locator('#literature-map-groups .literature-map-group-row[data-group-id="group-fixture"]').count() == 0, (
+            '旧的左侧分组面板必须已删除'
+        )
 
         refs_tab = page.locator('[role="tab"][data-expansion-kind="references"]')
         citations_tab = page.locator('[role="tab"][data-expansion-kind="citations"]')

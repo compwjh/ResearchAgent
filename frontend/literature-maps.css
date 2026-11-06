@@ -243,11 +243,7 @@
 #literature-maps-view .literature-map-expansion-batch-error-code { grid-column: 1 / -1; color: #a33232; overflow-wrap: anywhere; }
 #literature-maps-view .literature-map-expansion-batch button { min-height: 32px; width: fit-content; max-width: 100%; padding: 6px 8px; font-size: 9px; }
 #literature-maps-view .literature-map-node.is-expansion-highlighted circle { stroke: #f08c00 !important; stroke-width: 5 !important; filter: drop-shadow(0 0 4px #f08c0088); }
-#literature-maps-view .literature-map-groups { display: grid; gap: 8px; margin: 10px; padding: 10px; border: 1px solid #e2dcff; border-radius: 9px; background: #faf9ff; }
-#literature-maps-view .literature-map-groups[hidden] { display: none !important; }
-#literature-maps-view .literature-map-groups-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-#literature-maps-view .literature-map-groups-heading h3 { margin: 0; font-size: 12px; }
-#literature-maps-view .literature-map-groups-note, #literature-maps-view .literature-map-group-helper { color: var(--muted); font: 9px/1.45 'DM Mono', monospace; }
+#literature-maps-view .literature-map-group-helper { color: var(--muted); font: 9px/1.45 'DM Mono', monospace; }
 #literature-maps-view .literature-map-group-form { display: grid; grid-template-columns: minmax(0, 1fr) 28px auto; gap: 5px; align-items: center; }
 #literature-maps-view .literature-map-group-form input[type="text"], #literature-maps-view .literature-map-group-form input:not([type]) { min-width: 0; border: 1px solid #dfdced; border-radius: 6px; padding: 6px 7px; background: #fff; color: var(--ink); font: 10px Manrope, "Helvetica Neue", Arial, sans-serif; }
 #literature-maps-view .literature-map-group-form input:focus { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -303,7 +299,9 @@
   #literature-maps-view .literature-map-detail-panel.is-open { visibility: visible; pointer-events: auto; transform: translateY(0); transition-delay: 0s; }
   #literature-maps-view .literature-map-panel-head { flex: 0 0 auto; }
   #literature-maps-view .literature-map-list { flex: 1 1 auto; min-height: 70px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
-  #literature-maps-view .literature-map-groups { max-height: 30dvh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+  #literature-maps-view .literature-map-groups-popover { left: 8px; right: 8px; bottom: calc(44px + 14px); max-height: min(46dvh, 260px); }
+  #literature-maps-view .literature-map-groups-fab { left: 8px; bottom: 8px; }
+  #literature-maps-view .literature-map-group-row { grid-template-columns: 26px minmax(0, 1fr) auto auto auto; }
   #literature-maps-view .literature-map-create-panel { max-height: 52dvh; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
   #literature-maps-view .literature-map-detail { display: grid; grid-template-columns: 1fr; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
   #literature-maps-view .literature-map-mobile-list-open,
@@ -350,15 +348,98 @@
 #literature-maps-view .literature-map-color-hex[aria-invalid="true"] { border-color: #b54141; }
 #literature-maps-view .literature-map-color-error { min-height: 12px; color: #a33232; font: 9px/1.4 'DM Mono', monospace; }
 #literature-maps-view .literature-map-color-actions { display: flex; flex-wrap: wrap; gap: 5px; }
-#literature-maps-view .literature-map-color-actions button, #literature-maps-view .literature-map-node-color-follow-group { padding: 6px 8px; font-size: 9px; }
-#literature-maps-view .literature-map-node-color-section, #literature-maps-view .literature-map-node-group-section { display: grid; gap: 6px; padding-top: 11px; border-top: 1px solid #ece9f7; }
-#literature-maps-view .literature-map-node-color-section h4, #literature-maps-view .literature-map-node-group-section h4 { margin: 0; font-size: 11px; }
-#literature-maps-view .literature-map-node-color-section .literature-map-color-palette { grid-template-columns: minmax(0, 1fr); }
-#literature-maps-view .literature-map-group-row { grid-template-columns: 25px minmax(0, 1fr) auto auto; }
+#literature-maps-view .literature-map-color-actions button { padding: 6px 8px; font-size: 9px; }
+#literature-maps-view .literature-map-node-group-section { display: grid; gap: 6px; padding-top: 11px; border-top: 1px solid #ece9f7; }
+#literature-maps-view .literature-map-node-group-section h4 { margin: 0; font-size: 11px; }
+#literature-maps-view .literature-map-group-row { grid-template-columns: 25px minmax(0, 1fr) auto auto auto; }
 #literature-maps-view .literature-map-group-color-trigger { display: inline-block; width: 23px; height: 23px; padding: 0 !important; border: 1px solid #dfdced; border-radius: 6px; cursor: pointer; }
+#literature-maps-view .literature-map-group-color-trigger[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+#literature-maps-view .literature-map-group-color-trigger:disabled { opacity: .45; cursor: not-allowed; }
+/* 「改色」：分组行内的次级按钮，与 .literature-map-group-rename / -delete 同一视觉体系。
+ * 只在浮层行内生效，不触碰全局 .secondary-button。 */
+#literature-maps-view .literature-map-group-color-open { border-color: #cfc8ff; color: #5145b8; }
+#literature-maps-view .literature-map-group-color-open:hover { border-color: var(--accent); background: #f7f5ff; }
+#literature-maps-view .literature-map-group-color-open:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#literature-maps-view .literature-map-group-color-open[aria-expanded="true"] { border-color: var(--accent); background: #f2eeff; }
 #literature-maps-view .literature-map-group-row > .literature-map-color-palette { grid-column: 1 / -1; }
 #literature-maps-view .literature-map-node.is-selected circle { stroke-width: 3; }
+/* 分组高亮（纯视图态）：命中组描边强调 + 其余节点/边淡化。
+ * 只作用于 <g> 与 <line> 的 opacity/class，不写 circle 的内联 fill/stroke。
+ * 与 `.is-expansion-highlighted`（上方橙色 !important 描边）并存时扩展高亮优先：
+ * 这里刻意不使用 !important，橙色描边不会被覆盖。 */
+#literature-maps-view .literature-map-node.is-group-dimmed { opacity: .18; }
+#literature-maps-view .literature-map-node.is-group-highlighted circle { stroke-width: 4; filter: drop-shadow(0 0 5px #8d80e6aa); }
+#literature-maps-view .literature-map-edge.is-group-dimmed { opacity: .1; }
+/* 画布左下角分组入口（FAB）。必须 absolute + pointer-events:auto：
+ * 画布内 svg 与 `.literature-map-canvas-empty`（pointer-events:none）都在它前面。 */
+#literature-maps-view .literature-map-groups-fab {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid #d8d2ff;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 14px #2f275c26;
+  color: #5c4ad8;
+  cursor: pointer;
+  pointer-events: auto;
+}
+#literature-maps-view .literature-map-groups-fab[hidden] { display: none !important; }
+#literature-maps-view .literature-map-groups-fab:hover { border-color: var(--accent); background: #f7f5ff; }
+#literature-maps-view .literature-map-groups-fab:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#literature-maps-view .literature-map-groups-fab-icon { position: relative; display: block; width: 18px; height: 14px; border-radius: 3px; background: currentColor; }
+#literature-maps-view .literature-map-groups-fab-icon::before,
+#literature-maps-view .literature-map-groups-fab-icon::after { position: absolute; left: 3px; width: 9px; height: 2px; border-radius: 1px; background: #fff; content: ''; }
+#literature-maps-view .literature-map-groups-fab-icon::before { top: 4px; }
+#literature-maps-view .literature-map-groups-fab-icon::after { top: 8px; }
+/* 分组浮层：absolute 锚定在画布内（不用 fixed，避免与移动端抽屉 z-index 1070 /
+ * backdrop 1060 抢层）。向上展开用 bottom 锚定，不依赖负 top（画布 overflow:hidden）。 */
+#literature-maps-view .literature-map-groups-popover {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(40px + 20px);
+  z-index: 3;
+  display: grid;
+  gap: 7px;
+  max-width: 320px;
+  max-height: min(60%, 380px);
+  box-sizing: border-box;
+  padding: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* 触摸端（iOS/Android）：允许浮层内纵向手势滚动，不把 pan 交给画布/抽屉。
+   * 与 `.literature-map-create-panel` / `.literature-map-list` 的既有写法一致。 */
+  touch-action: pan-y;
+  border: 1px solid #d8d2ff;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 28px #2f275c2e;
+  pointer-events: auto;
+}
+#literature-maps-view .literature-map-groups-popover[hidden] { display: none !important; }
+#literature-maps-view .literature-map-groups-popover-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#literature-maps-view .literature-map-groups-popover-title { margin: 0; font-size: 12px; }
+#literature-maps-view .literature-map-groups-clear-highlight { padding: 5px 7px; font-size: 9px; }
+#literature-maps-view .literature-map-groups-clear-highlight[hidden] { display: none !important; }
+#literature-maps-view .literature-map-groups-create > summary { min-height: 24px; padding: 4px 7px; border: 1px dashed #cfc8ff; border-radius: 6px; background: #faf9ff; color: #5145b8; cursor: pointer; font-size: 9px; font-weight: 700; list-style: none; }
+#literature-maps-view .literature-map-groups-create > summary::-webkit-details-marker { display: none; }
+#literature-maps-view .literature-map-groups-create[open] > summary { border-style: solid; background: #f7f5ff; }
+#literature-maps-view .literature-map-groups-create .literature-map-group-form { margin-top: 6px; }
+@media (max-width: 760px) {
+  /* 375 档画布可能只剩 ~180px 高：行内按钮保证 28px 触摸目标，
+   * 浮层高度由上面的 `max-height: min(46dvh, 260px)` + overflow:auto 兜底。 */
+  #literature-maps-view .literature-map-group-row button { min-height: 28px; }
+}
 @media (max-width: 760px) {
   #literature-maps-view .literature-map-selection-toolbar { margin: 8px 8px 0; }
-  #literature-maps-view .literature-map-detail .literature-map-color-swatch { width: 25px; height: 25px; }
+  #literature-maps-view .literature-map-color-swatch { width: 25px; height: 25px; }
 }

@@ -65,6 +65,8 @@
   const SUPPORTED_MAP_SOURCE_IDS = new Set(['usenix', 'dblp', 'ieee_sp', 'ccs', 'ndss', 'openalex', 'crossref']);
   const SUPPORTED_MAP_CONFERENCE_IDS = new Set(['usenix-security', 'ieee-sp', 'ccs', 'ndss']);
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  // 「未分组」在 state.groupHighlightId 里的哨兵值；分组 id 来自后端，不会撞值。
+  const UNGROUPED_HIGHLIGHT_ID = '__ungrouped__';
 
   const state = {
     active: false,
@@ -73,9 +75,11 @@
     groups: [],
     multiSelectActive: false,
     multiSelectedNodeIds: new Set(),
-    // 多选颜色面板在保存成功后主动收起（否则挡住刚上好色的节点）；
-    // 用户再次调整选择或开关多选模式时重置，让面板能重新出现。
-    selectionPaletteDismissed: false,
+    // 左下角分组浮层的展开态（纯 UI 态，不落库）。
+    groupsPopoverOpen: false,
+    // 分组高亮：null / group_id / '__ungrouped__'。纯视图态，不写库、不进导出、
+    // 不递增 revision；只允许浮层交互、resetMapSelectionState()、renderGraph() 读写。
+    groupHighlightId: null,
     colorDraft: null,
     colorSaveInFlight: false,
     recentColorBuckets: new Map(),
@@ -654,64 +658,42 @@
     return group?.color || DEFAULT_NODE_COLOR;
   }
 
+  // 论文节点不再支持单独调色：颜色一律跟随所属分组。
+  // 注意必须继续经由 currentGroupColor()，它保留 `colorDraft.target === 'group'`
+  // 的草稿预览分支，否则分组色板的实时预览会失效。
   function nodeDisplayColor(node) {
-    const draft = state.colorDraft;
-    if (draft?.mapId === state.map?.map_id && ['node', 'selection'].includes(draft.target)
-      && draft.nodeIds.includes(node?.node_id)) {
-      if (draft.colorOverride === null) return currentGroupColor(node.group_id);
-      const draftColor = normalizeHexColor(draft.colorOverride);
-      if (draftColor) return draftColor;
-    }
-    const override = normalizeHexColor(node?.color_override);
-    if (override) return override;
     return currentGroupColor(node?.group_id);
   }
 
   function colorDraftMatches(target, groupId = null) {
     if (!state.colorDraft || state.colorDraft.mapId !== state.map?.map_id || state.colorDraft.target !== target) return false;
-    if (target === 'group') return state.colorDraft.groupId === groupId;
-    const currentIds = target === 'selection' ? [...state.multiSelectedNodeIds] : [state.selectedNodeId].filter(Boolean);
-    return state.colorDraft.nodeIds.length === currentIds.length
-      && state.colorDraft.nodeIds.every((nodeId) => currentIds.includes(nodeId));
+    return state.colorDraft.groupId === groupId;
   }
 
-  function initialPaletteColor(target, groupId = null) {
-    if (colorDraftMatches(target, groupId)) {
+  function initialPaletteColor(groupId = null) {
+    if (colorDraftMatches('group', groupId)) {
       const draft = state.colorDraft.colorOverride;
       if (normalizeHexColor(draft)) return draft;
     }
-    if (target === 'group') return currentGroupColor(groupId);
-    const ids = target === 'selection'
-      ? [...state.multiSelectedNodeIds]
-      : [state.selectedNodeId].filter(Boolean);
-    const node = normalizeNodes(state.graph).find((item) => item.node_id === ids[0]);
-    return node ? nodeDisplayColor(node) : DEFAULT_NODE_COLOR;
+    return currentGroupColor(groupId);
   }
 
-  function colorTargetNodeIds(target) {
-    const ids = target === 'selection' ? [...state.multiSelectedNodeIds] : [state.selectedNodeId].filter(Boolean);
-    return [...new Set(ids)].filter((nodeId) => activeNodes().some((node) => node.node_id === nodeId)).slice(0, MAX_MAP_NODES);
-  }
-
-  function setColorDraft(target, colorOverride, groupId = null) {
+  function setColorDraft(colorOverride, groupId = null) {
     if (!state.map?.map_id) return;
-    const nodeIds = target === 'group' ? [] : colorTargetNodeIds(target);
-    if (target !== 'group' && !nodeIds.length) return;
-    state.colorDraft = { mapId: state.map.map_id, target, groupId, nodeIds, colorOverride };
+    state.colorDraft = { mapId: state.map.map_id, target: 'group', groupId, nodeIds: [], colorOverride };
     renderGraph();
   }
 
-  function cancelColorDraft(target, groupId = null) {
-    if (state.colorDraft && state.colorDraft.target === target
-      && (target !== 'group' || state.colorDraft.groupId === groupId)) state.colorDraft = null;
+  function cancelColorDraft(groupId = null) {
+    if (state.colorDraft && state.colorDraft.target === 'group'
+      && state.colorDraft.groupId === groupId) state.colorDraft = null;
     renderGraph();
-    if (target === 'group') renderGroups();
-    else if (target === 'node' && state.selectedNode) renderNodeDetail(state.selectedNode);
+    renderGroups();
   }
 
-  function createColorPalette(target, groupId = null) {
-    const palette = createElement('section', `literature-map-color-palette literature-map-color-palette-${target}`);
-    palette.dataset.target = target;
+  function createColorPalette(groupId = null) {
+    const palette = createElement('section', 'literature-map-color-palette literature-map-color-palette-group');
+    palette.dataset.target = 'group';
     if (groupId) palette.dataset.groupId = groupId;
     const colors = createElement('div', 'literature-map-color-swatches');
     COLOR_PRESETS.forEach((color) => {
@@ -722,7 +704,7 @@
       swatch.setAttribute('aria-label', `选择颜色 ${color}`);
       swatch.title = color;
       swatch.addEventListener('click', () => {
-        setColorDraft(target, color, groupId);
+        setColorDraft(color, groupId);
         hexInput.value = color;
         error.textContent = '';
         hexInput.removeAttribute('aria-invalid');
@@ -740,7 +722,7 @@
       swatch.setAttribute('aria-label', `最近使用的颜色 ${color}`);
       swatch.title = color;
       swatch.addEventListener('click', () => {
-        setColorDraft(target, color, groupId);
+        setColorDraft(color, groupId);
         hexInput.value = color;
         error.textContent = '';
         hexInput.removeAttribute('aria-invalid');
@@ -754,36 +736,21 @@
     hexInput.inputMode = 'text';
     hexInput.autocomplete = 'off';
     hexInput.maxLength = '7';
-    hexInput.value = initialPaletteColor(target, groupId);
+    hexInput.value = initialPaletteColor(groupId);
     hexInput.setAttribute('aria-label', '自定义 HEX 颜色');
     const error = createElement('span', 'literature-map-color-error');
     error.setAttribute('role', 'alert');
     hexLabel.append(hexInput);
     const actions = createElement('div', 'literature-map-color-actions');
-    const applyButton = createElement('button', 'send-button literature-map-color-apply', target === 'group' ? '应用分组颜色' : '应用到 1 篇');
+    const applyButton = createElement('button', 'send-button literature-map-color-apply', '应用分组颜色');
     applyButton.type = 'button';
-    applyButton.disabled = !state.map?.map_id || (target === 'selection' && !state.multiSelectedNodeIds.size);
-    applyButton.addEventListener('click', () => {
-      if (target === 'group') applyGroupColor(groupId, applyButton);
-      else applyNodeColor(target, applyButton);
-    });
+    applyButton.disabled = !state.map?.map_id;
+    applyButton.addEventListener('click', () => applyGroupColor(groupId, applyButton));
     const cancelButton = createElement('button', 'secondary-button literature-map-color-cancel', '取消预览');
     cancelButton.type = 'button';
-    cancelButton.addEventListener('click', () => cancelColorDraft(target, groupId));
+    cancelButton.addEventListener('click', () => cancelColorDraft(groupId));
     actions.append(applyButton, cancelButton);
     palette.append(colors, recentColors, hexLabel, error, actions);
-    if (target === 'node') {
-      const followGroup = createElement('button', 'secondary-button literature-map-node-color-follow-group', '恢复跟随分组');
-      followGroup.type = 'button';
-      followGroup.addEventListener('click', () => {
-        setColorDraft(target, null);
-        hexInput.value = initialPaletteColor(target);
-        error.textContent = '';
-        hexInput.removeAttribute('aria-invalid');
-        applyButton.disabled = false;
-      });
-      palette.append(followGroup);
-    }
     hexInput.addEventListener('input', () => {
       const normalized = normalizeHexColor(hexInput.value);
       if (!normalized) {
@@ -796,7 +763,7 @@
       error.textContent = '';
       hexInput.removeAttribute('aria-invalid');
       applyButton.disabled = false;
-      setColorDraft(target, normalized, groupId);
+      setColorDraft(normalized, groupId);
     });
     return palette;
   }
@@ -1054,11 +1021,8 @@
     listEmpty.id = 'literature-map-list-empty';
     listPanel.append(listEmpty);
 
-    const groupsPanel = createElement('section', 'literature-map-groups');
-    groupsPanel.id = 'literature-map-groups';
-    groupsPanel.hidden = true;
-    const groupsHeading = createElement('div', 'literature-map-groups-heading');
-    groupsHeading.append(createElement('h3', '', '人工分组'));
+    // 分组表单只在左下角浮层里存在（搬 DOM 方案）：这里先建好节点，
+    // 稍后挂到 `.literature-map-groups-popover` 内，refs.groupForm 指针不变。
     const groupForm = createElement('form', 'literature-map-group-form');
     groupForm.id = 'literature-map-group-form';
     const groupNameInput = createElement('input');
@@ -1077,12 +1041,6 @@
     groupCreateButton.type = 'submit';
     groupCreateButton.id = 'literature-map-group-create';
     groupForm.append(groupNameInput, groupColorInput, groupCreateButton);
-    const groupList = createElement('div', 'literature-map-group-list');
-    groupList.id = 'literature-map-group-list';
-    const groupEmpty = createElement('p', 'literature-map-group-empty', '还没有人工分组。');
-    groupEmpty.id = 'literature-map-group-empty';
-    groupsPanel.append(groupsHeading, groupForm, groupList, groupEmpty);
-    listPanel.append(groupsPanel);
 
     const createPanel = createElement('section', 'literature-map-create-panel');
     createPanel.id = 'literature-map-create-panel';
@@ -1239,9 +1197,6 @@
     const selectionCount = createElement('strong', 'literature-map-selected-count', '已选 0 篇');
     selectionCount.id = 'literature-map-selected-count';
     selectionToolbar.append(selectionCount);
-    const selectionPalette = createColorPalette('selection');
-    selectionPalette.hidden = true;
-    selectionToolbar.append(selectionPalette);
     canvasPanel.append(selectionToolbar);
     const canvas = createElement('div', 'literature-map-canvas');
     const svg = createSvgElement('svg');
@@ -1265,6 +1220,41 @@
     const empty = createElement('div', 'literature-map-canvas-empty', '选择左侧地图后查看图谱。');
     empty.id = 'literature-map-canvas-empty';
     canvas.append(empty);
+    // 画布左下角常驻分组入口（icon）。必须排在 empty 之后 + position:absolute，
+    // 才能压在 `#literature-map-svg` 与 `pointer-events:none` 的空态层之上。
+    const groupsFab = createElement('button', 'literature-map-groups-fab');
+    groupsFab.type = 'button';
+    groupsFab.id = 'literature-map-groups-fab';
+    groupsFab.setAttribute('aria-label', '分组');
+    groupsFab.setAttribute('aria-haspopup', 'true');
+    groupsFab.setAttribute('aria-expanded', 'false');
+    groupsFab.setAttribute('aria-controls', 'literature-map-groups-popover');
+    groupsFab.title = '分组';
+    groupsFab.hidden = true;
+    // 用 CSS 遮罩画「三色分组」图标，避免引入图标字体或内联 SVG 字符串。
+    groupsFab.append(createElement('span', 'literature-map-groups-fab-icon'));
+    const groupsPopover = createElement('section', 'literature-map-groups-popover');
+    groupsPopover.id = 'literature-map-groups-popover';
+    groupsPopover.setAttribute('aria-label', '地图分组');
+    groupsPopover.hidden = true;
+    const groupsPopoverHead = createElement('div', 'literature-map-groups-popover-head');
+    groupsPopoverHead.append(createElement('h3', 'literature-map-groups-popover-title', '分组'));
+    const groupsClearHighlight = createElement('button', 'secondary-button literature-map-groups-clear-highlight', '清除高亮');
+    groupsClearHighlight.type = 'button';
+    groupsClearHighlight.hidden = true;
+    groupsPopoverHead.append(groupsClearHighlight);
+    const groupList = createElement('div', 'literature-map-group-list');
+    groupList.id = 'literature-map-group-list';
+    groupList.setAttribute('role', 'group');
+    groupList.setAttribute('aria-label', '分组列表');
+    const groupEmpty = createElement('p', 'literature-map-group-empty', '还没有人工分组。');
+    groupEmpty.id = 'literature-map-group-empty';
+    groupsPopover.append(groupsPopoverHead, groupList, groupEmpty);
+    const groupsFormDetails = createElement('details', 'literature-map-groups-create');
+    groupsFormDetails.append(createElement('summary', '', '＋ 新建组'));
+    groupsFormDetails.append(groupForm);
+    groupsPopover.append(groupsFormDetails);
+    canvas.append(groupsFab, groupsPopover);
     canvasPanel.append(canvas);
     const legend = createElement('div', 'literature-map-legend');
     legend.append(createElement('span', 'literature-map-legend-line citation', '实线箭头：引用者 → 被引用者'));
@@ -1316,7 +1306,7 @@
     root.append(mobileBackdrop);
     mount.append(root);
 
-    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, groupsPanel, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), selectionPalette, nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
+    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, canvas, groupsFab, groupsPopover, groupsFormDetails, groupsClearHighlight, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
     if (isMobileViewport()) {
       refs.listPanel.setAttribute('aria-hidden', 'true');
       refs.detailPanel.setAttribute('aria-hidden', 'true');
@@ -1520,6 +1510,8 @@
       event.preventDefault();
       createGroup();
     });
+    refs.groupsFab.addEventListener('click', () => toggleGroupsPopover());
+    refs.groupsClearHighlight.addEventListener('click', () => clearGroupHighlight());
     refs.exportJsonButton.addEventListener('click', () => exportJson());
     refs.exportPngButton.addEventListener('click', () => exportPng());
     refs.listSearch.addEventListener('input', () => {
@@ -1865,14 +1857,6 @@
     refs.selectionToolbar.hidden = !state.multiSelectActive;
     const count = state.multiSelectedNodeIds.size;
     if (refs.selectionCount) refs.selectionCount.textContent = `已选 ${count} 篇`;
-    if (refs.selectionPalette) {
-      refs.selectionPalette.hidden = !state.multiSelectActive || count === 0 || state.selectionPaletteDismissed;
-      const apply = refs.selectionPalette.querySelector('.literature-map-color-apply');
-      if (apply) {
-        apply.textContent = `应用到 ${count} 篇`;
-        apply.disabled = !state.map?.map_id || count === 0 || Boolean(state.colorSaveInFlight);
-      }
-    }
   }
 
   function toggleMultiSelectMode() {
@@ -1880,7 +1864,6 @@
     if (!state.multiSelectActive) {
       state.multiSelectActive = true;
       state.multiSelectedNodeIds.clear();
-      state.selectionPaletteDismissed = false;
       state.selectedNodeId = null;
       state.selectedNode = null;
       state.nodeRequest += 1;
@@ -1893,7 +1876,6 @@
     const selectedNodeId = [...state.multiSelectedNodeIds].find((nodeId) => activeNodes().some((node) => node.node_id === nodeId)) || null;
     state.multiSelectActive = false;
     state.multiSelectedNodeIds.clear();
-    state.selectionPaletteDismissed = false;
     state.colorDraft = null;
     renderGraph();
     if (selectedNodeId) selectNode(selectedNodeId);
@@ -1915,10 +1897,91 @@
     } else {
       state.multiSelectedNodeIds.add(nodeId);
     }
-    if (state.colorDraft?.target === 'selection') state.colorDraft.nodeIds = [...state.multiSelectedNodeIds];
-    // 用户又点了节点调整选择：重新显示颜色面板，否则收起后就再也打不开。
-    state.selectionPaletteDismissed = false;
     renderGraph();
+  }
+
+  // ---- 左下角分组浮层（FAB）------------------------------------------------
+  // 浮层的展开只影响本地 UI 态；它不会触发任何请求，也不会写 state.colorDraft。
+
+  function closeGroupsPopover(options = {}) {
+    if (!state.groupsPopoverOpen && !refs.groupsPopover) return;
+    const wasOpen = state.groupsPopoverOpen;
+    state.groupsPopoverOpen = false;
+    if (refs.groupsPopover) refs.groupsPopover.hidden = true;
+    if (refs.groupsFab) refs.groupsFab.setAttribute('aria-expanded', 'false');
+    detachGroupsPopoverDismiss();
+    // 关闭浮层不清除高亮（裁定 5）：高亮只在再点同组 / 点「清除高亮」/ 换图时失效。
+    if (wasOpen && options.restoreFocus && refs.groupsFab?.isConnected) refs.groupsFab.focus();
+  }
+
+  function detachGroupsPopoverDismiss() {
+    document.removeEventListener('pointerdown', handleGroupsPopoverPointerDown, true);
+    document.removeEventListener('keydown', handleGroupsPopoverKeyDown, true);
+  }
+
+  function handleGroupsPopoverPointerDown(event) {
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (refs.groupsPopover?.contains(target) || refs.groupsFab?.contains(target)) return;
+    closeGroupsPopover();
+  }
+
+  function handleGroupsPopoverKeyDown(event) {
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
+    event.stopPropagation();
+    closeGroupsPopover({ restoreFocus: true });
+  }
+
+  function attachGroupsPopoverDismiss() {
+    // 只在展开期间与 state.active 为真时挂载 document 级监听；关闭/离开视图必须解除，
+    // 否则会在其它视图里抢 Esc。
+    if (!state.active) return;
+    document.addEventListener('pointerdown', handleGroupsPopoverPointerDown, true);
+    document.addEventListener('keydown', handleGroupsPopoverKeyDown, true);
+  }
+
+  function openGroupsPopover() {
+    if (!state.map?.map_id || !refs.groupsPopover) return;
+    state.groupsPopoverOpen = true;
+    refs.groupsPopover.hidden = false;
+    refs.groupsFab?.setAttribute('aria-expanded', 'true');
+    attachGroupsPopoverDismiss();
+  }
+
+  function toggleGroupsPopover() {
+    if (state.groupsPopoverOpen) closeGroupsPopover({ restoreFocus: true });
+    else openGroupsPopover();
+  }
+
+  // 分组高亮（裁定 5）：临时视图态。再点同一组即取消；关闭浮层不清除。
+  function toggleGroupHighlight(groupId) {
+    if (groupId === UNGROUPED_HIGHLIGHT_ID) {
+      if (!hasUngroupedNodes()) return;
+    } else if (!groupById(groupId)) return;
+    state.groupHighlightId = state.groupHighlightId === groupId ? null : groupId;
+    renderGroups();
+    renderGraph();
+  }
+
+  function clearGroupHighlight() {
+    if (!state.groupHighlightId) return;
+    state.groupHighlightId = null;
+    renderGroups();
+    renderGraph();
+  }
+
+  function hasUngroupedNodes() {
+    return normalizeNodes(state.graph).some((node) => !node.group_id);
+  }
+
+  function groupHighlightApplies() {
+    return Boolean(state.map?.map_id) && state.groupHighlightId !== null;
+  }
+
+  function nodeMatchesGroupHighlight(node) {
+    if (!groupHighlightApplies()) return true;
+    if (state.groupHighlightId === UNGROUPED_HIGHLIGHT_ID) return !node.group_id;
+    return node.group_id === state.groupHighlightId;
   }
 
   function renderGroupLegend() {
@@ -1944,40 +2007,86 @@
     refs.groupLegend.append(ungrouped);
   }
 
+  // 浮层行的唯一渲染入口：分组增删改（含改色 / 重命名 / 删除）都走这里，
+  // 保证色块、aria-pressed 与高亮态始终与 state 同步。
   function renderGroups() {
-    if (!refs.groupsPanel) return;
-    refs.groupsPanel.hidden = !state.map?.map_id;
+    if (!refs.groupList) return;
+    const hasMap = Boolean(state.map?.map_id);
+    if (refs.groupsFab) {
+      refs.groupsFab.hidden = !hasMap;
+      // 同图重读（含 409 后的 selectMap）期间 state.map 会短暂为 null，
+      // 不能用它判断「无地图」，否则浮层与改色草稿会被无辜收起，用户无法直接重试。
+      if (!state.selectedMapId) closeGroupsPopover();
+    }
     refs.groupList.replaceChildren();
     setHidden(refs.groupEmpty, state.groups.length > 0);
     state.groups.forEach((group) => {
       const row = createElement('div', 'literature-map-group-row');
       row.dataset.groupId = group.group_id;
+      const highlighted = state.groupHighlightId === group.group_id;
       const swatch = createElement('button', 'literature-map-group-swatch literature-map-group-color-trigger');
       swatch.type = 'button';
+      swatch.dataset.groupId = group.group_id;
       swatch.style.backgroundColor = currentGroupColor(group.group_id);
-      swatch.setAttribute('aria-label', `修改分组颜色：${group.name}`);
-      swatch.addEventListener('click', () => {
-        const palette = row.querySelector('.literature-map-color-palette[data-target="group"]');
-        const opening = palette?.hidden !== false;
-        if (state.colorDraft && (state.colorDraft.target !== 'group' || state.colorDraft.groupId !== group.group_id)) state.colorDraft = null;
-        if (palette) palette.hidden = !opening;
-        renderGraph();
-      });
+      swatch.setAttribute('aria-pressed', String(highlighted));
+      swatch.setAttribute('aria-label', `${highlighted ? '取消高亮' : '高亮'}分组：${group.name}`);
+      swatch.title = highlighted ? `取消高亮：${group.name}` : `高亮：${group.name}`;
+      swatch.addEventListener('click', () => toggleGroupHighlight(group.group_id));
       const name = createElement('span', 'literature-map-group-name', group.name);
       name.title = group.name;
+      // 「改色」与色块是高亮**两个不同入口**：色块只做高亮（裁定 5），
+      // 改色统一走这个显式按钮（裁定 1：已有分组可在浮层再次编辑颜色）。
+      const colorOpen = createElement('button', 'secondary-button literature-map-group-color-open', '改色');
+      colorOpen.type = 'button';
+      colorOpen.dataset.groupId = group.group_id;
+      colorOpen.setAttribute('aria-label', `设置分组颜色：${group.name}`);
+      colorOpen.title = `设置分组颜色：${group.name}`;
+      colorOpen.setAttribute('aria-expanded', String(colorDraftMatches('group', group.group_id)));
+      colorOpen.addEventListener('click', () => {
+        if (colorDraftMatches('group', group.group_id)) {
+          // cancelColorDraft() 内部已重渲染 graph + groups，无需再调 renderGroups()。
+          cancelColorDraft(group.group_id);
+          return;
+        }
+        // 同一时刻只允许一个分组处于改色草稿态；换组时先收掉旧草稿。
+        const otherGroupId = state.colorDraft?.target === 'group' ? state.colorDraft.groupId : null;
+        if (otherGroupId && otherGroupId !== group.group_id) cancelColorDraft(otherGroupId);
+        setColorDraft(currentGroupColor(group.group_id), group.group_id);
+        // setColorDraft() 只重渲染 graph；浮层行的 palette.hidden 由本次 renderGroups() 重新求值。
+        renderGroups();
+      });
       const rename = createElement('button', 'secondary-button literature-map-group-rename', '重命名');
       rename.type = 'button';
       rename.dataset.groupId = group.group_id;
       rename.addEventListener('click', () => renameGroup(group, rename));
-      const palette = createColorPalette('group', group.group_id);
+      const palette = createColorPalette(group.group_id);
       palette.hidden = !colorDraftMatches('group', group.group_id);
       const remove = createElement('button', 'secondary-button literature-map-group-delete', '删除');
       remove.type = 'button';
       remove.dataset.groupId = group.group_id;
       remove.addEventListener('click', () => deleteGroup(group, remove));
-      row.append(swatch, name, rename, remove, palette);
+      row.append(swatch, name, colorOpen, rename, remove, palette);
       refs.groupList.append(row);
     });
+    // 「未分组」项：只在当前地图已载入时出现；没有未分组节点时按钮禁用。
+    if (hasMap) {
+      const ungrouped = createElement('div', 'literature-map-group-row is-ungrouped');
+      ungrouped.dataset.groupId = UNGROUPED_HIGHLIGHT_ID;
+      const canHighlightUngrouped = hasUngroupedNodes();
+      const ungroupedHighlighted = state.groupHighlightId === UNGROUPED_HIGHLIGHT_ID;
+      const swatch = createElement('button', 'literature-map-group-swatch literature-map-group-color-trigger is-ungrouped');
+      swatch.type = 'button';
+      swatch.setAttribute('aria-pressed', String(ungroupedHighlighted));
+      swatch.setAttribute('aria-label', canHighlightUngrouped ? '高亮未分组论文' : '没有未分组论文');
+      swatch.title = '未分组';
+      swatch.disabled = !canHighlightUngrouped;
+      swatch.addEventListener('click', () => toggleGroupHighlight(UNGROUPED_HIGHLIGHT_ID));
+      const name = createElement('span', 'literature-map-group-name', '未分组');
+      name.title = '未分组';
+      ungrouped.append(swatch, name);
+      refs.groupList.append(ungrouped);
+    }
+    if (refs.groupsClearHighlight) refs.groupsClearHighlight.hidden = !state.groupHighlightId;
     renderGroupLegend();
   }
 
@@ -2097,146 +2206,6 @@
   function deleteGroup(group, button) {
     if (!group) return;
     runGroupMutation(`/groups/${encodeURIComponent(group.group_id)}`, 'DELETE', {}, button);
-  }
-
-  function updateGraphColorOverrides(nodeIds, colorOverride, returnedNodes = []) {
-    const returned = new Map(returnedNodes.map((node) => [node.node_id, node]));
-    normalizeNodes(state.graph).forEach((node) => {
-      if (!nodeIds.includes(node.node_id)) return;
-      const saved = returned.get(node.node_id);
-      node.color_override = saved && Object.prototype.hasOwnProperty.call(saved, 'color_override')
-        ? normalizeHexColor(saved.color_override)
-        : colorOverride;
-      if (saved && Object.prototype.hasOwnProperty.call(saved, 'group_id')) node.group_id = saved.group_id || null;
-    });
-    if (state.selectedNode && nodeIds.includes(state.selectedNode.node_id)) {
-      state.selectedNode.color_override = colorOverride;
-    }
-  }
-
-  function nodeColorWriteMatches(graph, nodeIds, colorOverride) {
-    const byId = new Map(normalizeNodes(graph).map((node) => [node.node_id, node]));
-    return nodeIds.every((nodeId) => {
-      const node = byId.get(nodeId);
-      if (!node) return false;
-      return (normalizeHexColor(node.color_override) || null) === colorOverride;
-    });
-  }
-
-  async function verifyNodeColorWrite(mapId, nodeIds, colorOverride) {
-    const payload = await request(`/${encodeURIComponent(mapId)}/graph`);
-    if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return { confirmed: false, payload, stale: true };
-    state.graph = payload;
-    state.map = normalizeMap(payload.map) || state.map;
-    const confirmed = nodeColorWriteMatches(payload, nodeIds, colorOverride);
-    renderGraph();
-    if (state.selectedNode && nodeIds.includes(state.selectedNode.node_id)) {
-      const updated = normalizeNodes(payload).find((node) => node.node_id === state.selectedNode.node_id);
-      if (updated) state.selectedNode = { ...state.selectedNode, ...updated };
-      renderNodeDetail(state.selectedNode);
-    }
-    return { confirmed, payload };
-  }
-
-  async function reloadAfterColorConflict(mapId, nodeIds, target) {
-    const preservedDraft = state.colorDraft ? { ...state.colorDraft, nodeIds: [...state.colorDraft.nodeIds] } : null;
-    const wasMultiSelect = state.multiSelectActive;
-    const selectedNodeId = state.selectedNodeId;
-    await selectMap(mapId);
-    if (mapId !== state.selectedMapId || !state.active) return;
-    state.colorDraft = preservedDraft;
-    if (wasMultiSelect) {
-      state.multiSelectActive = true;
-      state.multiSelectedNodeIds = new Set(nodeIds.filter((nodeId) => activeNodes().some((node) => node.node_id === nodeId)));
-      renderGraph();
-    } else if (target === 'node' && selectedNodeId && activeNodes().some((node) => node.node_id === selectedNodeId)) {
-      await selectNode(selectedNodeId);
-    } else {
-      renderGraph();
-    }
-    if (state.colorDraft) state.colorDraft.nodeIds = target === 'selection' ? [...state.multiSelectedNodeIds] : [state.selectedNodeId].filter(Boolean);
-    renderNodeDetail(state.selectedNode);
-    setStatus('地图版本已变化，已重新读取。颜色草稿仍保留；核对后请再次点击“应用到 N 篇”。', 'error');
-  }
-
-  async function applyNodeColor(target, button) {
-    if (!state.map?.map_id || !state.active || state.colorSaveInFlight) return;
-    const draft = colorDraftMatches(target) ? state.colorDraft : null;
-    if (!draft || (draft.colorOverride !== null && !normalizeHexColor(draft.colorOverride))) {
-      setStatus('请先选择有效的颜色。', 'error');
-      return;
-    }
-    const nodeIds = colorTargetNodeIds(target);
-    if (!nodeIds.length || nodeIds.length > MAX_MAP_NODES) {
-      setStatus(`请选择 1 到 ${MAX_MAP_NODES} 篇可见论文后再应用颜色。`, 'error');
-      return;
-    }
-    const mapId = state.map.map_id;
-    const ownerId = mapOwnerId();
-    const expectedRevision = Number(state.map.revision);
-    const colorOverride = draft.colorOverride === null ? null : normalizeHexColor(draft.colorOverride);
-    state.colorSaveInFlight = true;
-    refs.root.querySelectorAll('.literature-map-color-apply').forEach((item) => { item.disabled = true; });
-    if (button) button.disabled = true;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), COLOR_SAVE_TIMEOUT_MS);
-    try {
-      const payload = await request(`/${encodeURIComponent(mapId)}/node-styles`, {
-        method: 'PATCH',
-        body: JSON.stringify({ expected_revision: expectedRevision, node_ids: nodeIds, color_override: colorOverride }),
-        signal: controller.signal,
-      });
-      if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) {
-        if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
-        return;
-      }
-      const revision = Number(payload?.revision);
-      if (Number.isInteger(revision)) state.map = { ...state.map, revision };
-      updateGraphColorOverrides(nodeIds, colorOverride, Array.isArray(payload.nodes) ? payload.nodes : []);
-      if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
-      state.colorDraft = null;
-      // 保存成功才收起多选颜色面板；失败 / 409 / 未确认不走这里，面板保持可见以便重试。
-      state.selectionPaletteDismissed = true;
-      renderGraph();
-      renderGroups();
-      if (!state.multiSelectActive && state.selectedNode) renderNodeDetail(state.selectedNode);
-      setStatus('颜色已保存，设置面板已收起。', 'waiting');
-    } catch (error) {
-      if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
-      if (error.status === 409) {
-        await reloadAfterColorConflict(mapId, nodeIds, target);
-        return;
-      }
-      if (error.name === 'AbortError' || !error.status || error.retryable) {
-        try {
-          const verification = await verifyNodeColorWrite(mapId, nodeIds, colorOverride);
-          if (verification.stale || mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
-          if (verification.confirmed) {
-            const revision = Number(verification.payload?.map?.revision);
-            if (Number.isInteger(revision)) state.map = { ...state.map, revision };
-            if (colorOverride) rememberRecentColor(colorOverride, { ownerId, mapId });
-            state.colorDraft = null;
-            state.selectionPaletteDismissed = true;
-            renderGraph();
-            if (!state.multiSelectActive && state.selectedNode) renderNodeDetail(state.selectedNode);
-            setStatus('颜色已保存（已重新读取核实），设置面板已收起。', 'waiting');
-            return;
-          }
-          setStatus('保存结果未能确认；已重新读取地图，颜色草稿仍保留。请核对后重试。', 'error');
-        } catch (_) {
-          if (mapId !== state.selectedMapId || state.map?.map_id !== mapId || !state.active) return;
-          setStatus('保存结果暂无法确认；颜色草稿仍保留，请稍后核对地图后重试。', 'error');
-        }
-        return;
-      }
-      setStatus(`颜色保存失败：${errorAction(error, '颜色草稿仍保留，可修正后重试。')}`, 'error');
-    } finally {
-      window.clearTimeout(timeoutId);
-      state.colorSaveInFlight = false;
-      if (button?.isConnected) button.disabled = false;
-      renderMultiSelectControls();
-      refs.root.querySelectorAll('.literature-map-color-apply').forEach((item) => { item.disabled = item.closest('.literature-map-color-palette[data-target="selection"]') ? !state.multiSelectedNodeIds.size : false; });
-    }
   }
 
   function applyGroupColor(groupId, button) {
@@ -2379,10 +2348,15 @@
     const keepLocalView = Boolean(options.keepLocalView) && previousMapId === mapId;
     closeExpansionPanel();
     if (previousMapId !== mapId) {
+      // 只在真正切换地图时收起浮层；同图刷新（含 409 冲突后 selectMap(mapId)）
+      // 必须保持浮层展开与草稿可见，否则用户无法直接重试。
+      closeGroupsPopover();
       state.multiSelectActive = false;
       state.multiSelectedNodeIds.clear();
       state.colorDraft = null;
       state.expansionHighlightNodeIds.clear();
+      // 裁定 5：只切换地图时清除分组高亮；同图刷新（previousMapId === mapId）保留。
+      state.groupHighlightId = null;
     }
     const requestId = ++state.mapRequest;
     state.selectedMapId = mapId;
@@ -4931,15 +4905,25 @@
       return;
     }
     const positions = Object.create(null);
-    nodes.forEach((node, index) => { positions[node.node_id] = positionFor(node, index, nodes.length); });
+    const groupIdByNodeId = Object.create(null);
+    nodes.forEach((node, index) => {
+      positions[node.node_id] = positionFor(node, index, nodes.length);
+      groupIdByNodeId[node.node_id] = node.group_id || null;
+    });
     const labelIds = labelIdsForGraph(nodes, edges);
     const occupiedLabels = [];
+    // 分组高亮是纯视图态：只在 <g>/边 上打标记（class + data-group-highlight），
+    // 淡化与强调交给 CSS；绝不改动 circle 的内联 stroke/fill（那是 nodeStyle 的地盘）。
+    const groupHighlightOn = groupHighlightApplies();
     edges.forEach((edge) => {
       if (!state.layers[edge.kind] || !positions[edge.source_id] || !positions[edge.target_id]) return;
       const line = createSvgElement('line');
       const source = positions[edge.source_id];
       const target = positions[edge.target_id];
-      setAttributes(line, { x1: source.x, y1: source.y, x2: target.x, y2: target.y, 'data-edge-id': edge.edge_id || '', 'data-edge-kind': edge.kind || '', class: `literature-map-edge ${edge.kind || ''}` });
+      const edgeInHighlight = !groupHighlightOn
+        || (nodeMatchesGroupHighlight({ group_id: groupIdByNodeId[edge.source_id] })
+          && nodeMatchesGroupHighlight({ group_id: groupIdByNodeId[edge.target_id] }));
+      setAttributes(line, { x1: source.x, y1: source.y, x2: target.x, y2: target.y, 'data-edge-id': edge.edge_id || '', 'data-edge-kind': edge.kind || '', class: `literature-map-edge ${edge.kind || ''}${groupHighlightOn && !edgeInHighlight ? ' is-group-dimmed' : ''}` });
       if (edge.kind === 'citation') line.setAttribute('marker-end', 'url(#literature-map-arrow)');
       refs.edgesGroup.append(line);
     });
@@ -4949,9 +4933,11 @@
       const selected = node.node_id === state.selectedNodeId || state.multiSelectedNodeIds.has(node.node_id);
       const expansionHighlighted = state.expansionHighlightNodeIds.has(node.node_id);
       const mapGroup = groupById(node.group_id);
+      const groupHighlighted = groupHighlightOn && nodeMatchesGroupHighlight(node);
+      const groupDimmed = groupHighlightOn && !groupHighlighted;
       const provenance = typeof node.provenance === 'string' ? node.provenance : node.provenance?.basis || '';
       const fullTitle = String(node.title || node.node_id || '未命名论文');
-      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}${mapGroup ? ' is-grouped' : ''}${expansionHighlighted ? ' is-expansion-highlighted' : ''}`, 'data-node-id': node.node_id, 'data-group-id': mapGroup?.group_id || '', 'data-group-color': mapGroup?.color || '', 'data-provenance': provenance, 'data-citation-known': citationCount(node.citation_count) === null ? 'false' : 'true', tabindex: '0', role: 'button', 'aria-label': nodeAccessibleLabel(node), title: fullTitle });
+      setAttributes(group, { class: `literature-map-node${selected ? ' is-selected' : ''}${mapGroup ? ' is-grouped' : ''}${expansionHighlighted ? ' is-expansion-highlighted' : ''}${groupHighlighted ? ' is-group-highlighted' : ''}${groupDimmed ? ' is-group-dimmed' : ''}`, 'data-node-id': node.node_id, 'data-group-id': mapGroup?.group_id || '', 'data-group-highlight': groupDimmed ? 'off' : (groupHighlighted ? 'on' : ''), 'data-group-color': mapGroup?.color || '', 'data-provenance': provenance, 'data-citation-known': citationCount(node.citation_count) === null ? 'false' : 'true', tabindex: '0', role: 'button', 'aria-label': nodeAccessibleLabel(node), title: fullTitle });
       const svgTitle = createSvgElement('title');
       svgTitle.textContent = `${fullTitle} · 引用数${citationCountLabel(node)}`;
       group.append(svgTitle);
@@ -6652,13 +6638,6 @@
     return section;
   }
 
-  function renderNodeColorControls() {
-    const section = createElement('section', 'literature-map-node-color-section');
-    section.append(createElement('h4', '', '节点外观'));
-    section.append(createColorPalette('node'));
-    return section;
-  }
-
   async function assignNodeGroup(node, groupId, select) {
     if (!state.map?.map_id || !node?.node_id || !state.active) return;
     if (groupId && !groupById(groupId)) {
@@ -6737,7 +6716,7 @@
     abstract.append(createElement('h4', '', '摘要'));
     abstract.append(createElement('p', '', metadataText(node.abstract)));
     refs.detail.append(abstract);
-    refs.detail.append(renderNodeColorControls());
+    // 节点不再单独调色：颜色跟随分组，详情里只保留「切换所属分组」。
     refs.detail.append(renderNodeGroupSelector(node));
     const provenance = createElement('p', 'literature-map-provenance', `来源依据：${metadataText(node.provenance?.source || node.provenance)}`);
     refs.detail.append(provenance);
@@ -7177,6 +7156,8 @@
       // 位置/视口直接丢掉，切回来自然「又变初始的展示模式」。
       flushPendingViewSave();
       closeExpansionPanel();
+      // 离开视图必须解除浮层的 document 级 Esc / 点外部监听，否则会和其它视图抢快捷键。
+      closeGroupsPopover();
       closeAllMobilePanels(false);
       closeCreatePanel();
       stopPolling();

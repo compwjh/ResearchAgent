@@ -1,0 +1,671 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+  "started_at": "2026-11-06T14:11:55",
+  "steps": [
+    {
+      "step": "01_open_view",
+      "map_cards": 7,
+      "old_panel_count": 0
+    },
+    {
+      "step": "02_fab_geometry",
+      "fab": {
+        "x": 520.625,
+        "y": 740,
+        "width": 40,
+        "height": 40
+      },
+      "canvas": {
+        "x": 508.625,
+        "y": 332,
+        "width": 609.265625,
+        "height": 460
+      },
+      "inside": true,
+      "pointer_events": "auto",
+      "position": "absolute"
+    },
+    {
+      "step": "03_popover_groups",
+      "rows": 2,
+      "aria_expanded": "true",
+      "groups": [
+        {
+          "id": "605c2f78ee1246e89cd59e7362133ab1",
+          "name": "aaa",
+          "swatch": "rgb(240, 101, 149)"
+        },
+        {
+          "id": "__ungrouped__",
+          "name": "未分组",
+          "swatch": "rgb(255, 255, 255)"
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure",
+      "status": 202
+    }
+  ],
+  "errors": [],
+  "writes": [
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure",
+      "status": 202
+    }
+  ],
+  "phase2": [
+    {
+      "step": "04_highlight_ungrouped",
+      "on": 32,
+      "off": 0,
+      "dimmed": 0,
+      "pressed": "true",
+      "clear_visible": true,
+      "write_requests": 1
+    },
+    {
+      "step": "05_clear_highlight",
+      "on": 0,
+      "off": 0,
+      "pressed": "false",
+      "clear_visible": false
+    },
+    {
+      "step": "06_esc_close",
+      "hidden": true,
+      "aria_expanded": "false"
+    },
+    {
+      "step": "07_export_json",
+      "filename": "literature-map.json",
+      "keys": [
+        "edges",
+        "exported_at",
+        "groups",
+        "map",
+        "nodes",
+        "schema_version"
+      ],
+      "groups_count": 1,
+      "nodes_count": 32,
+      "contains_highlight": false,
+      "contains_color_override": true,
+      "schema_version": "literature-map-export-v2"
+    },
+    {
+      "step": "08_three_widths",
+      "widths": [
+        {
+          "width": 1440,
+          "fab": {
+            "x": 520.625,
+            "y": 740,
+            "width": 40,
+            "height": 40
+          },
+          "canvas": {
+            "x": 508.625,
+            "y": 332,
+            "width": 609.265625,
+            "height": 460
+          },
+          "inside": true,
+          "h_overflow": false,
+          "min_h": "0px"
+        },
+        {
+          "width": 1024,
+          "fab": {
+            "x": 517.3125,
+            "y": 767,
+            "width": 40,
+            "height": 40
+          },
+          "canvas": {
+            "x": 505.3125,
+            "y": 359,
+            "width": 491.6875,
+            "height": 460
+          },
+          "inside": true,
+          "h_overflow": false,
+          "min_h": "0px"
+        },
+        {
+          "width": 375,
+          "fab": {
+            "x": 23,
+            "y": 871,
+            "width": 40,
+            "height": 40
+          },
+          "canvas": {
+            "x": 11,
+            "y": 563,
+            "width": 353,
+            "height": 360
+          },
+          "inside": true,
+          "h_overflow": false,
+          "min_h": "0px"
+        }
+      ]
+    },
+    {
+      "step": "09_write_requests",
+      "count": 1,
+      "detail": [
+        {
+          "method": "POST",
+          "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure",
+          "status": 202
+        }
+      ]
+    }
+  ],
+  "phase3": [
+    {
+      "step": "10_initial",
+      "rows_before": 2,
+      "map_id": "0baabeae7268429c9f7e4de8098ae1d0"
+    },
+    {
+      "step": "11_create_group",
+      "group_id": "d2e6113ded5f47c5a548b9fa524dcad6",
+      "rows_now": 3,
+      "names": [
+        "aaa",
+        "E2E验收分组-1106",
+        "未分组"
+      ],
+      "swatch_color": "rgb(46, 125, 91)"
+    },
+    {
+      "step": "ERROR",
+      "message": "Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"[data-node-id=\\\"21041260a5394f42891b020128fa60fa\\\"] circle\")\n    - locator resolved to <circle r=\"28\" cy=\"-4\" cx=\"652\" fill=\"#8d80e6\" stroke=\"#8d80e6\" stroke-width=\"2\" fill-opacity=\"0.5\" stroke-opacity=\"1\" data-group-color=\"\" data-color-override=\"\" data-node-color=\"#8d80e6\" data-citation-count=\"29014\"></circle>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div "
+    },
+    {
+      "step": "15_cleanup",
+      "group_id": "d2e6113ded5f47c5a548b9fa524dcad6",
+      "remaining_rows": 2,
+      "node_fill_restored": "#8d80e6"
+    }
+  ],
+  "api_responses": [
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure",
+      "status": 202,
+      "request_body": "{\"idempotency_key\":\"d0db017f-7b69-4700-b4a1-66824c44d2cc\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+        "state": "completed",
+        "pause_reason": null,
+        "counts": {
+          "total": 32,
+          "completed": 30,
+          "queued": 0,
+          "running": 0,
+          "failed": 0,
+          "skipped": 2
+        },
+        "current": null,
+        "failed_items": []
+      }
+    },
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/groups",
+      "status": 200,
+      "request_body": "{\"expected_revision\":316,\"name\":\"E2E验收分组-1106\",\"color\":\"#2e7d5b\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 317,
+        "groups": [
+          {
+            "group_id": "605c2f78ee1246e89cd59e7362133ab1",
+            "name": "aaa",
+            "color": "#F06595"
+          },
+          {
+            "group_id": "d2e6113ded5f47c5a548b9fa524dcad6",
+            "name": "E2E验收分组-1106",
+            "color": "#2E7D5B"
+          }
+        ]
+      }
+    },
+    {
+      "method": "DELETE",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/groups/d2e6113ded5f47c5a548b9fa524dcad6",
+      "status": 200,
+      "request_body": "{\"expected_revision\":317}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 318,
+        "groups": [
+          {
+            "group_id": "605c2f78ee1246e89cd59e7362133ab1",
+            "name": "aaa",
+            "color": "#F06595"
+          }
+        ]
+      }
+    }
+  ],
+  "phase4": [
+    {
+      "step": "16_create_group",
+      "group_id": "e35e8f369c7f4e2fa987320efe70c362",
+      "name": "E2E验收分组-1106B",
+      "color": "#2e7d5b"
+    },
+    {
+      "step": "ERROR",
+      "message": "Page.wait_for_selector: Timeout 12000ms exceeded.\nCall log:\n  - waiting for locator(\"#literature-map-node-group\") to be visible\n"
+    },
+    {
+      "step": "20_cleanup",
+      "group_id": "e35e8f369c7f4e2fa987320efe70c362",
+      "remaining_rows": 2,
+      "node_fill_restored": "#8d80e6"
+    }
+  ],
+  "api_responses_phase4": [
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure",
+      "status": 202,
+      "request_body": "{\"idempotency_key\":\"b681cc03-61c1-43ec-ac87-3402d24166f6\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+        "state": "completed",
+        "pause_reason": null,
+        "counts": {
+          "total": 32,
+          "completed": 30,
+          "queued": 0,
+          "running": 0,
+          "failed": 0,
+          "skipped": 2
+        },
+        "current": null,
+        "failed_items": []
+      }
+    },
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/groups",
+      "status": 200,
+      "request_body": "{\"expected_revision\":318,\"name\":\"E2E验收分组-1106B\",\"color\":\"#2e7d5b\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 319,
+        "groups": [
+          {
+            "group_id": "605c2f78ee1246e89cd59e7362133ab1",
+            "name": "aaa",
+            "color": "#F06595"
+          },
+          {
+            "group_id": "e35e8f369c7f4e2fa987320efe70c362",
+            "name": "E2E验收分组-1106B",
+            "color": "#2E7D5B"
+          }
+        ]
+      }
+    },
+    {
+      "method": "DELETE",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/groups/e35e8f369c7f4e2fa987320efe70c362",
+      "status": 200,
+      "request_body": "{\"expected_revision\":319}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 320,
+        "groups": [
+          {
+            "group_id": "605c2f78ee1246e89cd59e7362133ab1",
+            "name": "aaa",
+            "color": "#F06595"
+          }
+        ]
+      }
+    }
+  ],
+  "phase5": [
+    {
+      "step": "21_create_group",
+      "group_id": "f5a79999233e40eba2a373a267536cee",
+      "name": "E2E验收分组-1106C",
+      "color": "#2e7d5b",
+      "rows": 3
+    },
+    {
+      "step": "22_assign_node_color_follows_group",
+      "node_id": "21041260a5394f42891b020128fa60fa",
+      "group_id": "f5a79999233e40eba2a373a267536cee",
+      "fill_before": "#8d80e6",
+      "fill_after": "#2e7d5b",
+      "color_matches": true,
+      "node_color_section_count": 0,
+      "selection_palette_count": 0,
+      "node_palette_count": 0,
+      "select_value": "f5a79999233e40eba2a373a267536cee"
+    },
+    {
+      "step": "23_highlight_created_group",
+      "on_count": 1,
+      "off_count": 31,
+      "target_node_highlight": "on",
+      "pressed": "true"
+    },
+    {
+      "step": "24_export_after_create",
+      "groups_count": 2,
+      "group_names": [
+        "aaa",
+        "E2E验收分组-1106C"
+      ],
+      "node_entry": [
+        {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "identity_key": "doi:10.17863/cam.48429",
+          "external_ids": {
+            "arxiv": "1710.10903",
+            "doi": "10.17863/cam.48429",
+            "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+          },
+          "title": "Graph Attention Networks",
+          "authors": [
+            "Petar Velickovic",
+            "Guillem Cucurull",
+            "Arantxa Casanova",
+            "Adriana Romero",
+            "Pietro Lió",
+            "Yoshua Bengio"
+          ],
+          "year": 2017,
+          "venue": "International Conference on Learning Representations",
+          "abstract": "We present graph attention networks (GATs), novel neural network architectures that operate on graph-structured data, leveraging masked self-attentional layers to address the shortcomings of prior methods based on graph convolutions or their approximations. By stacking layers in which nodes are able to attend over their neighborhoods' features, we enable (implicitly) specifying different weights to different nodes in a neighborhood, without requiring any kind of costly matrix operation (such as inversion) or depending on knowing the graph structure upfront. In this way, we address several key challenges of spectral-based graph neural networks simultaneously, and make our model readily applicable to inductive as well as transductive problems. Our GAT models have achieved or matched state-of-the-art results across four established transductive and inductive graph benchmarks: the Cora, Citeseer and Pubmed citation network datasets, as well as a protein-protein interaction dataset (wherein test graphs remain unseen during training).",
+          "keywords": [],
+          "citation_count": 29014,
+          "source_url": "https://www.semanticscholar.org/paper/33998aff64ce51df8dee45989cdca4b6b1329ec4",
+          "provenance": {
+            "provider": "semantic_scholar"
+          },
+          "catalog_paper_id": null,
+          "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+          "download_status": "indexed",
+          "position": {
+            "x": 652,
+            "y": -4
+          },
+          "group_id": "f5a79999233e40eba2a373a267536cee",
+          "color_override": null
+        }
+      ],
+      "schema_version": "literature-map-export-v2",
+      "has_color_override_field": true,
+      "has_highlight_state": false
+    },
+    {
+      "step": "25_cleanup",
+      "group_id": "f5a79999233e40eba2a373a267536cee",
+      "remaining_rows": 2,
+      "node_fill_restored": "#8d80e6"
+    }
+  ],
+  "api_responses_phase5": [
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue/ensure",
+      "status": 202,
+      "request_body": "{\"idempotency_key\":\"2a376874-4883-456f-a3ff-9b8d54d03348\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+        "state": "completed",
+        "pause_reason": null,
+        "counts": {
+          "total": 32,
+          "completed": 30,
+          "queued": 0,
+          "running": 0,
+          "failed": 0,
+          "skipped": 2
+        },
+        "current": null,
+        "failed_items": []
+      }
+    },
+    {
+      "method": "POST",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/groups",
+      "status": 200,
+      "request_body": "{\"expected_revision\":321,\"name\":\"E2E验收分组-1106C\",\"color\":\"#2e7d5b\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 322,
+        "groups": [
+          {
+            "group_id": "605c2f78ee1246e89cd59e7362133ab1",
+            "name": "aaa",
+            "color": "#F06595"
+          },
+          {
+            "group_id": "f5a79999233e40eba2a373a267536cee",
+            "name": "E2E验收分组-1106C",
+            "color": "#2E7D5B"
+          }
+        ]
+      }
+    },
+    {
+      "method": "PUT",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/group",
+      "status": 200,
+      "request_body": "{\"expected_revision\":322,\"group_id\":\"f5a79999233e40eba2a373a267536cee\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 323,
+        "node": {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+          "external_ids": {
+            "arxiv": "1710.10903",
+            "doi": "10.17863/cam.48429",
+            "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+          },
+          "title": "Graph Attention Networks",
+          "authors": [
+            "Petar Velickovic",
+            "Guillem Cucurull",
+            "Arantxa Casanova",
+            "Adriana Romero",
+            "Pietro Lió",
+            "Yoshua Bengio"
+          ],
+          "year": 2017,
+          "venue": "International Conference on Learning Representations",
+          "abstract": "We present graph attention networks (GATs), novel neural network architectures that operate on graph-structured data, leveraging masked self-attentional layers to address the shortcomings of prior methods based on graph convolutions or their approximations. By stacking layers in which nodes are able to attend over their neighborhoods' features, we enable (implicitly) specifying different weights to different nodes in a neighborhood, without requiring any kind of costly matrix operation (such as inversion) or depending on knowing the graph structure upfront. In this way, we address several key challenges of spectral-based graph neural networks simultaneously, and make our model readily applicable to inductive as well as transductive problems. Our GAT models have achieved or matched state-of-the-art results across four established transductive and inductive graph benchmarks: the Cora, Citeseer and Pubmed citation network datasets, as well as a protein-protein interaction dataset (wherein test graphs remain unseen during training).",
+          "keywords": [],
+          "citation_count": 29014,
+          "source_url": "https://www.semanticscholar.org/paper/33998aff64ce51df8dee45989cdca4b6b1329ec4",
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "catalog_paper_id": null,
+          "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+          "download_status": "indexed",
+          "position": {
+            "x": 652.0,
+            "y": -4.0
+          },
+          "group_id": "f5a79999233e40eba2a373a267536cee",
+          "removed": false,
+          "color_override": null
+        }
+      }
+    },
+    {
+      "method": "PATCH",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/view",
+      "status": 200,
+      "request_body": "{\"expected_revision\":323,\"positions\":[{\"node_id\":\"21041260a5394f42891b020128fa60fa\",\"x\":652,\"y\":-4},{\"node_id\":\"28d6f9065abd47f9975875ef88634afa\",\"x\":179,\"y\":-176},{\"node_id\":\"a4917994555846c79f7e1af80f398bd3\",\"x\":-208,\"y\":-520},{\"node_id\":\"f59c83c01b5f48dbbef04e054e1a91b0\",\"x\":652,\"y\":-520},{\"node_id\":\"e2c645878ebe4bf5a06c7bd3c1ef42e0\",\"x\":523,\"y\":-499.36},{\"node_id\":\"0ea0b3f736db4b7f8482c70e83cdc145\",\"x\":136,\"y\":16.64},{\"node_id\":\"56c7189f4f9343c98be3f9a95563cfd6\",\"x\":-36,\"y\":-327.36},{\"node_id\":\"e23c0392b9f641da9ec3f34c3b3cc027\",\"x\":308,\"y\":-499.36},{\"node_id\":\"065389f0f0b64acda6c5a043cc9b6269\",\"x\":479.94598214285713,\"y\":340.05232979910716},{\"node_id\":\"5cb84f3b60d547c7a114d2357d5f196c\",\"x\":523,\"y\":-327.36},{\"node_id\":\"9141b232d312420aab38c4585f4db2ad\",\"x\":-337,\"y\":-499.36},{\"node_id\":\"2e45cfdbec4d4c48b41fe8091e0fe742\",\"x\":480,\"y\":-155.36},{\"node_id\":\"425e2585894346c4a9d38f8175637dd1\",\"x\":351,\"y\":-155.36},{\"node_id\":\"59a13b1f48424edfa53423989c847d9c\",\"x\":179,\"y\":-327.36},{\"node_id\":\"066643eeafc74318af0605bdc9febc68\",\"x\":351,\"y\":188.64},{\"node_id\":\"f7608bf2990c4bd6b6e40ea92856acad\",\"x\":867,\"y\":-499.36},{\"node_id\":\"c6e208e158a1418a8b529d96b5592777\",\"x\":179,\"y\":-520},{\"node_id\":\"0dd64965d19240c08cdddacf08777067\",\"x\":695,\"y\":168},{\"node_id\":\"5af29395e3424a2298447d44a3e09f01\",\"x\":308,\"y\":-348},{\"node_id\":\"5147950948f54bb89d3a5b948a35b569\",\"x\":-208,\"y\":-327.36},{\"node_id\":\"24e44e61d9d44d1b85918fa8f7362ff0\",\"x\":867,\"y\":16.64},{\"node_id\":\"1bdf6773eadc401cb106b2fcc9a4cbc1\",\"x\":351,\"y\":16.64},{\"node_id\":\"3c18411a87c34a96a4f0cda1d023d2d2\",\"x\":652,\"y\":-176},{\"node_id\":\"b261e3e50d16421a8d2d9eb18d1995af\",\"x\":996,\"y\":-327.36},{\"node_id\":\"33c9baddfd284c2ea8088f430ad63a95\",\"x\":867.1357300218727,\"y\":-155.22426997812732},{\"node_id\":\"558415d254e043f09d711b770aaf5076\",\"x\":1039,\"y\":-176},{\"node_id\":\"0997c1774f2348c1bc9c07e5c526ae3c\",\"x\":480,\"y\":188.64},{\"node_id\":\"a9dfddd15066489e96d57f576e5526de\",\"x\":7,\"y\":-499.36},{\"node_id\":\"77f94d50a9a64300b7f216beb2c83afe\",\"x\":867,\"y\":-348},{\"node_id\":\"7e5d37ca77434ddea6effd61c99228ce\",\"x\":1168,\"y\":-327.36},{\"node_id\":\"6dbabe5702ab459c9d5d867ee7034b5f\",\"x\":652,\"y\":-327.36},{\"node_id\":\"2697ff5922d1458a9a3eb6a388a32a70\",\"x\":-36,\"y\":-155.36}],\"viewport\":{\"x\":-1721.9892626344197,\"y\":92.40714758390848,\"scale\":2.8},\"layers\":{\"citation\":true,\"similarity\":true},\"label_mode\":\"all\"}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+          "name": "API E2E graph attention networks r2",
+          "topic": "graph attention networks",
+          "owner_id": "local-user",
+          "project_id": null,
+          "filters": {
+            "conference_ids": [],
+            "source_ids": [],
+            "year_end": null,
+            "year_start": null
+          },
+          "requested_count": 20,
+          "revision": 324,
+          "status": "partial",
+          "view_settings": {
+            "label_mode": "all",
+            "layers": {
+              "citation": true,
+              "similarity": true
+            },
+            "node_style": {
+              "fill_mode": "filled",
+              "fill_opacity": 0.5
+            },
+            "view_initialized": true,
+            "viewport": {
+              "scale": 2.8,
+              "x": -1721.9892626344197,
+              "y": 92.40714758390848
+            }
+          },
+          "created_at": "2026-10-19T14:06:06.042255+00:00",
+          "updated_at": "2026-11-06T06:18:06.343289+00:00"
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/nodes/21041260a5394f42891b020128fa60fa/group",
+      "status": 200,
+      "request_body": "{\"expected_revision\":324,\"group_id\":null}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 325,
+        "node": {
+          "node_id": "21041260a5394f42891b020128fa60fa",
+          "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+          "external_ids": {
+            "arxiv": "1710.10903",
+            "doi": "10.17863/cam.48429",
+            "semantic_scholar": "33998aff64ce51df8dee45989cdca4b6b1329ec4"
+          },
+          "title": "Graph Attention Networks",
+          "authors": [
+            "Petar Velickovic",
+            "Guillem Cucurull",
+            "Arantxa Casanova",
+            "Adriana Romero",
+            "Pietro Lió",
+            "Yoshua Bengio"
+          ],
+          "year": 2017,
+          "venue": "International Conference on Learning Representations",
+          "abstract": "We present graph attention networks (GATs), novel neural network architectures that operate on graph-structured data, leveraging masked self-attentional layers to address the shortcomings of prior methods based on graph convolutions or their approximations. By stacking layers in which nodes are able to attend over their neighborhoods' features, we enable (implicitly) specifying different weights to different nodes in a neighborhood, without requiring any kind of costly matrix operation (such as inversion) or depending on knowing the graph structure upfront. In this way, we address several key challenges of spectral-based graph neural networks simultaneously, and make our model readily applicable to inductive as well as transductive problems. Our GAT models have achieved or matched state-of-the-art results across four established transductive and inductive graph benchmarks: the Cora, Citeseer and Pubmed citation network datasets, as well as a protein-protein interaction dataset (wherein test graphs remain unseen during training).",
+          "keywords": [],
+          "citation_count": 29014,
+          "source_url": "https://www.semanticscholar.org/paper/33998aff64ce51df8dee45989cdca4b6b1329ec4",
+          "provenance": {
+            "operation": "search",
+            "provider": "semantic_scholar"
+          },
+          "catalog_paper_id": null,
+          "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+          "download_status": "indexed",
+          "position": {
+            "x": 652.0,
+            "y": -4.0
+          },
+          "group_id": null,
+          "removed": false,
+          "color_override": null
+        }
+      }
+    },
+    {
+      "method": "DELETE",
+      "url": "literature-maps/0baabeae7268429c9f7e4de8098ae1d0/groups/f5a79999233e40eba2a373a267536cee",
+      "status": 200,
+      "request_body": "{\"expected_revision\":325}",
+      "response_body": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "revision": 326,
+        "groups": [
+          {
+            "group_id": "605c2f78ee1246e89cd59e7362133ab1",
+            "name": "aaa",
+            "color": "#F06595"
+          }
+        ]
+      }
+    }
+  ],
+  "verification_conclusion": {
+    "e2e_write_success": true,
+    "artifacts": [
+      "docs/sdd/plans/043/artifacts/2026-11-06-group-fab-created-highlight.png",
+      "docs/sdd/plans/043/artifacts/2026-11-06-group-fab-highlight.png",
+      "docs/sdd/plans/043/artifacts/2026-11-06-group-fab-live-e2e.json",
+      "docs/sdd/plans/043/artifacts/2026-11-06-group-fab-live-e2e.png"
+    ]
+  },
+  "phase6": [
+    {
+      "step": "26_export_with_highlight_active",
+      "highlight_on": 32,
+      "downloads": [
+        {
+          "type": "json",
+          "filename": "literature-map.json",
+          "bytes": 85535,
+          "ok": true
+        },
+        {
+          "type": "png",
+          "filename": "API-E2E-graph-attention-networks-r2.png",
+          "bytes": 70336,
+          "ok": true
+        }
+      ],
+      "note": "高亮为临时视图态，导出 JSON 不含高亮字段；PNG 由画布渲染，导出后高亮态不写库"
+    }
+  ]
+}
