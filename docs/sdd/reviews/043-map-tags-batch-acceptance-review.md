@@ -66,3 +66,36 @@
 ## 证据诚实声明
 
 本报告基于主会话真实执行的命令输出、真实 API 响应、真实 Chromium 测量与落盘产物；未自行跑子代理侧测试、未改业务代码、未做未执行的验证冒充。P2 观察项已如实列出，未把单元测试等价表述为真实 API E2E。
+
+---
+
+## 2026-11-07 证据补强与 P2 核销（覆盖前文观察项表述）
+
+用户要求「继续任务」后，主会话对当前**已部署版本**补做真实验证；以下结论覆盖前文对应表述，前文保留仅供追溯。
+
+### 1. 第 7 项自然语言主路径真实 API E2E（原 P2-3 已核销）
+
+- 真实全文节点 `21041260a5394f42891b020128fa60fa`（Graph Attention Networks，`document_id=55afc3b8…`）；`POST /api/literature-maps/0baabeae…/nodes/21041260…/conversation` → **200**，`conversation_id=e163877586164160b5400dae0af36a20`、`evidence_level=full`、`source_version=a253fa60…`，真实 binding 落盘。
+- 用用户截图原文草稿发消息（「请帮我解读这篇论文」/「请重点回答：研究问题、方法、主要结论和局限」/「证据等级：全文索引片段依据」/「使用RAG的模式」）：服务端日志两次均 `POST /api/conversations/{id}/messages 200 OK`；第二次 `assistant_message_id=d7ec5563f77d422f877f8886ffe158a3`、`status=completed`、**2098 字符完整回答**。
+- `GET /api/messages/{id}/processing-steps` 四条：`memory_recall → system_rule → rag_retrieval（召回 5 条知识库证据）→ generation（回答已生成）`；8 条步骤 `research_session_id` 全为 null；**无 `research_intake` / `deep-research-orchestration` 任一步骤**。
+- 产物：`docs/sdd/plans/043/artifacts/20261107-single-paper-rag-live-e2e.json`。
+- **诚实说明**：客户端两次均因 OTel 导出到未启动的 `127.0.0.1:3000` 拖慢而超时（25s / 104.6s），但服务端 200 OK、消息与回答完整持久化。这是真实 API + 真实落盘数据，不是 mock 或内部函数调用。
+
+### 2. P2 逐条核销
+
+| P2 | 原观察 | 补验结果 |
+|---|---|---|
+| 1（第 1/6 项像素级与浏览器计数） | 仅静态契约 + 自动化 | **已核销**：分组浮层「重命名/删除」`font-size:11px`、`color:rgb(81,69,184)`、白底，1440 与 760 下均 `height:44px`；主题相似 5 条 sim 边 → 取消 0 条 +「已隐藏 5 条主题相似连线」→ 开启 5 条 +「已显示 5 条主题相似连线」 |
+| 2（binding 异常提示） | 建议人工触发 | **部分核销**：`test_single_paper_rag_intent_routing.py:115` 有 `test_binding_read_failure_is_fail_closed`，`routes_conversations.py:1300+` 有 `binding_lookup_failed` 分支；未做真实 API 破坏性触发（需破坏真实 binding 数据，不宜在交付库上执行） |
+| 3（第 7 项 LLM 全链路 E2E） | 未执行 | **已核销**：见上节 |
+| 4（`_assert_tag_owned()` 全量 list） | 后续优化 | 保持为后续优化建议，非缺陷 |
+
+产物：`20261107-browser-p2-corrected.json`、`20261107-browser-07-p2-corrected.png`。
+
+### 3. 新增如实记录项（不擅自改代码，待用户裁决）
+
+真实浏览器 760px 视口量到本批次 FE-1a 新增的 `⋯` 卡片菜单按钮高度为 **22px**，低于 44px 触摸目标建议值。spec 第 1 项的 44px 要求明确限定「分组浮层次级按钮」（该控件已达标）；`⋯` 不在已确认范围内，改它会影响卡片徽标布局与既有断言，属范围变化，**本轮不修改**，列为交付后观察项。
+
+### 4. 结论
+
+准备度维持 **10/10**，P0=0 / P1=0 / API E2E 失败=0；原 P2 中 2 项已核销、1 项部分核销、1 项为后续优化，另新增 1 个范围内未覆盖的观察项并如实披露。验收结论「通过」不变。

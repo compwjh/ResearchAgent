@@ -231,3 +231,7 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - 产物：`docs/sdd/plans/043/artifacts/` 下 3 个 JSON 与 5 张截图；复盘 `docs/sdd/retro/2026-11-07-map-tags-batch-retro.md`；需求／技术／分端代码评审结论见 spec「2026-11-07 收口记录」。
 - 4 个 P2 观察项（第 1/6 项像素级与浏览器计数、binding 异常提示、第 7 项 LLM 全链路 E2E）如实记录，**未把单元测试等价表述为真实 API E2E**。
 - 架构师签字：**主模型代行（原因同上，纯文档签字允许代行并须注明）** — 2026-11-07。签字栏已填写，符合 Gate 5「留空不得转已完成」。
+
+### 2026-11-07 证据补强（追加）
+
+用户「继续任务」后补做：①第 7 项自然语言主路径**真实 API E2E 通过**——真实全文节点创建 `evidence_level=full` 会话，用截图原文草稿发消息，服务端 200 OK、`assistant status=completed`、2098 字符回答，处理步骤 `memory_recall→system_rule→rag_retrieval→generation`，零 `research_intake`、`research_session_id` 全 null；②P2-1 已核销（分组次级按钮 11px/44px、主题相似 5→0→5 条边与状态提示）；③P2-2 部分核销（有 `test_binding_read_failure_is_fail_closed` 与 `binding_lookup_failed` 分支，未做破坏性真实触发）；④如实新增 1 项观察：760px 下 `⋯` 按钮 22px 触摸目标偏小，不属已确认范围，本轮不改。详见 [043-map-tags-batch-acceptance-review.md](043-map-tags-batch-acceptance-review.md)「证据补强与 P2 核销」章节与 `docs/sdd/plans/043/artifacts/20261107-single-paper-rag-live-e2e.json`。验收结论「通过」不变。

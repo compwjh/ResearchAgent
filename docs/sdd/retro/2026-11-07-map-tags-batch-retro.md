@@ -61,3 +61,16 @@ FE-1c 的正确解：列表面板保留 `min-height: min(700px, calc(100vh-160px
 2. 人工验收时按 P2 观察项点一次：像素级对比度、主题相似勾选前后边数、binding 读取失败提示。
 3. 为本地 27B 分派精简 `skills` 白名单或改用「主会话喂最小片段 + 子代理回传片段」模式，避免大文件任务上下文超限。
 4. `_assert_tag_owned()` 全量 `list_tags` 可在标签量增长后优化为按 `tag_id` 单点查询。
+
+## 8. 2026-11-07 证据补强（用户「继续任务」后）
+
+**本节覆盖第 6 节的两条历史表述**（历史表述保留留痕）：原写「第 7 项未执行需 LLM 全链路的真实会话消息 API E2E」与「第 1/6 项未做像素级对比度与浏览器计数」，现均已补做。
+
+- 第 7 项：真实全文节点 `21041260…`（Graph Attention Networks）创建 `evidence_level=full` 会话 `e16387…`，用用户截图原文草稿发消息；服务端两次 `POST /api/conversations/{id}/messages 200 OK`，第二次生成 **2098 字符完整回答**（`status=completed`）；处理步骤仅 `memory_recall → system_rule → rag_retrieval（5 条证据）→ generation`，零 Intake 步骤、`research_session_id` 全 null。产物 `docs/sdd/plans/043/artifacts/20261107-single-paper-rag-live-e2e.json`。
+- P2-1 核销：分组浮层「重命名/删除」`11px` / `rgb(81,69,184)` / 白底 / 1440 与 760 下均 `44px`；主题相似 `5→0→5` 条 sim 边，提示「已隐藏/已显示 5 条主题相似连线」。
+- P2-2 部分核销：`test_single_paper_rag_intent_routing.py:115` 的 fail-closed 用例 + `routes_conversations.py` 的 `binding_lookup_failed` 分支；未在交付库上做破坏性触发。
+- 新增如实记录：760px 下 `⋯` 按钮 22px（本批次新增控件），低于 44px 建议值；spec 第 1 项的 44px 仅约束分组浮层次级按钮且已达标，改 `⋯` 会影响卡片徽标布局与既有断言，属范围变化，本轮不改、待用户裁决。
+
+**经验（重要）**：OTel 导出到未启动的 `127.0.0.1:3000`（Langfuse）会反复超时，把 HTTP 响应拖到 100s+。客户端 `urllib` 超时**不等于服务端失败**——判断真实 API 成功必须查服务端日志（200 OK）、持久化消息表与 `processing-steps`，不能只看客户端异常。第一次 25s 超时后若直接判定「E2E 失败」就会误报一个不存在的缺陷。
+
+**测量方法经验**：异步渲染的图谱必须 `wait_for_selector('.literature-map-edge')` 后再量边数，否则得到 `simEdges=0` 的假失败；用 `check()/uncheck()` 操作会因控件重绘导致 locator 指向 detach 节点，应改用每次重新定位 + `click(force=True)` 触发 `change`。触摸目标检查必须限定到 spec 明确要求的控件集合，不能把历史缩放按钮一起算进去。

@@ -1868,3 +1868,12 @@ Gate 4 含 `.py` / `.js` / `.html` / `.css` 的实现，按门禁硬规则**必�
 7. **产物查看**：`docs/sdd/plans/043/artifacts/` 下 3 个 JSON 与 5 张截图；评审文档在 `docs/sdd/reviews/043-*`；复盘在 `docs/sdd/retro/2026-11-07-map-tags-batch-retro.md`。
 
 > 服务打开地址 **http://127.0.0.1:8000/**（端口 8000，已验证 health 与首页 200）；如需重启：`PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh -d`。仅本地提交，不 push、不合 main。
+
+### 2026-11-07 证据补强（追加，状态维持「已完成」）
+
+用户「继续任务」后对当前部署版本补做真实验证，覆盖上表与验收报告中的观察项表述（原文保留追溯）：
+
+1. **第 7 项自然语言主路径真实 API E2E 通过**：真实全文节点 `21041260…`（Graph Attention Networks）→ 创建 `evidence_level=full` 会话 `e16387…` → 用用户截图原文草稿发消息 → 服务端 `POST /api/conversations/{id}/messages 200 OK`，`assistant status=completed`、2098 字符回答；`GET /api/messages/{id}/processing-steps` 为 `memory_recall → system_rule → rag_retrieval（5 条证据）→ generation`，**零 `research_intake` / `deep-research-orchestration` 步骤**，`research_session_id` 全 null。产物 `docs/sdd/plans/043/artifacts/20261107-single-paper-rag-live-e2e.json`。客户端因 OTel 导出到未启动的 3000 端口超时，但服务端 200 OK 与完整持久化可核，不冒充 mock。
+2. **P2 核销**：分组浮层次级按钮 `11px` / `rgb(81,69,184)` / 白底 / 1440 与 760 下均 `44px`；主题相似 `5→0→5` 条 sim 边 +「已隐藏/已显示 5 条主题相似连线」；binding 失败有 `test_binding_read_failure_is_fail_closed`（`:115`）与下游 `binding_lookup_failed` 分支（未做破坏性真实触发）。产物 `20261107-browser-p2-corrected.json`。
+3. **新增如实记录（不扩大范围）**：760px 下本批次新增 `⋯` 按钮 22px 触摸目标偏小；spec 第 1 项 44px 仅约束分组浮层次级按钮且已达标，修改 `⋯` 会影响卡片徽标布局与既有断言，属范围变化，本轮不改、待用户裁决。
+4. 验收结论「通过」、准备度 10/10、P0=0 / P1=0 不变；本轮**未改业务代码、未重新部署**，仅追加证据文档与本地提交。
