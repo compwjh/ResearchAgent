@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-11-07T01:35:56.003123",
+  "steps": [
+    {
+      "step": "节点数",
+      "value": 32
+    },
+    {
+      "step": "选中节点后三列 bottom",
+      "value": [
+        1020,
+        1020,
+        1020
+      ]
+    },
+    {
+      "step": "详情面板内部滚动",
+      "value": {
+        "scrollHeight": 1778,
+        "clientHeight": 729,
+        "overflow": "auto"
+      }
+    },
+    {
+      "step": "目标地图卡片存在",
+      "value": true
+    },
+    {
+      "step": "含「跳过项」",
+      "value": true
+    },
+    {
+      "step": "含「缺少摘要」",
+      "value": true
+    }
+  ],
+  "checks": {
+    "three_columns_aligned_with_detail": true,
+    "detail_internal_scroll": true,
+    "skipped_items_visible": true
+  }
+}

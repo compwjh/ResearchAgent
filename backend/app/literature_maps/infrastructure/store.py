@@ -19,6 +19,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -341,6 +342,25 @@ class LiteratureMapStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_literature_map_bindings_conversation
                     ON literature_map_conversation_bindings(owner_id, conversation_id, status);
+                CREATE TABLE IF NOT EXISTS literature_map_tags(
+                    tag_id TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    color TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_literature_map_tags_owner
+                    ON literature_map_tags(owner_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_literature_map_tags_owner_name
+                    ON literature_map_tags(owner_id, name COLLATE NOCASE);
+                CREATE TABLE IF NOT EXISTS literature_map_tag_bindings(
+                    map_id TEXT NOT NULL REFERENCES literature_maps(map_id),
+                    tag_id TEXT NOT NULL REFERENCES literature_map_tags(tag_id),
+                    UNIQUE(map_id, tag_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_literature_map_tag_bindings_tag
+                    ON literature_map_tag_bindings(tag_id);
                 """
             )
             db.execute("BEGIN IMMEDIATE")
@@ -945,6 +965,153 @@ class LiteratureMapStore:
             return _node(fresh)
 
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Map-level tag classification (Spec043).  Tags are owner-scoped and
+    # entirely independent from node groups.  Critically, none of these
+    # writes ever touch ``literature_maps.revision`` (no
+    # ``_increment_map_revision`` call), so tag activity cannot collide with
+    # the ``PATCH /view`` optimistic-lock path.
+    # ------------------------------------------------------------------
+    def list_tags(self, owner_id: str) -> list[MapTag]:
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT * FROM literature_map_tags WHERE owner_id=? ORDER BY created_at, tag_id",
+                (owner_id,),
+            ).fetchall()
+        return [_tag(row) for row in rows]
+
+    def create_tag(self, owner_id: str, name: str, color: str | None = None) -> MapTag:
+        tag_name = _validate_tag_name(name)
+        tag_color = _validate_tag_color(color)
+        tag_id = uuid.uuid4().hex
+        now = iso_now()
+        with self.transaction() as db:
+            try:
+                db.execute(
+                    "INSERT INTO literature_map_tags(tag_id,owner_id,name,color,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (tag_id, owner_id, tag_name, tag_color, now, now),
+                )
+            except sqlite3.IntegrityError:
+                # UNIQUE(owner_id, name COLLATE NOCASE) violation.
+                raise ValueError("TAG_NAME_CONFLICT") from None
+        return MapTag(tag_id, owner_id, tag_name, tag_color, now, now)
+
+    def update_tag(
+        self,
+        owner_id: str,
+        tag_id: str,
+        *,
+        name: str | None = None,
+        color: str | None = None,
+    ) -> MapTag:
+        tag_key = _validate_tag_id(tag_id)
+        next_name = _validate_tag_name(name) if name is not None else None
+        next_color = _validate_tag_color(color) if color is not None else None
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT * FROM literature_map_tags WHERE tag_id=? AND owner_id=?",
+                (tag_key, owner_id),
+            ).fetchone()
+            if row is None:
+                raise LookupError("tag not found")
+            current_name = str(row["name"])
+            current_color = str(row["color"])
+            if (next_name is None or next_name == current_name) and (next_color is None or next_color == current_color):
+                return _tag(row)
+            updated_name = next_name if next_name is not None else current_name
+            updated_color = next_color if next_color is not None else current_color
+            now = iso_now()
+            try:
+                db.execute(
+                    "UPDATE literature_map_tags SET name=?,color=?,updated_at=? WHERE tag_id=? AND owner_id=?",
+                    (updated_name, updated_color, now, tag_key, owner_id),
+                )
+            except sqlite3.IntegrityError:
+                raise ValueError("TAG_NAME_CONFLICT") from None
+            fresh = db.execute(
+                "SELECT * FROM literature_map_tags WHERE tag_id=? AND owner_id=?",
+                (tag_key, owner_id),
+            ).fetchone()
+        return _tag(fresh)
+
+    def delete_tag(self, owner_id: str, tag_id: str) -> int:
+        tag_key = _validate_tag_id(tag_id)
+        with self.transaction() as db:
+            row = db.execute(
+                "SELECT 1 FROM literature_map_tags WHERE tag_id=? AND owner_id=?",
+                (tag_key, owner_id),
+            ).fetchone()
+            if row is None:
+                raise LookupError("tag not found")
+            # Unbind every map from this tag atomically, then drop the tag.
+            # Bindings are deleted first so the FK on tag_id is never violated.
+            unbound = db.execute(
+                "DELETE FROM literature_map_tag_bindings WHERE tag_id=?", (tag_key,)
+            ).rowcount
+            db.execute(
+                "DELETE FROM literature_map_tags WHERE tag_id=? AND owner_id=?",
+                (tag_key, owner_id),
+            )
+        return unbound
+
+    def set_map_tags(self, map_id: str, owner_id: str, tag_ids: Iterable[str]) -> list[dict[str, Any]]:
+        requested = [str(tag_id).strip() for tag_id in (tag_ids or [])]
+        requested = [tag_id for tag_id in requested if tag_id]
+        if len(requested) > 20:
+            raise ValueError("TAG_LIMIT")
+        # De-duplicate while preserving first-seen order.
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for tag_id in requested:
+            if tag_id not in seen:
+                seen.add(tag_id)
+                ordered.append(tag_id)
+        with self.transaction() as db:
+            map_row = db.execute(
+                "SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            placeholders = ",".join("?" for _ in ordered) or "?"
+            rows = db.execute(
+                f"SELECT tag_id,name,color FROM literature_map_tags WHERE owner_id=? AND tag_id IN ({placeholders})",
+                (owner_id, *ordered),
+            ).fetchall()
+            found = {str(row["tag_id"]): row for row in rows}
+            if any(tag_id not in found for tag_id in ordered):
+                # Non-existent or cross-owner tag_id: same error, no leak.
+                raise ValueError("TAG_NOT_FOUND")
+            # Replace the full binding set so PUT semantics stay idempotent.
+            db.execute("DELETE FROM literature_map_tag_bindings WHERE map_id=?", (map_id,))
+            for tag_id in ordered:
+                db.execute(
+                    "INSERT OR IGNORE INTO literature_map_tag_bindings(map_id,tag_id) VALUES(?,?)",
+                    (map_id, tag_id),
+                )
+            return [
+                {"tag_id": tag_id, "name": str(found[tag_id]["name"]), "color": str(found[tag_id]["color"])}
+                for tag_id in ordered
+            ]
+
+    def list_map_tags(self, map_id: str, owner_id: str) -> list[dict[str, Any]]:
+        with self.connection() as db:
+            map_row = db.execute(
+                "SELECT 1 FROM literature_maps WHERE map_id=? AND owner_id=? AND deleted_at IS NULL",
+                (map_id, owner_id),
+            ).fetchone()
+            if map_row is None:
+                raise LookupError("map not found")
+            rows = db.execute(
+                "SELECT t.tag_id,t.name,t.color FROM literature_map_tag_bindings b "
+                "JOIN literature_map_tags t ON t.tag_id=b.tag_id "
+                "WHERE b.map_id=? AND t.owner_id=? ORDER BY t.created_at, t.tag_id",
+                (map_id, owner_id),
+            ).fetchall()
+        return [{"tag_id": str(row["tag_id"]), "name": str(row["name"]), "color": str(row["color"])} for row in rows]
+
+    # ------------------------------------------------------------------
     # Map analysis and conversation bridge.  These rows intentionally live
     # beside map jobs but never update ``literature_maps.status``: an
     # analysis is an auxiliary user action, not a graph-building job.
@@ -1152,6 +1319,7 @@ class LiteratureMapStore:
                     "counts": {"total": 0, "completed": 0, "queued": 0, "running": 0, "failed": 0, "skipped": 0},
                     "current": None,
                     "failed_items": [],
+                    "skipped_items": [],
                 }
             return self._queue_projection_tx(db, row)
 
@@ -1902,6 +2070,29 @@ class LiteratureMapStore:
                     "retryable": bool(error.get("retryable", item.get("retryable", False))) if status != "stopped" else False,
                     "next_retry_at": child["next_retry_at"] if child else item.get("next_retry_at"),
                 })
+        # Projection-only addition (Spec043): surface skipped units from the
+        # cursor so the UI can show why papers were skipped. This never alters
+        # ``counts`` or ``failed_items`` semantics.
+        skipped_items: list[dict[str, Any]] = []
+        for item in items.values():
+            if not isinstance(item, Mapping):
+                continue
+            if str(item.get("status") or "") != "skipped":
+                continue
+            node_id = str(item.get("node_id") or "")
+            entry: dict[str, Any] = {
+                "node_id": node_id,
+                "skip_reason": str(item.get("skip_reason") or ""),
+                "retryable": bool(item.get("retryable", False)),
+            }
+            if node_id:
+                node_row = db.execute(
+                    "SELECT title FROM literature_map_nodes WHERE map_id=? AND node_id=?",
+                    (row["map_id"], node_id),
+                ).fetchone()
+                if node_row is not None:
+                    entry["title"] = node_row["title"]
+            skipped_items.append(entry)
         state = str(row["status"])
         if state not in {"paused", "active", "completed", "partial"}:
             state = "active"
@@ -1915,6 +2106,7 @@ class LiteratureMapStore:
             "counts": counts,
             "current": current,
             "failed_items": failed_items,
+            "skipped_items": skipped_items,
         }
 
     @staticmethod
@@ -4733,6 +4925,32 @@ def _validate_group_id(value: object) -> str:
     return group_id
 
 
+def _validate_tag_id(value: object) -> str:
+    tag_id = str(value or "").strip()
+    if not tag_id or len(tag_id) > 100:
+        raise ValueError("INVALID_TAG_ID")
+    return tag_id
+
+
+def _validate_tag_name(value: object) -> str:
+    # Mirrors ``_validate_group_name``: non-empty after strip, <= 80 chars.
+    name = str(value or "").strip()
+    if not name or len(name) > 80:
+        raise ValueError("INVALID_TAG_NAME")
+    return name
+
+
+def _validate_tag_color(value: object, default: str = "#8d80e6") -> str:
+    # ``#RRGGBB`` only.  A truly absent color (``None``) falls back to the
+    # default brand color; any explicit (even empty) value is validated.
+    if value is None:
+        return default.upper()
+    color = str(value).strip()
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        raise ValueError("INVALID_TAG_COLOR")
+    return color.upper()
+
+
 def _assert_revision(map_row: sqlite3.Row, expected_revision: int) -> None:
     if int(map_row["revision"]) != int(expected_revision):
         raise ValueError("revision conflict")
@@ -4776,6 +4994,27 @@ def _node(row: sqlite3.Row) -> MapPaper:
 
 def _group(row: sqlite3.Row) -> MapGroup:
     return MapGroup(row["group_id"], row["map_id"], row["name"], row["color"], row["created_at"], row["updated_at"])
+
+
+@dataclass(frozen=True)
+class MapTag:
+    tag_id: str
+    owner_id: str
+    name: str
+    color: str
+    created_at: str
+    updated_at: str
+
+
+def _tag(row: sqlite3.Row) -> MapTag:
+    return MapTag(
+        row["tag_id"],
+        row["owner_id"],
+        row["name"],
+        row["color"],
+        row["created_at"],
+        row["updated_at"],
+    )
 
 
 def _edge(row: sqlite3.Row) -> MapEdge:

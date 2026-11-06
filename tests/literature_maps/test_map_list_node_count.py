@@ -86,7 +86,8 @@ def test_list_node_count_matches_active_graph_nodes_and_keeps_legacy_fields(tmp_
         assert item["node_count"] == len(active_node_ids)
         # requested_count keeps its original meaning (build target) and is untouched.
         assert item["requested_count"] == 20
-        # Every pre-existing to_dict() field survives; node_count is additive.
+        # Every pre-existing to_dict() field survives; node_count and the
+        # derived ``tags`` are additive (Spec043 BE-2).
         assert set(item) == {
             "map_id",
             "name",
@@ -101,7 +102,9 @@ def test_list_node_count_matches_active_graph_nodes_and_keeps_legacy_fields(tmp_
             "created_at",
             "updated_at",
             "node_count",
+            "tags",
         }
+        assert item["tags"] == []
         assert item["topic"] == "node count"
         assert item["owner_id"] == OWNER_ID
         assert isinstance(item["node_count"], int)

@@ -68,6 +68,9 @@
   // 「未分组」在 state.groupHighlightId 里的哨兵值；分组 id 来自后端，不会撞值。
   const UNGROUPED_HIGHLIGHT_ID = '__ungrouped__';
 
+  // FE-1a 地图级标签：卡片最多渲染的标签数，超出显示 +N。
+  const MAP_CARD_TAG_LIMIT = 3;
+
   const state = {
     active: false,
     mounted: false,
@@ -93,6 +96,10 @@
     selectedNode: null,
     listQuery: '',
     listStatus: 'all',
+    // FE-1a 地图级标签：全量标签列表（GET /tags）与列表上方的单选筛选态（纯前端视图态）。
+    tags: [],
+    listTagId: null,
+    tagMenuOpenFor: null,
     job: null,
     eventCursor: 0,
     pollTimer: null,
@@ -1013,6 +1020,11 @@
     });
     listFilters.append(listSearch, listStatus);
     listPanel.append(listFilters);
+    // FE-1a：列表上方「标签」筛选区（在 listFilters 之后动态创建，不改 HTML 结构）。
+    const tagFilterBar = createElement('div', 'literature-map-tag-filter-bar');
+    tagFilterBar.id = 'literature-map-tag-filter-bar';
+    tagFilterBar.hidden = true;
+    listPanel.append(tagFilterBar);
     const mapList = createElement('div', 'literature-map-list');
     mapList.id = 'literature-map-list';
     mapList.setAttribute('role', 'list');
@@ -1166,7 +1178,13 @@
       checkbox.type = 'checkbox';
       checkbox.checked = true;
       checkbox.dataset.layer = kind;
-      const text = kind === 'citation' ? '引用关系' : '主题相似';
+      const isSimilarity = kind === 'similarity';
+      const text = isSimilarity ? '主题相似' : '引用关系';
+      if (isSimilarity) {
+        // 用 title 提供说明，保留复选框的可访问名称「主题相似」（来自 label 文本），
+        // 不覆盖 aria-label，避免既有 role=checkbox 定位断言（name='主题相似'）失效。
+        label.title = '显示基于标题/摘要相似度的论文连线（虚线）';
+      }
       label.append(checkbox, createElement('span', '', text));
       layerTools.append(label);
     });
@@ -1306,7 +1324,7 @@
     root.append(mobileBackdrop);
     mount.append(root);
 
-    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, canvas, groupsFab, groupsPopover, groupsFormDetails, groupsClearHighlight, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
+    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, tagFilterBar, canvas, groupsFab, groupsPopover, groupsFormDetails, groupsClearHighlight, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
     if (isMobileViewport()) {
       refs.listPanel.setAttribute('aria-hidden', 'true');
       refs.detailPanel.setAttribute('aria-hidden', 'true');
@@ -1315,6 +1333,7 @@
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
+    loadTags();
     renderGraph();
   }
 
@@ -1564,6 +1583,7 @@
         state.viewDirty = true;
         renderGraph();
         scheduleViewSave();
+        if (input.dataset.layer === 'similarity') showSimilarityLayerHint(input.checked);
       });
     });
     refs.labelModeSelect.addEventListener('change', () => {
@@ -1634,8 +1654,14 @@
     return state.maps.filter((map) => {
       const haystack = `${mapTitle(map)} ${map?.topic || ''}`.toLowerCase();
       const matchesQuery = !state.listQuery || haystack.includes(state.listQuery);
-      const matchesStatus = state.listStatus === 'all' || map?.status === state.listStatus;
-      return matchesQuery && matchesStatus;
+      // 「可用」筛选与卡片徽标同一「可用集合」：status==='ready' 或 status==='partial' 且有活动节点；
+      // 「部分完成」筛选仍严格按原始 status==='partial'（含无节点项）。
+      const isPartialUsable = String(map?.status || '').toLowerCase() === 'partial' && normalizeMapNodeCount(map?.node_count) > 0;
+      const matchesStatus = state.listStatus === 'all'
+        || map?.status === state.listStatus
+        || (state.listStatus === 'ready' && isPartialUsable);
+      const matchesTag = !state.listTagId || (map?.tags || []).some((tag) => tag?.tag_id === state.listTagId);
+      return matchesQuery && matchesStatus && matchesTag;
     });
   }
 
@@ -1829,10 +1855,11 @@
     refs.count.textContent = `${visibleMaps.length}/${state.maps.length}`;
     setHidden(refs.listEmpty, visibleMaps.length > 0);
     visibleMaps.forEach((map) => {
-      const item = createElement('button', 'literature-map-list-item');
-      item.type = 'button';
+      // FE-1a：卡片改为容器元素承载 data-map-id（保留选图行为），内部放 ⋯ 触发按钮。
+      const item = createElement('div', 'literature-map-list-item');
       item.dataset.mapId = map.map_id || '';
-      item.setAttribute('role', 'listitem');
+      item.setAttribute('role', 'button');
+      item.tabIndex = 0;
       item.setAttribute('aria-pressed', String(map.map_id === state.selectedMapId));
       const title = createElement('strong', 'literature-map-list-title', mapTitle(map));
       const topic = createElement('span', 'literature-map-list-topic', map.topic || '主题未提供');
@@ -1841,12 +1868,370 @@
       const cardNodeCount = mapCardNodeCount(map);
       if (cardNodeCount !== null) meta.append(createElement('span', '', `${cardNodeCount} 篇`));
       item.append(title, topic, meta);
+      const tagsRow = renderMapCardTags(map);
+      if (tagsRow) item.append(tagsRow);
+      const trigger = createElement('button', 'literature-map-card-menu-trigger', '⋯');
+      trigger.type = 'button';
+      trigger.setAttribute('aria-label', `设置标签：${mapTitle(map)}`);
+      trigger.setAttribute('aria-haspopup', 'menu');
+      trigger.addEventListener('click', (event) => {
+        // ⋯ 点击必须 stopPropagation，不得触发 selectMap。
+        event.stopPropagation();
+        if (state.tagMenuOpenFor === map.map_id) closeTagMenu(false);
+        else openTagMenu(map.map_id, trigger);
+      });
+      item.append(trigger);
       item.addEventListener('click', () => {
+        // 切换地图清除标签筛选（纯前端视图态，不写库/不进导出/不触发视图保存 409）。
+        if (state.listTagId) {
+          state.listTagId = null;
+          renderTagFilterBar();
+        }
         selectMap(map.map_id);
         if (isMobileViewport()) closeMobilePanel('list');
       });
+      item.addEventListener('keydown', (event) => {
+        if (event.target !== item) return;
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          if (state.listTagId) {
+            state.listTagId = null;
+            renderTagFilterBar();
+          }
+          selectMap(map.map_id);
+          if (isMobileViewport()) closeMobilePanel('list');
+        }
+      });
       refs.mapList.append(item);
     });
+  }
+
+  // ---- 地图级标签系统（FE-1a）------------------------------------------------
+  // 与节点「分组」完全独立：此处术语一律用「标签」，既有「分组」UI 不改、不替换。
+  function normalizeTagName(name) {
+    const normalized = String(name || '').trim();
+    if (!normalized) throw new LiteratureMapError('标签名称不能为空。');
+    if (normalized.length > GROUP_NAME_MAX_LENGTH) {
+      throw new LiteratureMapError(`标签名称最多 ${GROUP_NAME_MAX_LENGTH} 个字符。`);
+    }
+    return normalized;
+  }
+
+  function tagErrorMessage(error) {
+    const status = Number(error?.status) || 0;
+    const code = String(error?.code || '').toLowerCase();
+    if (status === 409 || code.includes('conflict') || code.includes('duplicate') || code.includes('exists')) {
+      return '标签名称已存在，请换一个名称后重试。';
+    }
+    if (status === 422 || code.includes('forbidden') || code.includes('invalid') || code.includes('unauthorized')) {
+      return '所选标签不可用（可能不存在或无权限），请刷新后重试。';
+    }
+    if (status === 404) return '标签不存在或已被删除，请刷新后重试。';
+    if (status === 400) return '标签名称或颜色不合法，请检查后重试。';
+    if (status === 401) return '请先登录后再操作标签。';
+    return error?.message || '标签操作失败，请稍后重试。';
+  }
+
+  async function loadTags() {
+    try {
+      const payload = await request('/tags');
+      state.tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+    } catch (_) {
+      // 空标签列表或加载失败：不渲染筛选区、不报错。
+      state.tags = [];
+    }
+    renderTagFilterBar();
+  }
+
+  function renderTagFilterBar() {
+    if (!refs.tagFilterBar) return;
+    refs.tagFilterBar.replaceChildren();
+    if (!state.tags.length) {
+      refs.tagFilterBar.hidden = true;
+      return;
+    }
+    refs.tagFilterBar.hidden = false;
+    const heading = createElement('span', 'literature-map-tag-filter-heading', '标签');
+    refs.tagFilterBar.append(heading);
+    const list = createElement('div', 'literature-map-tag-filter-list');
+    state.tags.forEach((tag) => {
+      const active = state.listTagId === tag.tag_id;
+      const chip = createElement('button', 'literature-map-tag-filter');
+      chip.type = 'button';
+      chip.dataset.tagId = tag.tag_id;
+      chip.setAttribute('aria-pressed', String(active));
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const label = createElement('span', 'literature-map-tag-name', tag.name);
+      chip.append(dot, label);
+      chip.addEventListener('click', () => toggleTagFilter(tag.tag_id));
+      list.append(chip);
+    });
+    refs.tagFilterBar.append(list);
+  }
+
+  function toggleTagFilter(tagId) {
+    state.listTagId = state.listTagId === tagId ? null : tagId;
+    renderTagFilterBar();
+    renderMapList();
+  }
+
+  function renderMapCardTags(map) {
+    const tags = Array.isArray(map?.tags) ? map.tags : [];
+    if (!tags.length) return null;
+    const row = createElement('div', 'literature-map-list-tags');
+    const visible = tags.slice(0, MAP_CARD_TAG_LIMIT);
+    visible.forEach((tag) => {
+      const chip = createElement('span', 'literature-map-tag-chip');
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const name = createElement('span', 'literature-map-tag-name', tag.name);
+      name.title = tag.name;
+      chip.append(dot, name);
+      row.append(chip);
+    });
+    if (tags.length > MAP_CARD_TAG_LIMIT) {
+      const extra = tags.length - MAP_CARD_TAG_LIMIT;
+      const more = createElement('span', 'literature-map-tag-chip literature-map-tag-more', `+${extra}`);
+      const allNames = tags.map((t) => t.name).join('、');
+      more.title = allNames;
+      more.setAttribute('aria-label', allNames);
+      row.append(more);
+    }
+    return row;
+  }
+
+  function positionTagMenu(menu, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const menuWidth = Math.min(280, menu.offsetWidth || 240);
+    const menuHeight = menu.offsetHeight || 220;
+    let top = rect.bottom + 6;
+    if (top + menuHeight > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - menuHeight - 6);
+    }
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - menuWidth - 8);
+    }
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '1090';
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+    menu.style.maxWidth = '280px';
+    menu.style.maxHeight = `${window.innerHeight - 16}px`;
+    menu.style.overflow = 'auto';
+  }
+
+  function handleTagMenuPointerDown(event) {
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (refs.tagMenu?.contains(target) || refs.tagMenu?._anchor?.contains(target)) return;
+    closeTagMenu(false);
+  }
+
+  function handleTagMenuKeyDown(event) {
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
+    event.stopPropagation();
+    closeTagMenu(true);
+  }
+
+  function attachTagMenuDismiss(anchor) {
+    if (refs.tagMenu) refs.tagMenu._anchor = anchor;
+    if (!state.active) return;
+    document.addEventListener('pointerdown', handleTagMenuPointerDown, true);
+    document.addEventListener('keydown', handleTagMenuKeyDown, true);
+  }
+
+  function detachTagMenuDismiss() {
+    document.removeEventListener('pointerdown', handleTagMenuPointerDown, true);
+    document.removeEventListener('keydown', handleTagMenuKeyDown, true);
+  }
+
+  function closeTagMenu(restoreFocus = true) {
+    detachTagMenuDismiss();
+    const menu = refs.tagMenu;
+    if (menu && menu.isConnected) {
+      const anchor = menu._anchor || null;
+      menu.remove();
+      if (restoreFocus && anchor && anchor.isConnected) anchor.focus();
+    }
+    refs.tagMenu = null;
+    state.tagMenuOpenFor = null;
+  }
+
+  function openTagMenu(mapId, anchor) {
+    const map = state.maps.find((m) => m.map_id === mapId);
+    if (!map) return;
+    closeTagMenu(false);
+    const menu = createElement('div', 'literature-map-card-menu');
+    menu.setAttribute('role', 'menu');
+    menu._anchor = anchor;
+    const selected = new Set((map.tags || []).map((t) => t.tag_id));
+    const titleEl = createElement('div', 'literature-map-card-menu-title', '设置标签');
+    menu.append(titleEl);
+
+    const optionList = createElement('div', 'literature-map-card-menu-options');
+    state.tags.forEach((tag) => {
+      const optionRow = createElement('div', 'literature-map-card-menu-option');
+      const checkbox = createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selected.has(tag.tag_id);
+      checkbox.dataset.tagId = tag.tag_id;
+      checkbox.setAttribute('aria-label', `标签：${tag.name}`);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) selected.add(tag.tag_id);
+        else selected.delete(tag.tag_id);
+      });
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const name = createElement('span', 'literature-map-tag-name', tag.name);
+      name.title = tag.name;
+      const rename = createElement('button', 'secondary-button literature-map-card-menu-rename', '重命名');
+      rename.type = 'button';
+      rename.dataset.tagId = tag.tag_id;
+      rename.addEventListener('click', () => renameTag(tag, rename));
+      const remove = createElement('button', 'secondary-button literature-map-card-menu-delete', '删除');
+      remove.type = 'button';
+      remove.dataset.tagId = tag.tag_id;
+      remove.addEventListener('click', () => deleteTag(tag, remove));
+      optionRow.append(checkbox, dot, name, rename, remove);
+      optionList.append(optionRow);
+    });
+    menu.append(optionList);
+
+    // 新建标签表单（复用「名称 + 颜色 + 创建」风格）。
+    const newForm = createElement('form', 'literature-map-card-menu-new');
+    const newName = createElement('input');
+    newName.type = 'text';
+    newName.placeholder = '新标签名称';
+    newName.maxLength = GROUP_NAME_MAX_LENGTH;
+    newName.setAttribute('aria-label', '新标签名称');
+    const newColor = createElement('input');
+    newColor.type = 'color';
+    newColor.value = '#8d80e6';
+    newColor.setAttribute('aria-label', '新标签颜色');
+    const newButton = createElement('button', 'send-button literature-map-card-menu-create', '创建并绑定');
+    newButton.type = 'submit';
+    newForm.append(newName, newColor, newButton);
+    newForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      createTag(mapId, newName.value, newColor.value, selected, menu, anchor);
+    });
+    menu.append(newForm);
+
+    const saveButton = createElement('button', 'send-button literature-map-card-menu-save', '保存');
+    saveButton.type = 'button';
+    saveButton.addEventListener('click', () => saveMapTags(mapId, [...selected], menu, anchor));
+    menu.append(saveButton);
+
+    refs.root.append(menu);
+    refs.tagMenu = menu;
+    state.tagMenuOpenFor = mapId;
+    positionTagMenu(menu, anchor);
+    attachTagMenuDismiss(anchor);
+    const firstFocusable = menu.querySelector('input, button');
+    if (firstFocusable) firstFocusable.focus();
+  }
+
+  async function saveMapTags(mapId, tagIds, menu, anchor) {
+    const button = menu ? menu.querySelector('.literature-map-card-menu-save') : null;
+    if (button) button.disabled = true;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/tags`, {
+        method: 'PUT',
+        body: JSON.stringify({ tag_ids: tagIds }),
+      });
+      const map = state.maps.find((m) => m.map_id === mapId);
+      if (map) map.tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+      renderMapList();
+      renderTagFilterBar();
+      setStatus('标签已保存。', 'waiting');
+      closeTagMenu();
+    } catch (error) {
+      if (button) button.disabled = false;
+      setStatus(`标签保存失败：${tagErrorMessage(error)}`, 'error');
+    }
+  }
+
+  async function createTag(mapId, name, color, selected, menu, anchor) {
+    let values;
+    try {
+      values = { name: normalizeTagName(name), color: normalizeHexColor(color) || '#8d80e6' };
+    } catch (error) {
+      setStatus(tagErrorMessage(error), 'error');
+      return;
+    }
+    const createButton = menu ? menu.querySelector('.literature-map-card-menu-create') : null;
+    if (createButton) createButton.disabled = true;
+    try {
+      const tag = await request('/tags', {
+        method: 'POST',
+        body: JSON.stringify({ name: values.name, color: values.color }),
+      });
+      if (!state.tags.some((t) => t.tag_id === tag.tag_id)) state.tags.push(tag);
+      selected.add(tag.tag_id);
+      renderTagFilterBar();
+      // POST /tags 后自动把当前地图加入新标签（绑定）。
+      await saveMapTags(mapId, [...selected], menu, anchor);
+    } catch (error) {
+      if (createButton) createButton.disabled = false;
+      setStatus(`新建标签失败：${tagErrorMessage(error)}`, 'error');
+    }
+  }
+
+  async function renameTag(tag, button) {
+    if (!tag) return;
+    const nextName = window.prompt('请输入新的标签名称', tag.name);
+    if (nextName === null) return;
+    let normalized;
+    try {
+      normalized = normalizeTagName(nextName);
+    } catch (error) {
+      setStatus(tagErrorMessage(error), 'error');
+      return;
+    }
+    if (button) button.disabled = true;
+    try {
+      const updated = await request(`/tags/${tag.tag_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: normalized }),
+      });
+      const existing = state.tags.find((t) => t.tag_id === tag.tag_id);
+      if (existing) {
+        existing.name = updated?.name || normalized;
+        if (updated?.color) existing.color = updated.color;
+      }
+      renderTagFilterBar();
+      renderMapList();
+      setStatus('标签已重命名。', 'waiting');
+      closeTagMenu();
+    } catch (error) {
+      if (button) button.disabled = false;
+      setStatus(`重命名失败：${tagErrorMessage(error)}`, 'error');
+    }
+  }
+
+  async function deleteTag(tag, button) {
+    if (!tag) return;
+    if (!window.confirm(`确定删除标签「${tag.name}」？该标签会从所有地图移除。`)) return;
+    if (button) button.disabled = true;
+    try {
+      await request(`/tags/${tag.tag_id}`, { method: 'DELETE' });
+      state.tags = state.tags.filter((t) => t.tag_id !== tag.tag_id);
+      state.maps.forEach((m) => {
+        if (Array.isArray(m.tags)) m.tags = m.tags.filter((t) => t.tag_id !== tag.tag_id);
+      });
+      if (state.listTagId === tag.tag_id) state.listTagId = null;
+      renderTagFilterBar();
+      renderMapList();
+      setStatus('标签已删除。', 'waiting');
+      closeTagMenu();
+    } catch (error) {
+      if (button) button.disabled = false;
+      setStatus(`删除失败：${tagErrorMessage(error)}`, 'error');
+    }
   }
 
   function renderMultiSelectControls() {
@@ -5918,6 +6303,7 @@
       return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
     };
     const failedItems = Array.isArray(candidate.failed_items) ? candidate.failed_items.slice(0, 50) : [];
+    const skippedItems = Array.isArray(candidate.skipped_items) ? candidate.skipped_items.slice(0, 50) : [];
     return {
       map_id: candidate.map_id || state.selectedMapId,
       queue_job_id: candidate.queue_job_id || null,
@@ -5932,6 +6318,7 @@
         skipped: count(counts.skipped),
       },
       current: candidate.current && typeof candidate.current === 'object' ? candidate.current : null,
+      skipped_items: skippedItems,
       failed_items: failedItems,
     };
   }
@@ -5990,6 +6377,30 @@
     return safeAnalysisReason(metadataText(item, '某个分析项'), '某个分析项');
   }
 
+  // 切换「主题相似」图层时给出可见状态提示（数量取自当前图 similarity 边）。
+  function showSimilarityLayerHint(visible) {
+    const container = refs.root?.querySelector('.literature-map-layer-tools');
+    if (!container) return;
+    let hint = container.querySelector('.literature-map-layer-hint');
+    if (!hint) {
+      hint = createElement('span', 'literature-map-layer-hint', '');
+      hint.setAttribute('role', 'status');
+      container.append(hint);
+    }
+    const count = normalizeEdges(state.graph || {}).filter((edge) => edge?.kind === 'similarity').length;
+    hint.textContent = visible ? `已显示 ${count} 条主题相似连线` : `已隐藏 ${count} 条主题相似连线`;
+    hint.hidden = false;
+    if (hint._layerHintTimer) clearTimeout(hint._layerHintTimer);
+    hint._layerHintTimer = setTimeout(() => { hint.hidden = true; }, 2800);
+  }
+
+  // 跳过项的论文标识：优先用标题，缺失时回落 node_id 短码（过长截断，保留尾部）。
+  function shortNodeCode(nodeId) {
+    const id = String(nodeId || '').trim();
+    if (!id) return '某个分析项';
+    return id.length > 12 ? `…${id.slice(-12)}` : id;
+  }
+
   function renderAnalysisQueue() {
     if (!refs.queuePanel) return;
     refs.queuePanel.replaceChildren();
@@ -6044,6 +6455,20 @@
     if (queue.failed_items?.length) {
       const failed = createElement('p', 'literature-map-analysis-queue-failed', `失败项 ${queue.failed_items.length} 个：${queue.failed_items.slice(0, 5).map(queueItemLabel).join('、')}`);
       refs.queuePanel.append(failed);
+    }
+    // FE-1b④：跳过明细（后端 skipped_items）。只列论文（优先 title，缺失回落 node_id 短码）与中文原因，
+    // 不加重试/补摘要按钮；skipped_items 为空时本块整体不渲染。
+    if (queue.skipped_items?.length) {
+      const skipped = createElement('div', 'literature-map-analysis-queue-skipped');
+      skipped.append(createElement('p', 'literature-map-analysis-queue-skipped-title', `跳过项 ${queue.skipped_items.length} 个：`));
+      const list = createElement('ul', 'literature-map-analysis-queue-skipped-list');
+      queue.skipped_items.forEach((item) => {
+        const label = item?.title || shortNodeCode(item?.node_id);
+        const reason = safeAnalysisReason(item?.skip_reason, '（原因未提供）');
+        list.append(createElement('li', 'literature-map-analysis-queue-skipped-item', `${label}：${reason}`));
+      });
+      skipped.append(list);
+      refs.queuePanel.append(skipped);
     }
   }
 

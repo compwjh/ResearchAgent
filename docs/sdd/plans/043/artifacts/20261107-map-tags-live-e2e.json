@@ -1,0 +1,951 @@
+{
+  "timestamp": "2026-11-07T01:32:42.456401",
+  "base_url": "http://127.0.0.1:8000",
+  "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+  "tag_id": "1f5f2089842a42f79f80c192bd9bf528",
+  "checks": {
+    "create_201": true,
+    "duplicate_409": true,
+    "bind_200": true,
+    "list_has_tag": true,
+    "legacy_fields_present": true,
+    "bad_tag_422": true,
+    "delete_200": true,
+    "list_cleared": true,
+    "queue_skipped_items": [
+      {
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "skipped_count": 2,
+        "has_reason": true
+      }
+    ]
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/literature-maps",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "maps": [
+          {
+            "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+            "name": "API E2E graph attention networks r2",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 357,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.5
+              },
+              "view_initialized": true,
+              "viewport": {
+                "scale": 1.0984499318523513,
+                "x": -109.33540561757388,
+                "y": 212.20542755699284
+              }
+            },
+            "created_at": "2026-10-19T14:06:06.042255+00:00",
+            "updated_at": "2026-11-06T08:37:57.285726+00:00",
+            "node_count": 32,
+            "tags": []
+          },
+          {
+            "map_id": "4ef8c03bffe24797acb090f4095a3a28",
+            "name": "地图易用性官方目录验证 task10-official-20261027-130257",
+            "topic": "fuzzing vulnerability discovery",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [
+                "usenix-security"
+              ],
+              "source_ids": [
+                "usenix"
+              ],
+              "year_end": 2024,
+              "year_start": 2024
+            },
+            "requested_count": 20,
+            "revision": 0,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              },
+              "viewport": {
+                "scale": 1,
+                "x": 0,
+                "y": 0
+              }
+            },
+            "created_at": "2026-10-27T05:02:57.624251+00:00",
+            "updated_at": "2026-10-27T05:03:03.355769+00:00",
+            "node_count": 0,
+            "tags": []
+          },
+          {
+            "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+            "name": "地图易用性 API 验证 task10-smoke-20261027-125456",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 0,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              },
+              "viewport": {
+                "scale": 1,
+                "x": 0,
+                "y": 0
+              }
+            },
+            "created_at": "2026-10-27T04:54:56.603943+00:00",
+            "updated_at": "2026-10-27T04:57:59.185457+00:00",
+            "node_count": 0,
+            "tags": []
+          },
+          {
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "name": "Task08 live graph attention networks 24134dce4api",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 15,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 1.0984499318523517,
+                "x": 111.72381974909865,
+                "y": 193.41714005559183
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-21T15:27:24.162911+00:00",
+            "updated_at": "2026-10-27T04:50:07.562370+00:00",
+            "node_count": 21,
+            "tags": []
+          },
+          {
+            "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+            "name": "Task09 live graph attention networks 20261024-153416",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 37,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 2.8,
+                "x": -1003.445228693449,
+                "y": -1607.767842086919
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-24T07:34:44.819896+00:00",
+            "updated_at": "2026-10-26T16:11:14.095351+00:00",
+            "node_count": 20,
+            "tags": []
+          },
+          {
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "name": "Task08 restart recovery 1a3ff26",
+            "topic": "graph attention architectures",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 12,
+            "status": "partial",
+            "view_settings": {
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 0.6702977382336576,
+                "x": -503.56640625,
+                "y": -1033.8046875
+              },
+              "label_mode": "all",
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-21T15:52:16.546582+00:00",
+            "updated_at": "2026-10-22T17:23:11.673774+00:00",
+            "node_count": 20,
+            "tags": []
+          },
+          {
+            "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+            "name": "API E2E graph attention networks",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 11,
+            "status": "partial",
+            "view_settings": {
+              "layers": {
+                "citation": false,
+                "similarity": false
+              },
+              "viewport": {
+                "scale": 1.44,
+                "x": -60.0,
+                "y": -60.0
+              },
+              "label_mode": "all",
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-19T13:36:32.318576+00:00",
+            "updated_at": "2026-10-19T14:07:42.719994+00:00",
+            "node_count": 20,
+            "tags": []
+          }
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/literature-maps/tags",
+      "request": {
+        "name": "E2E 验证标签",
+        "color": "#8d80e6"
+      },
+      "status": 201,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "tag_id": "1f5f2089842a42f79f80c192bd9bf528",
+        "name": "E2E 验证标签",
+        "color": "#8D80E6"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/literature-maps/tags",
+      "request": {
+        "name": "e2e 验证标签",
+        "color": "#8d80e6"
+      },
+      "status": 409,
+      "response": {
+        "detail": {
+          "code": "TAG_NAME_CONFLICT",
+          "message": "标签名称已存在",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/tags",
+      "request": {
+        "tag_ids": [
+          "1f5f2089842a42f79f80c192bd9bf528"
+        ]
+      },
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "tags": [
+          {
+            "tag_id": "1f5f2089842a42f79f80c192bd9bf528",
+            "name": "E2E 验证标签",
+            "color": "#8D80E6"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "maps": [
+          {
+            "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+            "name": "API E2E graph attention networks r2",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 357,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.5
+              },
+              "view_initialized": true,
+              "viewport": {
+                "scale": 1.0984499318523513,
+                "x": -109.33540561757388,
+                "y": 212.20542755699284
+              }
+            },
+            "created_at": "2026-10-19T14:06:06.042255+00:00",
+            "updated_at": "2026-11-06T08:37:57.285726+00:00",
+            "node_count": 32,
+            "tags": [
+              {
+                "tag_id": "1f5f2089842a42f79f80c192bd9bf528",
+                "name": "E2E 验证标签",
+                "color": "#8D80E6"
+              }
+            ]
+          },
+          {
+            "map_id": "4ef8c03bffe24797acb090f4095a3a28",
+            "name": "地图易用性官方目录验证 task10-official-20261027-130257",
+            "topic": "fuzzing vulnerability discovery",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [
+                "usenix-security"
+              ],
+              "source_ids": [
+                "usenix"
+              ],
+              "year_end": 2024,
+              "year_start": 2024
+            },
+            "requested_count": 20,
+            "revision": 0,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              },
+              "viewport": {
+                "scale": 1,
+                "x": 0,
+                "y": 0
+              }
+            },
+            "created_at": "2026-10-27T05:02:57.624251+00:00",
+            "updated_at": "2026-10-27T05:03:03.355769+00:00",
+            "node_count": 0,
+            "tags": []
+          },
+          {
+            "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+            "name": "地图易用性 API 验证 task10-smoke-20261027-125456",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 0,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              },
+              "viewport": {
+                "scale": 1,
+                "x": 0,
+                "y": 0
+              }
+            },
+            "created_at": "2026-10-27T04:54:56.603943+00:00",
+            "updated_at": "2026-10-27T04:57:59.185457+00:00",
+            "node_count": 0,
+            "tags": []
+          },
+          {
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "name": "Task08 live graph attention networks 24134dce4api",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 15,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 1.0984499318523517,
+                "x": 111.72381974909865,
+                "y": 193.41714005559183
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-21T15:27:24.162911+00:00",
+            "updated_at": "2026-10-27T04:50:07.562370+00:00",
+            "node_count": 21,
+            "tags": []
+          },
+          {
+            "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+            "name": "Task09 live graph attention networks 20261024-153416",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 37,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 2.8,
+                "x": -1003.445228693449,
+                "y": -1607.767842086919
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-24T07:34:44.819896+00:00",
+            "updated_at": "2026-10-26T16:11:14.095351+00:00",
+            "node_count": 20,
+            "tags": []
+          },
+          {
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "name": "Task08 restart recovery 1a3ff26",
+            "topic": "graph attention architectures",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 12,
+            "status": "partial",
+            "view_settings": {
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 0.6702977382336576,
+                "x": -503.56640625,
+                "y": -1033.8046875
+              },
+              "label_mode": "all",
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-21T15:52:16.546582+00:00",
+            "updated_at": "2026-10-22T17:23:11.673774+00:00",
+            "node_count": 20,
+            "tags": []
+          },
+          {
+            "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+            "name": "API E2E graph attention networks",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 11,
+            "status": "partial",
+            "view_settings": {
+              "layers": {
+                "citation": false,
+                "similarity": false
+              },
+              "viewport": {
+                "scale": 1.44,
+                "x": -60.0,
+                "y": -60.0
+              },
+              "label_mode": "all",
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-19T13:36:32.318576+00:00",
+            "updated_at": "2026-10-19T14:07:42.719994+00:00",
+            "node_count": 20,
+            "tags": []
+          }
+        ]
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/tags",
+      "request": {
+        "tag_ids": [
+          "not-a-real-tag-id"
+        ]
+      },
+      "status": 422,
+      "response": {
+        "detail": {
+          "code": "TAG_NOT_FOUND",
+          "message": "标签绑定超过上限或引用的标签不存在/越权",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/literature-maps/tags/1f5f2089842a42f79f80c192bd9bf528",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "deleted": true,
+        "unbound_maps": 1
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "maps": [
+          {
+            "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+            "name": "API E2E graph attention networks r2",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 357,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.5
+              },
+              "view_initialized": true,
+              "viewport": {
+                "scale": 1.0984499318523513,
+                "x": -109.33540561757388,
+                "y": 212.20542755699284
+              }
+            },
+            "created_at": "2026-10-19T14:06:06.042255+00:00",
+            "updated_at": "2026-11-06T08:37:57.285726+00:00",
+            "node_count": 32,
+            "tags": []
+          },
+          {
+            "map_id": "4ef8c03bffe24797acb090f4095a3a28",
+            "name": "地图易用性官方目录验证 task10-official-20261027-130257",
+            "topic": "fuzzing vulnerability discovery",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [
+                "usenix-security"
+              ],
+              "source_ids": [
+                "usenix"
+              ],
+              "year_end": 2024,
+              "year_start": 2024
+            },
+            "requested_count": 20,
+            "revision": 0,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              },
+              "viewport": {
+                "scale": 1,
+                "x": 0,
+                "y": 0
+              }
+            },
+            "created_at": "2026-10-27T05:02:57.624251+00:00",
+            "updated_at": "2026-10-27T05:03:03.355769+00:00",
+            "node_count": 0,
+            "tags": []
+          },
+          {
+            "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+            "name": "地图易用性 API 验证 task10-smoke-20261027-125456",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 0,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              },
+              "viewport": {
+                "scale": 1,
+                "x": 0,
+                "y": 0
+              }
+            },
+            "created_at": "2026-10-27T04:54:56.603943+00:00",
+            "updated_at": "2026-10-27T04:57:59.185457+00:00",
+            "node_count": 0,
+            "tags": []
+          },
+          {
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "name": "Task08 live graph attention networks 24134dce4api",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 15,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 1.0984499318523517,
+                "x": 111.72381974909865,
+                "y": 193.41714005559183
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-21T15:27:24.162911+00:00",
+            "updated_at": "2026-10-27T04:50:07.562370+00:00",
+            "node_count": 21,
+            "tags": []
+          },
+          {
+            "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+            "name": "Task09 live graph attention networks 20261024-153416",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 37,
+            "status": "partial",
+            "view_settings": {
+              "label_mode": "all",
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 2.8,
+                "x": -1003.445228693449,
+                "y": -1607.767842086919
+              },
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-24T07:34:44.819896+00:00",
+            "updated_at": "2026-10-26T16:11:14.095351+00:00",
+            "node_count": 20,
+            "tags": []
+          },
+          {
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "name": "Task08 restart recovery 1a3ff26",
+            "topic": "graph attention architectures",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 12,
+            "status": "partial",
+            "view_settings": {
+              "layers": {
+                "citation": true,
+                "similarity": true
+              },
+              "viewport": {
+                "scale": 0.6702977382336576,
+                "x": -503.56640625,
+                "y": -1033.8046875
+              },
+              "label_mode": "all",
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-21T15:52:16.546582+00:00",
+            "updated_at": "2026-10-22T17:23:11.673774+00:00",
+            "node_count": 20,
+            "tags": []
+          },
+          {
+            "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+            "name": "API E2E graph attention networks",
+            "topic": "graph attention networks",
+            "owner_id": "local-user",
+            "project_id": null,
+            "filters": {
+              "conference_ids": [],
+              "source_ids": [],
+              "year_end": null,
+              "year_start": null
+            },
+            "requested_count": 20,
+            "revision": 11,
+            "status": "partial",
+            "view_settings": {
+              "layers": {
+                "citation": false,
+                "similarity": false
+              },
+              "viewport": {
+                "scale": 1.44,
+                "x": -60.0,
+                "y": -60.0
+              },
+              "label_mode": "all",
+              "node_style": {
+                "fill_mode": "filled",
+                "fill_opacity": 0.3
+              }
+            },
+            "created_at": "2026-10-19T13:36:32.318576+00:00",
+            "updated_at": "2026-10-19T14:07:42.719994+00:00",
+            "node_count": 20,
+            "tags": []
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/0baabeae7268429c9f7e4de8098ae1d0/analysis-queue",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+        "queue_job_id": "92f382a294da4beba25f16aaab7976ad",
+        "state": "completed",
+        "pause_reason": null,
+        "counts": {
+          "total": 32,
+          "completed": 30,
+          "queued": 0,
+          "running": 0,
+          "failed": 0,
+          "skipped": 2
+        },
+        "current": null,
+        "failed_items": [],
+        "skipped_items": [
+          {
+            "node_id": "2e45cfdbec4d4c48b41fe8091e0fe742",
+            "skip_reason": "MAP_ABSTRACT_UNAVAILABLE",
+            "retryable": false,
+            "title": "Social recommendation system based on heterogeneous graph attention networks"
+          },
+          {
+            "node_id": "c6e208e158a1418a8b529d96b5592777",
+            "skip_reason": "MAP_ABSTRACT_UNAVAILABLE",
+            "retryable": false,
+            "title": "Multi-head multi-order graph attention networks"
+          }
+        ]
+      }
+    }
+  ]
+}

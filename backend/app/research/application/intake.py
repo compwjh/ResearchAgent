@@ -116,8 +116,50 @@ _INTENT_META_SUBSTRINGS = (
 # 礼貌 / 主语前缀：判定「是否以疑问词开头」前先剥掉，避免「我想问…」漏判。
 _INTENT_LEADING_POLITE = (
     "请", "那", "你就", "你看", "我想问", "我想知道", "请问", "帮我看看",
-    "帮我说说", "我想", "我", "你", "它", "这", "那我们",
+    "帮我说说", "我想", "我", "你", "它", "这",     "那我们",
 )
+
+# 单篇论文解读负向特征（B 文本兜底）：命中即归 ordinary，覆盖把「关于本篇提问」
+# 草稿粘贴到普通会话、或纯文本无法获知会话绑定时，把「解读这篇论文 / 基于全文
+# 分析 / 使用RAG」误判为深度研究的情形。分类器纯规则、确定性、可单测、零 LLM 调用。
+_SINGLE_PAPER_MARKERS = (
+    "这篇论文", "这一篇", "基于全文", "证据等级", "全文索引片段",
+    "使用rag", "关于本篇",
+)
+# 「研究 / 分析」作动词时，其后两字不应是这些名词后缀，否则只是名词短语
+# （研究问题 / 研究目标 / 研究方法 …），不触发显式深度研究。
+_RESEARCH_NOUN_SUFFIXES = frozenset(
+    {
+        "问题", "目标", "方向", "现状", "结论", "意义", "背景", "综述",
+        "进展", "热点", "趋势", "框架", "范式", "方法", "结果", "思路",
+        "价值", "空白", "难点", "挑战", "贡献", "局限", "摘要", "定义",
+        "分类", "对比", "差异",
+    }
+)
+# 礼貌前缀：判定「显式研究 / 分析」动词前先剥掉，避免「我想问…」漏判；
+# 与 classify_intake_intent 的剥前缀思路一致，但此处用于显式深度研究信号。
+_EXPLICIT_PREFIXES = ("请帮我", "帮我", "请")
+
+
+def _explicit_verb_match(text: str) -> bool:
+    """收紧过的「显式研究 / 分析」判定：仅动词用法命中，名词短语不命中。
+
+    在礼貌前缀后的 12 字窗口内遍历所有「研究 / 分析」，只要存在一个其后两字
+    不是常见名词后缀、且确有后续内容（与原正则 ``.{2,}`` 一致）的动词用法，
+    即判显式；避免「研究问题 / 研究目标」等名词短语误触发深度研究。
+    """
+    for prefix in _EXPLICIT_PREFIXES:
+        idx = text.find(prefix)
+        if idx == -1:
+            continue
+        start = idx + len(prefix)
+        window = text[start:start + 12]
+        for vm in re.finditer(r"(?:研究|分析)", window):
+            v_end = start + vm.end()
+            after = text[v_end:v_end + 2]
+            if len(after) >= 2 and after not in _RESEARCH_NOUN_SUFFIXES:
+                return True
+    return False
 
 
 def classify_intake_intent(message: str) -> str:
@@ -182,11 +224,16 @@ class ResearchIntakeCoordinator:
     @staticmethod
     def classify(message: str) -> str:
         text = (message or "").strip().lower()
+        # 单篇解读负向特征优先：命中即 ordinary（至少不判 explicit），覆盖把
+        # 「关于本篇提问」草稿粘贴到普通会话、或纯文本无法获知会话绑定时，把
+        # 「解读这篇论文 / 基于全文分析 / 使用RAG」误判为深度研究的情形。
+        if any(marker in text for marker in _SINGLE_PAPER_MARKERS):
+            return "ordinary"
         explicit = (
             "深度研究" in text
             or "deep research" in text
             or "研究报告" in text
-            or bool(re.search(r"(?:帮我|请|请帮我).{0,12}(?:研究|分析).{2,}", text))
+            or _explicit_verb_match(text)
         )
         if explicit:
             return "explicit"

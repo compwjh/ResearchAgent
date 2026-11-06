@@ -126,6 +126,26 @@ def _read_map_conversation_binding(conversation_id: str, owner_id: str):
     return read_map_conversation_binding(conversation_id, owner_id)
 
 
+def _is_single_paper_conversation(conversation_id: str | None) -> bool:
+    """True when ``conversation_id`` carries a confirmed literature-map
+    single-paper binding.
+
+    A binding read failure is treated as True (fail-closed): a map-created
+    conversation whose context is unavailable must never silently fall through
+    to Research Intake, leak other papers, or degrade to project-wide retrieval.
+    Ordinary (unbound) conversations and brand-new conversations return False
+    and keep their normal research-intent handling.
+    """
+    if not conversation_id:
+        return False
+    try:
+        binding, _service = _read_map_conversation_binding(conversation_id, OWNER_ID)
+        return binding is not None
+    except Exception:  # noqa: BLE001 - fail-closed for map conversations
+        logger.warning("单篇会话绑定读取失败，按单篇会话处理（fail-closed，跳过 Intake 激活）")
+        return True
+
+
 def detect_skill(message, available_skills):
     """Conversation seam for the shared product Skill intent recognizer."""
     return _skill_intent.detect_skill(message, available_skills)
@@ -1429,9 +1449,16 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 skills = registry.list_skills()
                 available_names = [skill.name for skill in skills]
                 decision = detect_skill(user_message.content, skills)
-                decision, skill_body = _resolve_sticky_skill(
-                    repo, registry, conversation.conversation_id, user_message.content, decision,
-                )
+                if binding is not None and not decision.is_usable():
+                    # 单篇论文会话不复用粘性 Skill（含此前误粘的
+                    # deep-research-orchestration），恒走普通 RAG；
+                    # 普通会话的 sticky 行为完全不变。
+                    decision = SkillDecision(status="none")
+                    skill_body = None
+                else:
+                    decision, skill_body = _resolve_sticky_skill(
+                        repo, registry, conversation.conversation_id, user_message.content, decision,
+                    )
                 if skill_body is not None:
                     skill_prompt = _skill_intent.build_skill_prompt(user_message.content, skill_body)
             except Exception as error:  # noqa: BLE001 - Skill is advisory
@@ -2152,35 +2179,43 @@ def _start_message(payload: ConversationMessageRequest, conversation_id: str | N
         # never turn worker initialization into a chat failure.
         logger.warning("memory evolution worker startup unavailable: %s", error)
         pass
-    classification = ResearchIntakeCoordinator.classify(content)
-    try:
-        intake = get_provider("research_intake_coordinator").handle_message(
-            conversation.conversation_id, OWNER_ID, user.message_id, content
-        )
-    except Exception:
-        # Research persistence/Skill discovery is optional for ordinary chat.
-        # A research-shaped turn gets a diagnosable failed SSE; ordinary chat
-        # continues through the established model stream.
-        logger.exception("research intake unavailable")
+    # 单篇论文会话（文献地图绑定的会话）恒定走普通 RAG 链路，禁止激活
+    # deep-research Intake。binding 读取失败（fail-closed）也跳过 Intake，
+    # 交由下方 SSE 流按既有 MAP_CONVERSATION_CONTEXT_UNAVAILABLE 处理：
+    # 不静默降级为项目级检索、不泄露其它论文、不激活 Intake。
+    if _is_single_paper_conversation(conversation_id):
+        classification = "ordinary"
         intake = None
-        if classification in {"explicit", "ambiguous"}:
-            return _failed_message_stream(
-                repo,
-                conversation,
-                user,
-                assistant,
-                {"code": "INTAKE_UNAVAILABLE", "message": "研究 Intake 暂时不可用，请稍后重试。", "retryable": True},
-            )
+    else:
+        classification = ResearchIntakeCoordinator.classify(content)
         try:
-            repo.create_processing_step(
-                assistant.message_id,
-                "research_intake",
-                "failed",
-                "研究 Intake 不可用，已回退普通聊天",
-                label="研究 Intake",
+            intake = get_provider("research_intake_coordinator").handle_message(
+                conversation.conversation_id, OWNER_ID, user.message_id, content
             )
         except Exception:
-            logger.warning("unable to persist research intake fallback marker", exc_info=True)
+            # Research persistence/Skill discovery is optional for ordinary chat.
+            # A research-shaped turn gets a diagnosable failed SSE; ordinary chat
+            # continues through the established model stream.
+            logger.exception("research intake unavailable")
+            intake = None
+            if classification in {"explicit", "ambiguous"}:
+                return _failed_message_stream(
+                    repo,
+                    conversation,
+                    user,
+                    assistant,
+                    {"code": "INTAKE_UNAVAILABLE", "message": "研究 Intake 暂时不可用，请稍后重试。", "retryable": True},
+                )
+            try:
+                repo.create_processing_step(
+                    assistant.message_id,
+                    "research_intake",
+                    "failed",
+                    "研究 Intake 不可用，已回退普通聊天",
+                    label="研究 Intake",
+                )
+            except Exception:
+                logger.warning("unable to persist research intake fallback marker", exc_info=True)
     if intake is not None and intake.status != "ordinary":
         return StreamingResponse(
             _intake_stream(repo, conversation, user, assistant, intake, payload.model, payload.mode, resolution.effort),

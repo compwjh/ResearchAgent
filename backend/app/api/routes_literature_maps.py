@@ -257,6 +257,39 @@ class MapConversationRequest(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
+class TagCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class TagPatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class MapTagsPutRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The 20-binding cap is enforced by the store (TAG_LIMIT); the route lets
+    # the payload through so the business rule stays the single source of truth.
+    tag_ids: list[str] = Field(default_factory=list)
+
+
+def _assert_tag_owned(store, tag_id: str) -> None:
+    # Owner-isolation guard: a tag not owned by the current owner (whether it
+    # exists under another owner or not at all) is rejected as 404 so the API
+    # never leaks cross-owner tag existence. PUT /{map_id}/tags keeps its
+    # distinct TAG_NOT_FOUND at 422 (spec 边界 2); this guard is PATCH/DELETE
+    # /tags/{tag_id} only.
+    owned = {tag.tag_id for tag in store.list_tags(OWNER_ID)}
+    if tag_id not in owned:
+        raise ValueError("TAG_NOT_OWNED")
+
+
 def _error(error: Exception) -> HTTPException:
     code = str(error)
     if isinstance(error, MapAnalysisError):
@@ -324,6 +357,20 @@ def _error(error: Exception) -> HTTPException:
         status, error_code, message = 400, code, "地图创建参数不合法"
     elif code == "PROJECT_NOT_FOUND":
         status, error_code, message = 404, code, "项目不存在或不可访问"
+    elif code in {"TAG_NAME_CONFLICT"}:
+        status, error_code, message = 409, code, "标签名称已存在"
+    elif code in {"INVALID_TAG_NAME", "INVALID_TAG_COLOR", "INVALID_TAG_ID"}:
+        status, error_code, message = 400, code, "标签名称或颜色不合法"
+    elif code in {"TAG_NOT_OWNED"}:
+        # 404: a tag id not owned by the current owner — whether it is missing
+        # entirely or owned by another owner. Same 404 either way so the API
+        # never leaks cross-owner tag existence. (PATCH/DELETE /tags/{tag_id}
+        # only; PUT /{map_id}/tags keeps TAG_NOT_FOUND at 422 per spec 边界 2.)
+        status, error_code, message = 404, code, "标签不存在"
+    elif code in {"TAG_LIMIT", "TAG_NOT_FOUND"}:
+        # 422: PUT /{map_id}/tags binding over the 20-cap, or a non-existent /
+        # cross-owner tag_id (spec 边界 2). No leak of existence.
+        status, error_code, message = 422, code, "标签绑定超过上限或引用的标签不存在/越权"
     else:
         status, error_code, message = 503, "MAP_STORAGE_UNAVAILABLE", "文献地图暂时不可用，请稍后重试"
     return HTTPException(status_code=status, detail={"code": error_code, "message": message, "retryable": status >= 500})
@@ -349,9 +396,76 @@ def list_literature_maps(limit: int = Query(100, ge=1, le=100)):
         store = get_literature_map_service().store
         maps = store.list_maps(OWNER_ID, limit=limit)
         node_counts = store.active_node_counts(OWNER_ID, [item.map_id for item in maps])
+        # Read-only ``tags`` derivation per map; legacy fields (status,
+        # node_count) are preserved. No revision/view change is involved.
+        tags_by_map = {item.map_id: store.list_map_tags(item.map_id, OWNER_ID) for item in maps}
     except Exception as error:
         raise _error(error) from error
-    return _envelope(maps=[{**item.to_dict(), "node_count": node_counts.get(item.map_id, 0)} for item in maps])
+    return _envelope(
+        maps=[
+            {
+                **item.to_dict(),
+                "node_count": node_counts.get(item.map_id, 0),
+                "tags": tags_by_map.get(item.map_id, []),
+            }
+            for item in maps
+        ]
+    )
+
+
+@router.get("/tags")
+def list_map_tags_route():
+    try:
+        store = get_literature_map_service().store
+        tags = store.list_tags(OWNER_ID)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(tags=[{"tag_id": tag.tag_id, "name": tag.name, "color": tag.color} for tag in tags])
+
+
+@router.post("/tags", status_code=201)
+def create_map_tag(payload: TagCreateRequest):
+    try:
+        store = get_literature_map_service().store
+        tag = store.create_tag(OWNER_ID, name=payload.name, color=payload.color)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(tag_id=tag.tag_id, name=tag.name, color=tag.color)
+
+
+@router.patch("/tags/{tag_id}")
+def patch_map_tag(tag_id: str, payload: TagPatchRequest):
+    try:
+        store = get_literature_map_service().store
+        _assert_tag_owned(store, tag_id)
+        tag = store.update_tag(OWNER_ID, tag_id, name=payload.name, color=payload.color)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(tag_id=tag.tag_id, name=tag.name, color=tag.color)
+
+
+@router.delete("/tags/{tag_id}")
+def delete_map_tag(tag_id: str):
+    try:
+        store = get_literature_map_service().store
+        _assert_tag_owned(store, tag_id)
+        unbound_maps = store.delete_tag(OWNER_ID, tag_id)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(deleted=True, unbound_maps=unbound_maps)
+
+
+@router.put("/{map_id}/tags")
+def put_map_tags(map_id: str, payload: MapTagsPutRequest):
+    try:
+        store = get_literature_map_service().store
+        # set_map_tags verifies map existence (404) and rejects non-existent or
+        # cross-owner tag_ids (422) without leaking existence; it does NOT bump
+        # literature_maps.revision or touch view/map-detail state.
+        tags = store.set_map_tags(map_id, OWNER_ID, payload.tag_ids)
+    except Exception as error:
+        raise _error(error) from error
+    return _envelope(tags=tags)
 
 
 @router.get("/{map_id}")
