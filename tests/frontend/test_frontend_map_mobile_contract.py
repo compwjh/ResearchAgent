@@ -91,11 +91,11 @@ def _wait_for_scroll_settle(page: Page, selector: str) -> float:
 
 def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "/assets/styles.css?v=62" in INDEX
-    assert "/assets/literature-maps.js?v=44" in INDEX
-    assert "/assets/literature-maps.css?v=30" in INDEX
+    assert "/assets/literature-maps.js?v=45" in INDEX
+    assert "/assets/literature-maps.css?v=31" in INDEX
     assert "/styles.css?v=62" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.js?v=44" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=30" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.js?v=45" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=31" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",
@@ -116,8 +116,8 @@ def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "innerHTML" not in MODULE
     assert "touch-action: none" in STYLES
     assert "touch-action: pan-y" in STYLES
-    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "44"
-    assert re.findall(r"literature-maps\.css\?v=(\d+)", INDEX)[-1] == "30"
+    assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "45"
+    assert re.findall(r"literature-maps\.css\?v=(\d+)", INDEX)[-1] == "31"
 
 
 @pytest.mark.parametrize("width", [375, 390])

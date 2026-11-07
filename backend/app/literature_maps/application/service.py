@@ -927,6 +927,12 @@ class LiteratureMapService:
     def update_map(self, map_id: str, owner_id: str, *, expected_revision: int, name: str | None = None, project_id: str | None | object = _UNSET) -> LiteratureMap:
         if project_id is not _UNSET and project_id:
             self._validate_project(str(project_id), owner_id)
+        # ``project_id`` is tri-state: omitted keeps the stored binding, an
+        # explicit None clears it.  The store owns its own ``_UNSET`` sentinel,
+        # so ours must not be forwarded -- it would be bound as a SQLite
+        # parameter and surface as MAP_STORAGE_UNAVAILABLE.
+        if project_id is _UNSET:
+            return self.store.update_map_details(map_id, owner_id, expected_revision=expected_revision, name=name)
         return self.store.update_map_details(map_id, owner_id, expected_revision=expected_revision, name=name, project_id=project_id)
 
     def stop_job(self, map_id: str, job_id: str, owner_id: str) -> MapJob:

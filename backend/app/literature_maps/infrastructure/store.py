@@ -724,6 +724,7 @@ class LiteratureMapStore:
             db.execute("DELETE FROM literature_map_groups WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_nodes WHERE map_id=?", (map_id,))
             db.execute("DELETE FROM literature_map_idempotencies WHERE map_id=?", (map_id,))
+            db.execute("DELETE FROM literature_map_tag_bindings WHERE map_id=?", (map_id,))
             return True
 
     def add_nodes(self, map_id: str, owner_id: str, nodes: Iterable[MapPaper], job_id: str | None = None) -> list[MapPaper]:

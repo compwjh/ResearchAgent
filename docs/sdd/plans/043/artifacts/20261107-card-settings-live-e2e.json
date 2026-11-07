@@ -1,0 +1,273 @@
+{
+  "timestamp": "2026-11-07T07:13:03.065387",
+  "base_url": "http://127.0.0.1:8000",
+  "purpose": "Spec043 卡片设置列表 + 重命名/删除地图：当前部署版本真实 API 端到端成功案例（P0 修复后重跑）",
+  "p0_fix": "service.update_map() 不再把自身 _UNSET 哨兵转发给 store，PATCH 只带 {expected_revision,name} 返回 200",
+  "first_run_failed_evidence": "docs/sdd/plans/043/artifacts/20261107-card-settings-live-e2e-first-run-failed.json",
+  "entities": {
+    "map_id": "2e868a421aa94de981542cf65ecffeec",
+    "job_id": "25ac608240654dfc90b5dc416e41ac6e",
+    "tag_id": "0ca8e5a6390c4da6b9eae6407491655c",
+    "initial_revision": 0,
+    "rename_expected_revision": 0,
+    "renamed_revision": 1,
+    "renamed_name": "E2E 已重命名地图 e75e92"
+  },
+  "checks": {
+    "create_map_202": true,
+    "create_tag_201": true,
+    "bind_tag_200": true,
+    "binding_present_before_delete": true,
+    "rename_patch_200": true,
+    "rename_returns_new_revision": true,
+    "get_name_updated": true,
+    "get_revision_updated": true,
+    "stale_revision_409": true,
+    "conflict_code": true,
+    "delete_204": true,
+    "deleted_map_absent_from_list": true,
+    "bindings_for_deleted_map_zero": true,
+    "other_bindings_untouched": true,
+    "tag_survives_map_delete": true,
+    "test_tag_cleaned": true
+  },
+  "database": {
+    "path": "data/literature_maps/literature_maps.sqlite3",
+    "bindings_for_deleted_map_before": 1,
+    "bindings_for_deleted_map_after": 0,
+    "bindings_total_before": 1,
+    "bindings_total_after": 0
+  },
+  "final_state": {
+    "map_soft_deleted": true,
+    "map_absent_from_list": true,
+    "no_orphan_bindings": true,
+    "tag_retained_then_cleaned": true
+  },
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/api/literature-maps",
+      "request": {
+        "topic": "card settings e2e probe",
+        "name": "E2E 卡片设置临时地图 card-settings-e2e-ccc0e75e92",
+        "limit": 20,
+        "idempotency_key": "card-settings-e2e-ccc0e75e92"
+      },
+      "status": 202,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map_id": "2e868a421aa94de981542cf65ecffeec",
+        "job_id": "25ac608240654dfc90b5dc416e41ac6e",
+        "status": "generating",
+        "map": {
+          "map_id": "2e868a421aa94de981542cf65ecffeec",
+          "name": "E2E 卡片设置临时地图 card-settings-e2e-ccc0e75e92",
+          "topic": "card settings e2e probe",
+          "revision": 0,
+          "status": "generating",
+          "updated_at": "2026-11-06T23:13:03.151870+00:00"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/literature-maps/tags",
+      "request": {
+        "name": "E2E 卡片设置标签 e75e92",
+        "color": "#5b8def"
+      },
+      "status": 201,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "tag_id": "0ca8e5a6390c4da6b9eae6407491655c",
+        "name": "E2E 卡片设置标签 e75e92",
+        "color": "#5B8DEF"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/api/literature-maps/2e868a421aa94de981542cf65ecffeec/tags",
+      "request": {
+        "tag_ids": [
+          "0ca8e5a6390c4da6b9eae6407491655c"
+        ]
+      },
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "tags": [
+          {
+            "tag_id": "0ca8e5a6390c4da6b9eae6407491655c",
+            "name": "E2E 卡片设置标签 e75e92",
+            "color": "#5B8DEF"
+          }
+        ]
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/literature-maps/2e868a421aa94de981542cf65ecffeec",
+      "request": {
+        "expected_revision": 0,
+        "name": "E2E 已重命名地图 e75e92"
+      },
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "2e868a421aa94de981542cf65ecffeec",
+          "name": "E2E 已重命名地图 e75e92",
+          "topic": "card settings e2e probe",
+          "revision": 1,
+          "status": "generating",
+          "updated_at": "2026-11-06T23:13:05.392190+00:00"
+        }
+      },
+      "note": "rename with name only (no project_id) — P0 regression path"
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/2e868a421aa94de981542cf65ecffeec",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "map": {
+          "map_id": "2e868a421aa94de981542cf65ecffeec",
+          "name": "E2E 已重命名地图 e75e92",
+          "topic": "card settings e2e probe",
+          "revision": 1,
+          "status": "generating",
+          "updated_at": "2026-11-06T23:13:05.392190+00:00"
+        }
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/literature-maps/2e868a421aa94de981542cf65ecffeec",
+      "request": {
+        "expected_revision": 0,
+        "name": "E2E 已重命名地图 e75e92 x"
+      },
+      "status": 409,
+      "response": {
+        "detail": {
+          "code": "MAP_CONFLICT",
+          "message": "地图版本或作业状态已变化，请重新读取后重试",
+          "retryable": false
+        }
+      },
+      "note": "intentional stale expected_revision to force 409"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/literature-maps/2e868a421aa94de981542cf65ecffeec",
+      "request": null,
+      "status": 204,
+      "response": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "maps": [
+          {
+            "map_id": "0baabeae7268429c9f7e4de8098ae1d0",
+            "name": "API E2E graph attention networks r2",
+            "topic": "graph attention networks",
+            "revision": 360,
+            "status": "partial",
+            "updated_at": "2026-11-06T21:18:02.582368+00:00",
+            "tags": []
+          },
+          {
+            "map_id": "4ef8c03bffe24797acb090f4095a3a28",
+            "name": "地图易用性官方目录验证 task10-official-20261027-130257",
+            "topic": "fuzzing vulnerability discovery",
+            "revision": 0,
+            "status": "partial",
+            "updated_at": "2026-10-27T05:03:03.355769+00:00",
+            "tags": []
+          },
+          {
+            "map_id": "3853926bb0cc4a71ba49c50afdf04522",
+            "name": "地图易用性 API 验证 task10-smoke-20261027-125456",
+            "topic": "graph attention networks",
+            "revision": 0,
+            "status": "partial",
+            "updated_at": "2026-10-27T04:57:59.185457+00:00",
+            "tags": []
+          },
+          {
+            "map_id": "35a56c6f2da84fca85fc3c21dfa0055c",
+            "name": "Task08 live graph attention networks 24134dce4api",
+            "topic": "graph attention networks",
+            "revision": 15,
+            "status": "partial",
+            "updated_at": "2026-10-27T04:50:07.562370+00:00",
+            "tags": []
+          },
+          {
+            "map_id": "858b78f0d9e047efa6d8d1559d83a6de",
+            "name": "Task09 live graph attention networks 20261024-153416",
+            "topic": "graph attention networks",
+            "revision": 37,
+            "status": "partial",
+            "updated_at": "2026-10-26T16:11:14.095351+00:00",
+            "tags": []
+          },
+          {
+            "map_id": "e567077ddacc495dad8773c8018bc13c",
+            "name": "Task08 restart recovery 1a3ff26",
+            "topic": "graph attention architectures",
+            "revision": 12,
+            "status": "partial",
+            "updated_at": "2026-10-22T17:23:11.673774+00:00",
+            "tags": []
+          },
+          {
+            "map_id": "9b1e4739443e40c98400cfb69aec1e45",
+            "name": "API E2E graph attention networks",
+            "topic": "graph attention networks",
+            "revision": 11,
+            "status": "partial",
+            "updated_at": "2026-10-19T14:07:42.719994+00:00",
+            "tags": []
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/literature-maps/tags",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "tags": [
+          {
+            "tag_id": "0ca8e5a6390c4da6b9eae6407491655c",
+            "name": "E2E 卡片设置标签 e75e92",
+            "color": "#5B8DEF"
+          }
+        ]
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/literature-maps/tags/0ca8e5a6390c4da6b9eae6407491655c",
+      "request": null,
+      "status": 200,
+      "response": {
+        "schema_version": "literature-map-v1",
+        "deleted": true,
+        "unbound_maps": 0
+      }
+    }
+  ],
+  "artifact_path": "docs/sdd/plans/043/artifacts/20261107-card-settings-live-e2e.json"
+}

@@ -489,6 +489,10 @@
 /* FE-1a 地图级标签系统：列表上方「标签」筛选区、卡片徽标行、⋯ 菜单。
    全部选择器以 literature-map 为边界，复用既有变量（--accent / --ink / --muted-*）。 */
 #literature-maps-view .literature-map-list-item { position: relative; padding-right: 30px; cursor: pointer; }
+@media (max-width: 760px) {
+  /* 760px 下 ⋯ 触摸目标放大到 44×44（冻结决策点 4），标题区同步让位，避免与徽标/标题重叠。 */
+  #literature-maps-view .literature-map-list-item { padding-right: 52px; }
+}
 #literature-maps-view .literature-map-tag-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 11px; border-bottom: 1px solid #ece9f7; }
 #literature-maps-view .literature-map-tag-filter-bar[hidden] { display: none !important; }
 #literature-maps-view .literature-map-tag-filter-heading { color: var(--muted-strong); font: 10px 'DM Mono', monospace; font-weight: 700; }
@@ -503,16 +507,54 @@
 #literature-maps-view .literature-map-tag-more { background: #e7e2ff; color: #2c2740; }
 #literature-maps-view .literature-map-card-menu-trigger { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; padding: 0; border: 1px solid #e2dcff; border-radius: 6px; background: #fff; color: var(--muted-strong); font-size: 13px; line-height: 1; cursor: pointer; }
 #literature-maps-view .literature-map-card-menu-trigger:hover { background: var(--accent-soft); color: var(--accent); }
-#literature-maps-view .literature-map-card-menu { position: fixed; z-index: 1090; display: grid; gap: 8px; width: 260px; max-width: 280px; padding: 10px; border: 1px solid #d8d2ff; border-radius: 10px; background: #fff; box-shadow: 0 14px 34px #2f275c2a; color: var(--ink); font-size: 10px; }
+#literature-maps-view .literature-map-card-menu { position: fixed; z-index: 1090; display: grid; gap: 6px; width: 200px; max-width: min(200px, calc(100vw - 32px)); padding: 8px; border: 1px solid #d8d2ff; border-radius: 8px; background: #fff; box-shadow: 0 14px 34px #2f275c2a; color: var(--ink); font-size: 10px; }
 #literature-maps-view .literature-map-card-menu-title { font-weight: 700; font-size: 11px; }
-#literature-maps-view .literature-map-card-menu-options { display: grid; gap: 4px; max-height: 180px; overflow: auto; }
+#literature-maps-view .literature-map-card-menu-options { display: grid; gap: 4px; max-height: 140px; overflow: auto; }
+/* 空态（无标签）不占位：否则会白占二级 panel 的一个 gap，把浮层顶高。 */
+#literature-maps-view .literature-map-card-menu-options:empty { display: none; }
 #literature-maps-view .literature-map-card-menu-option { display: flex; align-items: center; gap: 6px; min-width: 0; }
 #literature-maps-view .literature-map-card-menu-option input[type="checkbox"] { flex: 0 0 auto; accent-color: var(--accent); }
 #literature-maps-view .literature-map-card-menu-option .literature-map-tag-name { flex: 1 1 auto; }
 #literature-maps-view .literature-map-card-menu-rename,
 #literature-maps-view .literature-map-card-menu-delete { padding: 3px 6px; font-size: 9px; }
-#literature-maps-view .literature-map-card-menu-new { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; border-top: 1px solid #ece9f7; padding-top: 8px; }
-#literature-maps-view .literature-map-card-menu-new input[type="text"] { min-width: 0; border: 1px solid #dfdced; border-radius: 6px; padding: 6px 7px; font-size: 10px; }
-#literature-maps-view .literature-map-card-menu-new input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid #dfdced; border-radius: 6px; background: #fff; }
-#literature-maps-view .literature-map-card-menu-create { justify-self: start; }
-#literature-maps-view .literature-map-card-menu-save { width: 100%; }
+#literature-maps-view .literature-map-card-menu-new { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; border-top: 1px solid #ece9f7; padding-top: 4px; }
+#literature-maps-view .literature-map-card-menu-new input[type="text"] { min-width: 0; border: 1px solid #dfdced; border-radius: 6px; padding: 4px 6px; font-size: 10px; }
+#literature-maps-view .literature-map-card-menu-new input[type="color"] { width: 22px; height: 22px; padding: 0; border: 1px solid #dfdced; border-radius: 6px; background: #fff; }
+/* 「创建并绑定」是 button，会继承全局 .send-button 的大 padding/字号，这里压回 24px 高，
+   使新建表单行 ≤32px（T-11）。 */
+#literature-maps-view .literature-map-card-menu-create { justify-self: start; padding: 3px 7px; font-size: 9px; line-height: 1.2; max-height: 24px; }
+#literature-maps-view .literature-map-card-menu-save { width: 100%; max-height: 28px; padding: 4px 8px; }
+/* 一级「卡片设置」列表：恰好 3 项（设置标签 / 重命名地图 / 删除地图），
+   紧凑窄条，不与卡片徽标 / ⋯ 重叠。宽度由 positionTagMenu() 按实际渲染宽度定位。 */
+#literature-maps-view .literature-map-card-menu-settings { width: min(160px, calc(100vw - 32px)); max-width: min(160px, calc(100vw - 32px)); padding: 6px; gap: 2px; }
+#literature-maps-view .literature-map-card-menu-list { display: grid; gap: 2px; min-width: 0; }
+#literature-maps-view .literature-map-card-menu-list .literature-map-card-menu-title { padding: 2px 4px; color: var(--muted-strong); }
+#literature-maps-view .literature-map-card-menu-entry { display: flex; align-items: center; width: 100%; min-height: 32px; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink); font-size: 11px; line-height: 1.2; text-align: left; cursor: pointer; }
+#literature-maps-view .literature-map-card-menu-entry:hover,
+#literature-maps-view .literature-map-card-menu-entry:focus-visible { border-color: #cfc8ff; background: var(--accent-soft); color: var(--accent); }
+/* 二级面板：同一浮层内替换内容，顶部「← 返回」，尺寸明显小于原 260×141。 */
+#literature-maps-view .literature-map-card-menu-panel { display: grid; gap: 4px; min-width: 0; }
+#literature-maps-view .literature-map-card-menu-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#literature-maps-view .literature-map-card-menu-back { flex: 0 0 auto; padding: 2px 6px; border: 1px solid #e2dcff; border-radius: 6px; background: #fff; color: var(--muted-strong); font-size: 9px; line-height: 1.2; cursor: pointer; }
+#literature-maps-view .literature-map-card-menu-back:hover { background: var(--accent-soft); color: var(--accent); }
+#literature-maps-view .literature-map-card-menu-mapform { display: grid; gap: 6px; min-width: 0; }
+#literature-maps-view .literature-map-card-menu-mapform input[type="text"] { min-width: 0; border: 1px solid #dfdced; border-radius: 6px; padding: 4px 6px; font-size: 10px; }
+#literature-maps-view .literature-map-card-menu-submit { width: 100%; max-height: 28px; padding: 4px 8px; }
+/* 视图锚点类：由 JS 的 `_view` 切到浮层根节点上，二级面板统一按 200px 宽度渲染。 */
+#literature-maps-view .literature-map-card-menu-view-tags,
+#literature-maps-view .literature-map-card-menu-view-rename,
+#literature-maps-view .literature-map-card-menu-view-delete { width: 200px; max-width: min(200px, calc(100vw - 32px)); }
+#literature-maps-view .literature-map-card-menu-hint { margin: 0; color: var(--muted-strong); font-size: 9px; line-height: 1.35; }
+#literature-maps-view .literature-map-card-menu-hint:empty { display: none; }
+#literature-maps-view .literature-map-card-menu-confirm-name { margin: 0; color: var(--ink); font-weight: 700; font-size: 11px; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-card-menu-confirm-actions { display: flex; justify-content: flex-end; gap: 6px; }
+#literature-maps-view .literature-map-card-menu-cancel,
+#literature-maps-view .literature-map-card-menu-confirm { padding: 3px 8px; font-size: 10px; min-height: 24px; }
+#literature-maps-view .literature-map-card-menu-confirm { border-color: #f0c2c2; color: #b3261e; }
+#literature-maps-view .literature-map-card-menu-confirm:hover { background: #fdecec; }
+@media (max-width: 760px) {
+  /* 触摸目标：触发器 22×22 → 44×44（冻结决策点 4），面板仍收在视口内。 */
+  #literature-maps-view .literature-map-card-menu-trigger { width: 44px; height: 44px; right: 4px; bottom: 4px; font-size: 16px; }
+  #literature-maps-view .literature-map-card-menu { max-width: min(200px, calc(100vw - 24px)); }
+  #literature-maps-view .literature-map-card-menu-settings { max-width: min(160px, calc(100vw - 24px)); }
+}

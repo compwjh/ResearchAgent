@@ -193,7 +193,11 @@
 - 建档为主会话纯文档代行；需求、技术、实施和最终验收分工真实执行。部署地址 http://127.0.0.1:8000/ ，启动命令 `PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh`。保留provider partial、非物理真机及RRF降级限制；Spec032仍暂停，不push或合main。
 - 人工验收阶段 UX 缺陷复审：[043-node-style-disclosure-frontend-review.md](../reviews/043-node-style-disclosure-frontend-review.md) 与 [043-node-style-disclosure-frontend-regression.md](../reviews/043-node-style-disclosure-frontend-regression.md)（四轮独立复审通过、0 阻塞；单端回归 READY，含真实浏览器可见性与变异验证；第三、四轮结论均追加于同两份报告）。第四轮另由主会话落盘[当前部署版本真实服务端到端证据与人工验收步骤](../reviews/043-node-style-disclosure-live-e2e.md)：真实地图 `0baabeae…` 上验证「不修改直接点应用外观」与「多选模式应用到 N 篇」两条路径，并恢复测试写入的节点颜色。主会话仅代行纯文档，不含业务代码。
 
+- 2026-11-07 卡片设置列表增量批次：[需求评审](../reviews/043-card-settings-requirement-review.md) 通过、[技术评审](../reviews/043-card-settings-tech-review.md) 通过、[后端评审](../reviews/043-card-settings-backend-review.md) GO（含 P0 增量复审）、[前端评审](../reviews/043-card-settings-frontend-review.md) GO（含 3 次 P1 集中复审）、[跨端验收](../reviews/043-card-settings-acceptance-review.md) 通过 16/16（tester 出具、architect 签字）、[合并裁决](../reviews/043-card-settings-merge-decision.md) APPROVE。分工真实发生，主会话仅做编排、最小增量落地校验与纯文档同步。
+
 ## 变更日志
+
+- 2026-11-07：卡片设置列表 + 重命名／删除地图批次收口（详见文末「2026-11-07 卡片设置列表收口记录」）。用户 `直接开工` 确认选项 C 的 6 项默认值：`⋯` 先弹紧凑一级「卡片设置」列表（恰好 3 项：设置标签／重命名地图／删除地图），二级标签面板缩小到 `200×94.8`（原 `260×141`），760px 触发器 22→44px，复用既有 `PATCH /{map_id}` / `DELETE /{map_id}` 做重命名与删除，`delete_map()` 同事务清理标签绑定。跨端两次分派（`backend-dev` / `frontend-dev`）后经 4 轮定向修复：P0（`service._UNSET` 与 `store._UNSET` 非同一对象导致「只改 name」的 PATCH 503）、P1-01（删除刷新失败提示）、P1-02（内联 max-width 锁死二级宽度）、P1-03（空态高度 121.8>105）。`css?v=30→31`、`js?v=44→45` 双点 + 7 测试文件同步；前端 439 passed、后端 315 passed、真实 API E2E 16/16、真实浏览器 E2E 32/32、部署 `?v=31/45` 5/5 200。全量回归 `4011 passed / 2 failed / 67 subtests`，2 个失败位于 `tests/paper_discovery/`，HEAD 未改快照复跑同样失败、本批次零文件涉及，判为既有独立缺陷并建议另开 Bug Spec。评审与验收分工真实发生，主会话仅同步纯文档；临时 429 换档 `hy3` 已还原。仅本地提交，不 push、不合 main。
 
 - 2026-11-07：七项合并批次收口（详见文末「2026-11-07 收口记录」）。用户授权子代理临时档位后解除 Gate 4 阻塞，跨端实现全部落地：后端新增 `literature_map_tags` / `literature_map_tag_bindings` 与 6 端点、列表 `tags` 派生、队列 `skipped_items` 投影、单篇会话 Intake 短路与分类器负向特征；前端新增标签区／⋯ 菜单／卡片徽标／标签筛选，修 5 项 UX/Bug，`css?v=29→30`、`js?v=43→44` 双点同步。回归 exit 0（后端 306 passed、前端 427 passed）、真实 API E2E 8 项全绿、真实浏览器 E2E 含三列 bottom `[1020,1020,1020]` 与「可用」筛选 5 张、跳过明细可见。需求／技术评审通过（附意见）、前端评审 GO、后端评审 GO（主模型代行）、验收通过 10/10（代行签字留痕）。部署 8000 重启生效（PID 29829，health/home/静态资源 200）。主模型代行仅限纯文档（后端评审、验收报告、评审记录／本日志／台账／复盘），实现与前端评审分工真实发生；仅本地提交，不 push、不合 main。
 
@@ -1877,3 +1881,311 @@ Gate 4 含 `.py` / `.js` / `.html` / `.css` 的实现，按门禁硬规则**必�
 2. **P2 核销**：分组浮层次级按钮 `11px` / `rgb(81,69,184)` / 白底 / 1440 与 760 下均 `44px`；主题相似 `5→0→5` 条 sim 边 +「已隐藏/已显示 5 条主题相似连线」；binding 失败有 `test_binding_read_failure_is_fail_closed`（`:115`）与下游 `binding_lookup_failed` 分支（未做破坏性真实触发）。产物 `20261107-browser-p2-corrected.json`。
 3. **新增如实记录（不扩大范围）**：760px 下本批次新增 `⋯` 按钮 22px 触摸目标偏小；spec 第 1 项 44px 仅约束分组浮层次级按钮且已达标，修改 `⋯` 会影响卡片徽标布局与既有断言，属范围变化，本轮不改、待用户裁决。
 4. 验收结论「通过」、准备度 10/10、P0=0 / P1=0 不变；本轮**未改业务代码、未重新部署**，仅追加证据文档与本地提交。
+
+---
+
+## 2026-11-07 卡片设置列表与设置标签面板缩小（已确认，实施中）
+
+**状态：已完成（2026-11-07 随下一段「选项 C 裁决」一并收口；一级条目集合按 C 的 3 项执行）。** 用户原话：`设置标签只是卡片设置里的其中一个功能，弹出的是设置列表，还有设置标签的框太大了，缩小点`。按 Bug／改动处理规则挂到已有 Spec043，**不新建编号**。本段最初仅为只读调查与待确认修订；用户 `直接开工` 后已按下一段「选项 C 裁决」的冻结范围实施完毕并收口，详见文末「2026-11-07 卡片设置列表收口记录」。
+
+### 只读核实结论（现状）
+
+- **触发**：`frontend/literature-maps.js:1873-1883`，卡片 `<div role="button" data-map-id>` 右下角 `⋯` 按钮，`aria-label="设置标签：{标题}"`、`aria-haspopup="menu"`；点击 `stopPropagation()` 后调 `openTagMenu()`。
+- **没有「设置列表」层级**：`openTagMenu()`（`:2063-2136`）直接创建 `div.literature-map-card-menu[role=menu]`，标题写死「设置标签」（`:2071`），随后依次追加标签勾选列表（`:2074`）、新建标签表单（`:2104`）、保存按钮（`:2124`）。即 **`⋯` 一步到位弹标签表单**，设置标签是唯一功能且占据整个面板，与用户期望「设置列表里的一项」不符。
+- **面板尺寸（真实 Chromium 1440×900，只读测量）**：`260×141px`；CSS `frontend/literature-maps.css:506` 为 `width:260px; max-width:280px; padding:10px; gap:8px; font-size:10px; position:fixed; z-index:1090`。内部实测：标题 16px、选项区 0px（当前无标签）、新建表单 44px、保存按钮 35px；选项区 `:508` `max-height:180px`，色块 `:516` `28×28px`，表单输入 `padding:6px 7px`。有 N 个标签时高度随行累加，视觉更占面积。
+- **760px 视口**：本次只读测量因导航元素在视口外未完成（如实记录，未冒充已测）；但面板 `width:260px` 为固定值，在 760 宽下占约 34%，相对占比更大，需一并收窄并加 `calc(100vw - 32px)` 上限。
+- **现有可复用的「设置项」盘点**：卡片上目前**只有** `设置标签` 一个动作；`导出 JSON`（`:1164`）、`导出 PNG`（`:1169`）位于顶部工具栏而非卡片；代码中**没有**「重命名地图 / 删除地图」的卡片实现（grep 无命中）。因此一级列表要放哪些项，属于需要用户裁决的范围问题，见下。
+- **DOM 契约不变项**：`data-map-id` 保留、⋯ 不触发 `selectMap`、菜单 Esc／点击外部关闭、焦点顺序、移动端不溢出（Gate 2 强制约束第 7 条）。
+
+### 一句话目标
+
+把 `⋯` 改为**两级卡片设置**：一级是紧凑的「设置列表」，「设置标签」只是其中一项；点击后才出现明显更小的「设置标签」面板。不改任何标签数据、接口与既有能力。
+
+### 数据模型 / 接口
+
+**无变更**：不动 `literature_map_tags` / `literature_map_tag_bindings`、6 个端点、列表 `tags` 派生、队列投影、会话 binding 与 Intake 分类器；不改 `schema_version`、不改导出契约。纯前端 UI 重构。
+
+### 方案（默认 A，逐项列出以便一次裁决）
+
+**① 一级「设置列表」**
+- `⋯` → 弹出紧凑菜单（`role=menu`），标题或首行为「卡片设置」，条目由数组驱动便于以后扩展；`aria-label` 改为 `卡片设置：{标题}`。
+- 条目点击后**切换到二级面板**（同一浮层内替换内容，不叠第二层），二级顶部有「← 返回」；Esc 从二级退回一级、再按 Esc 关闭；点击外部直接关闭；切换地图时清理两级状态。
+- **默认条目集合**：仅 `设置标签` 一项（不新增功能）；候选项见「待用户裁决」第 1 条。
+
+**② 二级「设置标签」面板缩小（默认幅度：适中）**
+
+| 部位 | 现状 | 默认目标 |
+|---|---|---|
+| 面板宽 | `260px` / `max 280px` | `200px`，`max-width: min(200px, calc(100vw - 32px))` |
+| padding / gap / 圆角 | `10px` / `8px` / `10px` | `8px` / `6px` / `8px` |
+| 标题 | 16px 行 | 保留 11px 字号，去掉额外间距 |
+| 选项区上限 | `max-height:180px` | `140px`，行高约 26px，更多时内部滚动 |
+| 新建表单行 | 44px（色块 28×28、输入 `padding:6px 7px`） | ≤32px（色块 22×22、输入 `padding:4px 6px`），三列仍保持 |
+| 保存按钮 | 35px | ≤28px |
+| 空态整体高 | **141px** | **≤105px**（目标） |
+
+**③ 一级列表自身尺寸**：宽 `min(160px, calc(100vw - 32px))`、`padding:6px`、条目 `min-height:32px`、`font-size:11px`、条目 `gap:2px`；不与卡片徽标／⋯ 重叠，`position:fixed` 定位沿用 `positionTagMenu()`。
+
+### 边界（每条对应一条验收）
+
+1. 点 `⋯` 先出现「设置列表」，**不**直接出现标签表单；点「设置标签」才出现二级；「← 返回」可回到一级。
+2. 二级面板 1440×900 实测宽 ≤200px、空态高 ≤105px；760px 下不溢出视口、不遮挡卡片徽标。
+3. 既有能力零回归：标签勾选／保存、新建并绑定、重命名、删除、标签筛选、卡片徽标、错误提示（409/422/网络失败可重试）全部可用；`data-map-id` 保留、⋯ 不触发 `selectMap`。
+4. 键盘与关闭：Enter/Space 打开、Esc 二级→一级→关闭、焦点在两级间正确迁移、点击外部关闭、切换地图清理状态。
+5. XSS：标签名仍只用 `textContent` / `setAttribute`，`innerHTML` 计数保持 0；颜色只用于色点 CSS 变量。
+6. 不改后端、不改 `revision`、不触发视图保存 409；标签筛选态仍不写库／不进导出。
+7. 版本号双点同步：`frontend/index.html:9,805` 与 `tests/frontend/fixtures/literature_map_component.html:8,1127` 同步 `css?v=30→31`、`js?v=44→45`，并同步 `tests/frontend/` 全部硬编码版本断言。
+8. 测试诚实性：不删用例、不 skip/xfail、不放宽断言；`test_frontend_map_tags_ui.py` 的既有契约需按两级结构**改写**而非删除。
+
+### 明确不做
+
+- 不新增地图级业务能力（重命名／删除地图、批量操作、导入导出新逻辑）、不新增后端端点／表／字段。**（本条已被下一段「选项 C 裁决」覆盖：用户明确要求把重命名／删除地图做进来；但仍不新增端点／表／字段，只复用既有能力 + 1 行绑定清理。）**
+- 不把节点分组相关 UI 或术语改名为「标签」；不动 `state.labelMode` / `labelModeSelect` / 视图保存 `label_mode`。
+- 不改标签筛选区、卡片徽标视觉、次级按钮、详情面板高度、主题相似图层等其余六项已收口内容。
+- 不新增前端框架／第三方依赖；不改其它视图。
+- 不新建 spec 编号、不建 `plans/045/`。
+
+### 产品使用步骤（人工验收输入）
+
+1. 打开 `http://127.0.0.1:8000/` → 文献地图；**等待** 7 张卡片出现。
+2. 点某卡片右下角 `⋯` → **提示**：出现紧凑「卡片设置」列表（不是标签表单），选图未被触发。
+3. 点「设置标签」→ **提示**：出现明显更小的标签面板，含返回箭头、标签勾选、新建表单、保存。
+4. 勾选／新建／保存 → **等待**成功提示；**提示**：卡片徽标与上方标签筛选同步更新。
+5. 点「← 返回」→ **提示**回到设置列表；按 Esc → **提示**列表关闭；点卡片外部 → 关闭。
+6. 760px 视口重复步骤 2–3 → **提示**面板不溢出、不遮挡徽标、条目可点。
+7. **失败恢复**：重名 409 / 越权 422 / 网络失败均有可读中文提示且可重试；中途按 Esc 或切换地图不产生半绑定。
+8. **产物查看**：`docs/sdd/plans/043/artifacts/` 下两级菜单截图、尺寸实测 JSON，以及 `tests/frontend/` 定向测试输出。
+
+### 验证方式
+
+- 前端定向：`node --check frontend/literature-maps.js`；`pytest tests/frontend/test_frontend_map_tags_ui.py -q`；`pytest tests/frontend -q` 全绿（当前基线 427 passed）。
+- 真实浏览器：1440×900 与 760×900 两档量 `menu_box`（宽／高）并落盘；走产品步骤 1–7；截图空态一级／二级与有标签态。
+- 静态核对：class↔CSS 对应、`?v=N` 双点同步、`innerHTML` 计数 0、`data-map-id` 保留、`stopPropagation` 存在。
+- 单端原则：本项为**纯前端改动**，只派 `frontend-dev` + `frontend-tester`，**不跑后端 pytest**、不改后端文件。
+- 收口：需求／技术增量评审 → `frontend-dev` 实现 → `frontend-reviewer` 复审 → `frontend-tester` 回归 → 真实浏览器 E2E → 部署验证（`health` / 首页 / 静态资源 `?v=31/45` 200）→ 验收签字 → 台账／复盘／本地 commit。
+
+### 执行配置
+
+| 角色 | 选用模型 | 上下文上限 | 分派方式 | 职责 |
+|---|---|---|---|---|
+| 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | 主会话 | 本段编写、范围冻结、落地校验、验收签字 |
+| 文档更新 `doc-updater` | 不适用（产品使用步骤已在本段给出） | — | — | — |
+| 评审／合并 `architect` | `Deepseek-V4.1-Flash` | 32k | `Task(architect)` | 增量需求／技术评审、合并裁决 |
+| 前端开发 `frontend-dev` | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-dev)` | 两级菜单 + 面板尺寸 + 版本号双点同步 + 定向测试 |
+| 前端回归 `frontend-tester` | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-tester)` | 前端契约／静态／真实浏览器回归 |
+| 后端开发 | 不适用（纯前端，无后端改动） | — | — | — |
+
+### 待用户裁决（默认值可直接回复「按默认」）
+
+1. **一级设置列表还放哪些项**（最关键）：默认 **A｜只放「设置标签」一项**（只做层级重构、不新增能力，结构数组化便于扩展）；B｜把顶部工具栏已有的「导出 JSON」「导出 PNG」也收进列表（复用 `:1164/:1169` 现有函数、不新增能力，但改变入口位置，属用户行为变化）；C｜另加「重命名地图」「删除地图」等新能力（需新增接口／范围扩大，默认不做）。
+2. **缩小幅度**：默认 **适中**（宽 260→200、空态高 141→≤105）；可选「保守」（宽 →224、仅压缩 padding/gap）或「更紧凑」（宽 →180、保存按钮并入表单行）。
+3. **二级面板呈现**：默认 **同一浮层内替换 + 「← 返回」**；可选独立二级浮层（层级更明确但占屏）。
+4. **一级列表只有一项时是否仍显示标题「卡片设置」**：默认 **显示**（明确层级）。
+5. **批次组织**：默认**单独一个纯前端小批次**（一次 `css?v=30→31` / `js?v=44→45`、一次前端回归、一次部署验证、一次本地 commit），不并入已收口的七项批次。
+
+> **原约束（2026-11-07 已解除）**：在用户明确确认前，不改任何业务代码、不跑测试、不升版本号、不部署。用户已回复 `直接开工` 明确确认，按冻结范围实施。
+
+---
+
+## 2026-11-07 选项 C 裁决：设置列表加入重命名／删除地图（范围扩大，已确认，实施中）
+
+**状态：已完成（2026-11-07；用户「直接开工」＝按全部默认值执行，Gate 5 验收通过 16/16、architect 签字、合并裁决 APPROVE，部署验证通过）。** 用户原话：`那你把新增重命名/删除地图 作进来吧` —— 上一段待裁决第 1 条选 **C**；其余 4 项用户未另行指定，**沿用上一段默认值**（适中缩小、同浮层替换 + 「← 返回」、显示「卡片设置」标题、单独小批次）。本段此前仅只读调查；因新增破坏性操作与一处跨端接缝，按 SDD 规则 5 更新 spec 后再次请求确认，用户于 2026-11-07 回复 `直接开工` 明确确认。
+
+### 用户确认与冻结范围（2026-11-07）
+
+用户 `直接开工` 视为「按这个执行」的等价确认，本段下方「需再次确认的决策点」6 项默认值**全部冻结为实施依据**，不再另行确认：二级删除确认、删除选中地图后自动切第一张、一级列表仅 3 项不含导出、760px `⋯` 放大到 44px、接受 1 行后端绑定清理、其余 4 项沿用上一段默认。实施严格限于本段「边界」8 条与「明确不做」5 条；范围再扩大须停下修订 spec 并重新确认。
+
+### 只读核实：C 不需要新增后端能力
+
+| 事实 | 依据 |
+|---|---|
+| 重命名端点已存在 | `PATCH /api/literature-maps/{map_id}`（`routes_literature_maps.py:484`），请求体 `MapPatchRequest{expected_revision, name?, project_id?}`（`:36-41`），走 `service.update_map` → `store.update_map_details`（`store.py:650`） |
+| 删除端点已存在 | `DELETE /api/literature-maps/{map_id}`（`:497`，`204`），走 `store.delete_map`（`store.py:708`） |
+| 前端零调用 | `grep -n 'renameMap\|deleteMap\|删除地图\|PATCH.*literature-maps' frontend/literature-maps.js` 零命中；卡片上目前只有「设置标签」 |
+| revision 可直接取 | `LiteratureMap.to_dict()` 含 `revision`（`domain/models.py:85`），列表 `GET ""` 用 `**item.to_dict()` 构造，故卡片 `map` 对象自带 `revision`，无需额外 GET；`GET /{map_id}`（`:471`）亦可用 |
+| 乐观锁契约 | `update_map_details` 校验 `row.revision != expected_revision` → `ValueError("revision conflict")`（`store.py:656`），`_error()` 归入 409 冲突集合（`routes_literature_maps.py:323`）；成功后 `revision+1` |
+| 删除语义 | **软删**：`UPDATE literature_maps SET deleted_at=?, status='stopped'` + 级联清 events/checkpoints/previews/analyses/jobs/edges/groups/nodes/idempotencies（`store.py:708-727`）；后端**无恢复/回收站端点** |
+
+### 必须一并修的跨端接缝（P1，否则 C 留脏数据）
+
+`delete_map()` 的清理清单**没有** `literature_map_tag_bindings` —— 该表是七项批次新增（`store.py:357`），只在删标签（`:1050`）、`set_map_tags`（`:1087`）、`list_map_tags`（`:1107`）被引用。删除地图后会残留孤儿绑定行，造成：
+- `delete_tag` 返回的 `unbound_maps` 计数虚高；
+- `list_map_tags` 对已软删地图仍返回绑定；
+- 数据库长期累积无主行。
+
+**方案**：在 `delete_map()` **同一事务内**追加一行 `DELETE FROM literature_map_tag_bindings WHERE map_id=?`（后端最小改动，1 行 + 1 个按能力命名的定向测试）。按「已确认范围内的小缺陷追加到当前 Task」处理，不新建编号。这也使本批次从「纯前端」变为**跨端**，按前后端分派原则拆成后端一次、前端一次两次分派。
+
+### 一级「卡片设置」列表最终条目（默认 3 项）
+
+1. **设置标签** → 二级缩小面板（沿用上一段方案：宽 200、空态 ≤105、勾选/新建/重命名/删除/保存）。
+2. **重命名地图** → 小表单输入新名称，预填 `mapTitle(map)`，去空白、≤200 字符；确认后 `PATCH /{map_id}` body `{expected_revision: map.revision, name}`。
+3. **删除地图** → **二次确认**（破坏性操作，默认必须）：显示地图名 + 「删除后不可恢复」提示 + 取消/删除两个按钮。
+
+默认**不**把顶部工具栏已有的「导出 JSON」(`:1164`)、「导出 PNG」(`:1169`) 收进列表，避免再扩大入口变更。
+
+### 边界（每条对应一条验收）
+
+1. 点 `⋯` 出现一级列表且含上述 3 项；点「设置标签」进二级、点「← 返回」回一级；Esc 二级→一级→关闭；点击外部关闭；切换地图清理两级状态。
+2. **重命名**：成功后即时更新卡片标题、当前标题栏（`:3009`）、`state.maps` 与 `state.map`（若选中），并把 `revision` 更新为返回的新值；**保留**列表筛选与选中态；409 → 中文提示「地图已在别处更新，请刷新后重试」且可重试；400/404/503 复用 `errorAction()`（`:253`）；空名称/仅空白不提交。
+3. **删除**：二次确认前不发任何请求；取消不改动；确认后 `DELETE` 204 → 从 `state.maps` 移除、清 `state.map` / `state.selectedMapId` / groups / graph / 标签筛选（若筛的是被删地图）、`loadMaps()` 重取、关闭菜单、给明确状态提示；删除当前选中地图时切到列表第一张，无其它地图时显示空态；404/503 保持列表不变且可重试。
+4. **绑定清理**：删除地图后 `literature_map_tag_bindings` 无该 `map_id` 的残留行；标签仍存在、其它地图绑定不受影响；`delete_tag` 的 `unbound_maps` 计数准确。
+5. **不绕过乐观锁**：重命名必带 `expected_revision`；标签操作仍不递增 `revision`（Gate 2 第 6 条不变），不与 `PATCH /view` 的 409 互相踩踏。
+6. **DOM/XSS 契约**：`data-map-id` 保留、⋯ 不触发 `selectMap`、地图名只用 `textContent`、`innerHTML` 计数 0、菜单不与卡片徽标重叠。
+7. **版本号双点同步**：`frontend/index.html:9,805` 与 `tests/frontend/fixtures/literature_map_component.html:8,1127` 同步 `css?v=30→31`、`js?v=44→45`，并同步 `tests/frontend/` 全部硬编码版本断言。
+8. **测试诚实性**：不删用例、不 skip/xfail、不放宽断言；`test_frontend_map_tags_ui.py` 按两级 + 3 项结构**改写**而非删除。
+
+### 明确不做
+
+- 不新增后端端点／表／字段／`schema_version`，不改 `PATCH /{map_id}` 与 `DELETE /{map_id}` 的契约与返回结构。后端改动 = 1 行绑定清理 + 1 处既有 sentinel 缺陷修复（见下文「真实 API E2E 暴露的 P0 缺陷」），两者都不改请求／响应契约。
+- 不做「撤销删除」／回收站／恢复端点（后端为软删但无恢复能力，对用户按不可恢复呈现）。
+- 不改地图 `topic` / `project_id` / 图谱／节点／分组／导出契约；不改标签数据模型与 6 端点；不改 Intake／会话 binding。
+- 不改节点分组术语与 UI、不改标签筛选区／卡片徽标视觉、不改其余六项已收口内容。
+- 不新增前端框架／第三方依赖；不新建 spec 编号。
+
+### 产品使用步骤（人工验收输入）
+
+1. 打开 `http://127.0.0.1:8000/` → 文献地图；**等待**卡片列表出现。
+2. 点某卡片 `⋯` → **提示**出现紧凑「卡片设置」列表，含「设置标签 / 重命名地图 / 删除地图」三项，选图未被触发。
+3. 点「设置标签」→ **提示**二级小面板；点「← 返回」→ 回到列表；按 Esc → 关闭。
+4. 点「重命名地图」→ 改名称 → 确认 → **等待**成功提示；**提示**卡片标题与当前标题栏即时更新，筛选与选中态保留。
+5. 制造 409：在另一标签页改动同一地图后重试 → **提示**「地图已在别处更新，请刷新后重试」，刷新后可重试成功。
+6. 点「删除地图」→ **提示**出现含地图名的二次确认；点「取消」→ 无变化；再点并确认 → **等待**列表重绘；**提示**该地图消失、若它是当前选中则自动切到第一张。
+7. 760px 视口重复步骤 2–4 → **提示**面板不溢出、条目可点、不遮挡徽标。
+8. **产物查看**：`docs/sdd/plans/043/artifacts/` 下两级菜单截图（含 3 项）、尺寸实测 JSON、真实 API 重命名/409/删除请求响应与实体 ID。
+
+### 验证方式（跨端）
+
+- **后端定向**：`pytest tests/literature_maps -q`（基线 306 passed）；新增用例覆盖「删除地图后 `literature_map_tag_bindings` 无残留」「`unbound_maps` 计数准确」「其它地图绑定不受影响」；既有 `test_map_revision_conflicts.py` / `test_map_store.py` 全绿。
+- **前端定向**：`node --check frontend/literature-maps.js`；`pytest tests/frontend -q`（基线 427 passed）；新增契约用例覆盖一级 3 项、重命名请求体含 `expected_revision`、删除二次确认（取消不发请求）、软删后列表清理与选中切换。
+- **真实 API E2E**：对一张**测试地图**跑 `PATCH` 重命名 → `GET` 校验名称与 revision → 构造 409 → `DELETE` 204 → `GET /api/literature-maps` 不含该地图 → 查绑定表无残留；落盘请求、响应、实体 ID、最终状态、产物路径。
+- **真实浏览器**：1440/760 两档走产品步骤 1–8，量一级列表与二级面板 `menu_box`，落盘尺寸 JSON 与截图。
+- **部署**：按 `deploy/README.md` 重启 8000，验证 `health` / 首页 / `css?v=31` / `js?v=45` 均 200。
+- **门禁**：Gate 2 增量需求／技术评审 → 后端一次分派 + 前端一次分派 → 分端评审与回归 → `tester` 跨端验收 → 架构师签字 → 台账／复盘／本地 commit。
+
+### 执行配置（跨端）
+
+| 角色 | 选用模型 | 上下文上限 | 分派方式 | 职责 |
+|---|---|---|---|---|
+| 架构师 | 自身（当前执行任务的 Agent，不写死模型代号） | 200k | 主会话 | 本段编写、范围冻结、落地校验、验收签字 |
+| 文档更新 `doc-updater` | 不适用（产品步骤已在本段给出） | — | — | — |
+| 评审／合并 `architect` | `Deepseek-V4.1-Flash` | 32k | `Task(architect)` | 增量需求／技术评审、合并裁决 |
+| 后端开发 `backend-dev` | `Deepseek-V4.1-Flash` | 32k | `Task(backend-dev)` | `delete_map` 1 行绑定清理 + 定向测试 |
+| 前端开发 `frontend-dev` | `Deepseek-V4.1-Flash` | 32k | `Task(frontend-dev)` | 两级菜单 + 3 项 + 重命名/删除 + 缩小 + 版本号 + 定向测试 |
+| 测试 `tester` | `Deepseek-V4.1-Flash` | 32k | `Task(tester)` | 跨端验收总控 |
+
+> 分派通道风险：七项批次曾因线上档位 429 由用户临时授权 `hy3` 才解除，临时档位**已在收口时还原**。本次若再次 429，按 Gate 4 失败处置（重试 → 换档 → 记录阻塞停下）处理，**不得由主会话代写含代码文件的实现**。
+
+### 已冻结的决策点（2026-11-07 用户 `直接开工` ＝ 全部按默认，不再确认）
+
+1. **删除是否二次确认**：默认 **要**（显示地图名 + 「删除后不可恢复」）。
+2. **删除当前选中地图后**：默认 **自动切到列表第一张**，无其它地图时空态。
+3. **一级列表是否也放「导出 JSON / PNG」**：默认 **不放**（只 3 项）。
+4. **760px 下 `⋯` 按钮 22px 是否顺手放大到 44px**：默认 **是**（同一区域、需回归徽标不重叠）；这同时核销上一批次遗留的观察项。
+5. **是否接受 1 行后端绑定清理**：默认 **是**（否则删除后留孤儿数据，属 P1 接缝）。
+6. 其余 4 项沿用上一段默认：**适中缩小**（宽 200 / 空态 ≤105）、**同浮层替换 + 「← 返回」**、**显示「卡片设置」标题**、**单独一个批次**。
+
+> **原约束（2026-11-07 已解除）**：在用户明确确认前，不改任何业务代码、不跑测试、不升版本号、不部署。用户已回复 `直接开工` 明确确认，按冻结范围实施。
+
+### Gate 2 增量评审结论与强制约束（2026-11-07）
+
+| 评审 | 落盘文档 | 结论 |
+|---|---|---|
+| 需求评审 | `docs/sdd/reviews/043-card-settings-requirement-review.md` | **通过**（0 打回，附 Q-1~Q-6） |
+| 技术评审 | `docs/sdd/reviews/043-card-settings-tech-review.md` | **通过**（无 P0；3 条 P1 已全部落为约束，附 T-1~T-12） |
+
+两份文档头部四要素（评审者／角色／模型／分派方式 `Task(architect)`）齐备，判定均基于真实 `文件:行`。以下为已沉淀的强制约束摘要，**dev 回执须逐条引用**（完整理由见各评审文档第四／五节）：
+
+- **Q-1** 两段 H2 标题与「已确认（实施中）」状态行一致 —— 已由架构师落实，dev 不改 spec。
+- **Q-2** 重命名 409 必须显示「地图已在别处更新，请刷新后重试」，**不得透传**后端 `/view` 面向的「地图版本或作业状态已变化…」（`routes_literature_maps.py:326`）。
+- **Q-3** 补两条失败恢复并实测：删除返回 404/503 → 列表不变、中文提示、菜单可重试；删除后列表重取失败 → 不静默，给「本地已移除但刷新失败，请点刷新」类提示。
+- **Q-4 / T-10** `css?v=30→31`、`js?v=44→45` 同步范围 = 生产页 2 处 + fixture 2 处 + **7 个测试文件**（含 `test_frontend_map_header_actions_readability.py` 的 `MAP_JS_VERSION` / `MAP_CSS_VERSION` 常量须逐文件读实际写法再改）。
+- **Q-5** 重命名 `trim()` 后空值或超 200 字符前端拦下、不提交（`store.py:657` 后端不会拒绝空串）。
+- **Q-6 / T-1** 一级列表恰好 3 项、不含导出；后端唯一改动是 `delete_map()` 内 1 行 `DELETE FROM literature_map_tag_bindings WHERE map_id=?`（`:714` 之后、`return True` 之前，同事务、参数化），**不得**顺手清 `literature_map_conversation_bindings` 或其它表、不得新增端点／表／字段。
+- **T-2/T-3** 该 DELETE 与其余 9 条同处 `with self.transaction()`；新增 3 条用例（删后无残留 / 其它地图绑定不受影响 / `unbound_maps` 计数准确），并做「移走该行→新测试失败→复原」验证；不得删／skip／放宽既有用例，跑 `pytest tests/literature_maps -q`（基线 306 passed，只增不减）。
+- **T-4** 重命名后手动更新 `state.maps[i]`、`state.map`（若选中）、`refs.currentTitle`（`:3009`）、`renderCurrentMeta()`，用 `payload.map.revision` 覆盖 revision（PATCH 返回体直接带新值，**禁止**再 GET），再 `renderMapList()` + `renderTagFilterBar()`；不得依赖 `loadMaps()` 重设 `state.map`（`:2633-2636` 不会）。
+- **T-5** 一级条目数组驱动、`aria-label` 改 `卡片设置：{标题}`、保留 `aria-haspopup=menu` 与 `stopPropagation()`。
+- **T-6** 地图名／确认文案只用 `textContent` / `input.value` / `setAttribute`；`innerHTML` 保持 0；`data-map-id` 保留、⋯ 不触发 `selectMap`。
+- **T-7（P1）** 重命名／删除发起前依次 `await flushPendingViewSave()` → `await waitForPendingViewFlush(state.selectedMapId)` → 再发请求；重命名 body 用 `state.map.revision`，避免与在途 `PATCH /view`（`saveView()` 用 `state.map.revision`）互踩。
+- **T-8（P1）** 删除选中图成功后走 `selectMap(第一张)` 借 `resetMapSelectionState` 的 `++state.mapRequest` 使在途失效；无其它地图时**显式**清 `state.map/selectedMapId/graph/groups` 并给空态（不得只调 `loadMaps`）；删除未选中图仅移除 + 重绘 + `loadMaps()`；始终 `closeTagMenu()`。删除地图后**标签筛选条保留**、仅重算 `filteredMaps()`（标签本身仍存在）。
+- **T-9（P1）** `test_frontend_map_tags_ui.py` 改写并新增断言、不删既有 6 例：一级 3 项字面量、二级「← 返回」、请求体含 `expected_revision` + `name`、删除二次确认断言须**非恒真**（不得用 `"confirm" in MODULE`）、删除成功后过滤与切图、`fetch(` 计数先按真实实现核对再定（不得放宽为 `>=`）、新 CSS 类须同时断言存在于 CSS 且 `#literature-maps-view` 限定。
+- **T-11** 面板宽 260→200、`max-width` 用 `min(200px, calc(100vw - 32px))`、padding 10→8、gap 8→6、选项区 180→140、色块 28→22、输入 padding 6px 7px→4px 6px、保存 ≤28px；760px 触发器 22→44px 并同步 `.literature-map-list-item` `padding-right`（`css:491`）到 ≥50px 防徽标／标题重叠；空态高 ≤105px 须真实浏览器实测。
+- **T-12** 若删除确认／重命名采用菜单内表单，须保证 Esc／返回／取消不残留待删状态、切换地图时清理两级状态。
+
+**P2 登记不修**：`update_map_details()` 事务外 `get_map` 的理论竞态（`store.py:660`，改需动返回契约，越界）；软删后数据实体仍在库（无恢复端点，对用户按不可恢复呈现，验收记录写明）；`fetch(` 计数断言的历史脆弱性。
+
+**顺序**：`backend-dev` 先（前端 E2E「删后无残留」依赖它），`frontend-dev` 后；两次分派文件无交集。
+
+### 2026-11-07 真实 API E2E 暴露的 P0 缺陷（本批次内修复，不改契约）
+
+- **发现**：对当前部署版本跑真实 API E2E，`POST /api/literature-maps` 建测试地图 → `PATCH /api/literature-maps/{map_id}`，body 只带 `{expected_revision, name}`（**不带 `project_id`**，正是本批次前端「重命名地图」发出的请求）→ **503 `MAP_STORAGE_UNAVAILABLE`**；同批次 GET、标签绑定、DELETE、列表均 200。首次产物 `docs/sdd/plans/043/artifacts/20261107-card-settings-live-e2e.json` 如实记录 5 个失败检查项，未冒充通过；服务端 `deploy/run.log` 有两条 PATCH 503。
+- **根因（既有缺陷，非本批次引入）**：`backend/app/literature_maps/application/service.py:54` 与 `backend/app/literature_maps/infrastructure/store.py:45` **各自定义** `_UNSET = object()`，实测 `service._UNSET is store._UNSET == False`。`service.update_map()`（`:927-930`）在路由未传 `project_id` 时把 service 哨兵原样转发给 store；store `:658` 的 `project_id is _UNSET` 判定为假，于是把裸 `object()` 绑进 SQLite → `sqlite3.ProgrammingError: Error binding parameter 2: type 'object' is not supported` → `_error()` 归入 503。临时库复现：转发 service 哨兵必抛该错，省略 `project_id` 则成功（name 更新、revision 0→1）。即历史 `PATCH /{map_id}` 在「只改 name」时从未真正可用。
+- **影响**：本批次「重命名地图」主路径必然失败，属 **P0**，必须在本批次内修，否则功能不可交付。
+- **范围判定**：按「已确认范围内的小缺陷追加到当前 Task」处理 —— **不改变目标、数据模型、公开接口（请求体与返回结构不变）、用户行为（重命名本就应成功）**，因此不退回 `待确认`、不新建编号、不请求再次确认；仅把上文「明确不做」中「唯一后端改动是 1 行绑定清理」澄清为「1 行绑定清理 + 1 处既有 sentinel 缺陷修复」。
+- **处置**：`backend-dev` 一次最小分派，只改 `service.py:927-936` 的 `update_map()`：未显式传 `project_id` 时调用 store **省略该参数**；显式传（含 `None`）时照旧转发并保留 `_validate_project()` 校验；不动 `_UNSET` 定义、不跨模块导出哨兵、不改路由与 store 的 1 行清理。新增 `tests/literature_maps/test_map_details_patch_api.py` 6 例：只带 name 的 PATCH 200 + revision +1 + `project_id` 保持（P0 回归锁）、显式 `null` 清空、未知 project 404 且不写入、旧 revision 409、不存在 404、跨 owner 404。
+- **验证**：`py_compile` exit 0；三路径回归 **315 passed**（基线 309 + 6，只增不减）；诚实性验证「还原 HEAD → `1 failed`（恰为 `assert 503 == 200`）→ 复原 → 6 passed」；`check_test_layout.py` / `check_test_naming.py` 均 ok。服务重启后按原 E2E 脚本重跑，结果见同名产物 JSON。
+- **门禁补充**：本次新增后端改动需由 `backend-reviewer` 做一次 P0 修复增量复审；验收报告须把「PATCH 只带 name」列为真实 API 主路径验收点。
+
+---
+
+## 2026-11-07 卡片设置列表收口记录
+
+**状态：已完成。** 用户 `直接开工` 确认 6 项冻结默认值后按范围实施；Gate 5 跨端验收 **16/16 通过**、`architect` 签字、合并裁决 **APPROVE**，真实服务部署验证通过。
+
+### 实现清单
+
+- **前端**：`⋯` → 一级紧凑「卡片设置」列表（数组驱动、恰好 3 项，不含导出）；同浮层替换出二级「设置标签」/「重命名地图」/「删除地图」，带「← 返回」；Esc 二级→一级→关闭、外部点击关闭、切换地图清状态；重命名复用 `PATCH /{map_id}`（带 `expected_revision`，409 专属文案，成功后用返回体新 revision 同步本地状态与标题）；删除二次确认（取消零请求、确认后状态清理与自动切图、失败可重试、刷新失败专属提示）；`⋯` 22→44px（760px）且卡片 `padding-right:30→52px`；版本号 `css?v=30→31`、`js?v=44→45` 双点 + 7 个测试文件硬编码断言同步。
+- **后端**：`delete_map()` 同事务追加 1 行 `DELETE FROM literature_map_tag_bindings WHERE map_id=?`（P1 孤儿绑定）；`service.update_map()` 不再把自身 `_UNSET` 哨兵转发给 store（P0：只带 name 的 PATCH 曾稳定 503）。未新增端点／表／字段，未改请求／响应契约。
+- **尺寸实测**：1440×900 一级 `160×136`、二级标签面板 **`200×94.8`**（原 `260×141`，达成 ≤200 / 空态 ≤105）；760×900 触发器 `44×44`、两级面板均在视口内且触发器不遮挡卡片文本。
+
+### 门禁与分工（真实发生）
+
+| 门禁 | 产出 | 结论 |
+|---|---|---|
+| Gate 2 需求／技术 | `reviews/043-card-settings-requirement-review.md`、`043-card-settings-tech-review.md`（`Task(architect)`） | 均通过，Q-1~Q-6 / T-1~T-12 沉淀为强制约束 |
+| Gate 3 用户确认 | 用户 `直接开工`；`spec-status-changelog.md` 已登记 | 已确认 |
+| Gate 4 实现 | `Task(backend-dev)` ×2、`Task(frontend-dev)` ×4（跨端拆两次以上，文件无交集） | 代码与定向测试均落盘、主会话读回校验 |
+| 后端评审／复审 | `reviews/043-card-settings-backend-review.md`（`Task(backend-reviewer)` + P0 增量复审） | GO（附条件：真实 API 复验通过，已核销） |
+| 前端评审／复审 | `reviews/043-card-settings-frontend-review.md`（`Task(frontend-reviewer)` + 3 次 P1 复审） | GO，P1-01/02/03 全 CLOSED |
+| Gate 5 验收／签字 | `reviews/043-card-settings-acceptance-review.md`（`Task(tester)` 16/16 + `architect` 签字）、`reviews/043-card-settings-merge-decision.md`（APPROVE） | 通过 |
+
+主会话只做编排、最小增量落地校验与纯文档同步；含代码文件的改动全部由 `backend-dev` / `frontend-dev` 分派完成。
+
+### 验证（命令 / 退出码 / 通过数量 / 阻塞项）
+
+| 验证 | 结果 |
+|---|---|
+| `node --check frontend/literature-maps.js` | exit 0 |
+| `.venv/bin/python -m pytest tests/frontend -q` | **439 passed**，exit 0（基线 427，只增不减） |
+| `.venv/bin/python -m pytest tests/literature_maps tests/research/test_single_paper_rag_intent_routing.py tests/research/test_research_intake_intent_routing.py -q` | **315 passed**，exit 0（基线 306+3，只增不减） |
+| `check_test_layout.py` / `check_test_naming.py` | ok / ok，exit 0 |
+| 真实 API E2E `artifacts/20261107-card-settings-live-e2e.json` | **16/16 全绿**，exit 0（首轮失败证据另存 `...-first-run-failed.json`） |
+| 真实浏览器 E2E `artifacts/20261107-card-settings-browser-e2e.json` + 6 张 PNG + 可复现 `.py` | **32/32 全绿**，`page_errors=[]`，exit 0 |
+| 全量回归 `artifacts/20261107-card-settings-full-regression.log` | `2 failed, 4011 passed, 2 skipped, 67 subtests passed`，**exit 1** |
+| 部署运行时验证 | `/`、`/api/health`、`css?v=31`、`js?v=45`、`/api/literature-maps/tags` **5/5 = 200** |
+
+**阻塞项**：无本批次阻塞。全量回归的 2 个失败位于 `tests/paper_discovery/`（临时目录 `paper-import-*` 未清理），用**未含本批次任何改动的 HEAD 快照**复跑同样 `2 failed / exit 1`，且本批次零文件涉及该模块 → 判定为**既有独立缺陷**，已如实登记并建议另开 Bug Spec，不写成通过、也不计入本批次失败。
+
+### 部署与打开方式
+
+服务由 `launchctl` 托管在 `127.0.0.1:8000`（本批次重启后 PID 39227）。打开 **http://127.0.0.1:8000/#literature-maps-view**；启动命令 `PORT=8000 RERANKER_ENABLED=false ./deploy/start.sh -d`，停止 `./deploy/stop.sh`；当前托管标签 `com.researchagent.recovery8000`（非开机自启，见 `deploy/README.md`）。
+
+### 人工验收步骤（可复现）
+
+1. 打开 `http://127.0.0.1:8000/#literature-maps-view` → **等待**卡片列表出现。
+2. 点某卡片右下角 `⋯` → **提示**紧凑「卡片设置」列表，含「设置标签 / 重命名地图 / 删除地图」三项，卡片未被选中。
+3. 点「设置标签」→ **提示**明显更小的标签面板（200px 宽）；点「← 返回」→ 回列表；按 Esc → 关闭；点卡片外部 → 关闭。
+4. 点「重命名地图」→ 改名称 → 确认 → **等待**「地图已重命名。」；**提示**卡片标题即时更新、筛选与选中态保留。
+5. 制造 409：另一标签页改动同一地图后重试 → **提示**「地图已在别处更新，请刷新后重试」，刷新后可重试成功。
+6. 点「删除地图」→ **提示**含地图名与「删除后不可恢复」的二次确认；点「取消」→ 无变化；再点并确认 → **等待**列表重绘；**提示**该地图消失，若它是当前选中则自动切到第一张。
+7. 760px 视口先点「地图列表」展开，再重复步骤 2–4 → **提示**面板不溢出、条目可点、`⋯` 44px 不遮挡文字。
+8. **失败恢复**：404/503 保留列表与菜单并可重试；刷新失败给「地图已在本地移除，但列表刷新失败，请点击刷新重新加载地图列表。」。**产物查看**：`docs/sdd/plans/043/artifacts/20261107-card-settings-*.json` / `*.png` 与 `docs/sdd/reviews/043-card-settings-*.md`。
+
+> 步骤 1–8 已由真实 Chromium 自动化按同一路径执行（`20261107-card-settings-browser-e2e.py` 可复现），**未冒充用户人工走查**；仍建议用户实走一遍。
+
+### 遗留项（不阻塞）
+
+P2-01 `finalizeMapDeletion()` 里残留 `state.maps` 的隐式依赖（当前路径不可达）；P2-02 5xx 措辞已 ≥95% 消解；P2-03 视觉指标已由真实浏览器实测关闭；LOW-01 `positionTagMenu()` 清内联约束早于 class 切换（当前结果正确，属顺序脆弱点）；`tests/paper_discovery/` 2 个既有失败建议另开 Bug Spec；人工走查待用户执行。
+
+### 引用路径
+
+`reviews/043-card-settings-{requirement,tech,backend,frontend,acceptance}-review.md`、`reviews/043-card-settings-merge-decision.md`、`retro/2026-11-07-card-settings-retro.md`、`plans/043/artifacts/20261107-card-settings-*`、`docs/sdd/spec-status-changelog.md`（收口条目）。

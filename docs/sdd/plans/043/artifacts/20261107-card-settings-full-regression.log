@@ -1,0 +1,140 @@
+....................................................................ss.. [  1%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [ 10%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+................................................................................................................... [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+.....................................................F.................. [ 45%]
+........................................................................ [ 47%]
+..................F..................................................... [ 49%]
+........................................................................ [ 51%]
+............................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 83%]
+................................................................... [ 84%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 90%]
+..................................................................... [ 92%]
+................................................................ [ 93%]
+.............................................................. [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+..................................................                       [100%]
+=================================== FAILURES ===================================
+__________ test_import_removes_its_own_temp_root_after_a_rejected_doi __________
+
+tmp_path = PosixPath('/private/var/folders/hf/sw8ft8g933qc4jbn7htmq_gc0000gn/T/pytest-of-wjh/pytest-2686/test_import_removes_its_own_te0')
+pdf_bytes = b'%PDF-1.7\n%\xc2\xb5\xc2\xb6\n% Written by MuPDF 1.28.2\n\n1 0 obj\n<</Type/Catalog/Pages 2 0 R/Info<</Producer(MuPDF.../Size 5/Root 1 0 R/ID[<C2A5C38147C39E74C280C3BD48C28EC3><D4CBC6CDC88D34668D280D5AF5A6F9EF>]>>\nstartxref\n284\n%%EOF\n'
+
+    def test_import_removes_its_own_temp_root_after_a_rejected_doi(tmp_path: Path, pdf_bytes: bytes):
+        """解析被拒时仍要清掉本次 attempt 自建的临时根（不破坏既有清理语义）。"""
+        routes = {DOI_URL: lambda: _redirect("https://evil.example.test/x.pdf")}
+        port = StubKbPort()
+        download_base = tmp_path / "downloads"
+    
+        with pytest.raises(PaperDownloadError):
+            _import(_record(), (NDSS_HOST,), handler=_handler(routes), port=port, tmp_path=tmp_path)
+    
+>       assert not [item for item in download_base.iterdir() if item.name.startswith("paper-import-")]
+E       AssertionError: assert not [PosixPath('/private/var/folders/hf/sw8ft8g933qc4jbn7htmq_gc0000gn/T/pytest-of-wjh/pytest-2686/test_import_removes_its_own_te0/downloads/paper-import-eme6ya9u')]
+
+tests/paper_discovery/test_doi_resolver_import.py:620: AssertionError
+__ test_import_without_temp_dir_uses_attempt_private_root_and_cleans_only_it ___
+
+tmp_path = PosixPath('/private/var/folders/hf/sw8ft8g933qc4jbn7htmq_gc0000gn/T/pytest-of-wjh/pytest-2686/test_import_without_temp_dir_u0')
+
+    def test_import_without_temp_dir_uses_attempt_private_root_and_cleans_only_it(tmp_path):
+        seen: list[Path] = []
+    
+        def downloader(_candidate, _settings, _allowed_hosts, *, temp_dir=None, **_kwargs):
+            assert temp_dir is not None
+            root = Path(temp_dir)
+            seen.append(root)
+            path = root / "download.pdf"
+            path.write_bytes(PDF)
+            return DownloadResult(str(path), len(PDF), hashlib.sha256(PDF).hexdigest(), "https://papers.example/paper.pdf")
+    
+        class Port:
+            def find_existing(self, _snapshot):
+                return None
+    
+            def existing_names(self):
+                return set()
+    
+            def import_paper(self, _request):
+                return {"paper_id": "paper-1", "status": "indexed", "stored_name": "paper.pdf"}
+    
+        caller_root = tmp_path / "caller-downloads"
+        caller_root.mkdir()
+        result = import_candidate(
+            {"title": "Private", "year": 2026, "conference_id": "ccs", "doi": "10/private"},
+            ArticleSettings(article_download_dir=str(caller_root)),
+            {"papers.example"},
+            downloader=downloader,
+            paper_import_port=Port(),
+        )
+    
+        assert result.paper_id == "paper-1"
+        assert len(seen) == 1
+        assert seen[0].parent == caller_root
+>       assert not seen[0].exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/private/var/folders/hf/sw8ft8g933qc4jbn7htmq_gc0000gn/T/pytest-of-wjh/pytest-2686/test_import_without_temp_dir_u0/caller-downloads/paper-import-r2wb8t8x').exists
+
+tests/paper_discovery/test_import_compensation.py:258: AssertionError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/paper_discovery/test_doi_resolver_import.py::test_import_removes_its_own_temp_root_after_a_rejected_doi
+FAILED tests/paper_discovery/test_import_compensation.py::test_import_without_temp_dir_uses_attempt_private_root_and_cleans_only_it
+2 failed, 4011 passed, 2 skipped, 5 warnings, 67 subtests passed in 784.22s (0:13:04)
+Transient error HTTPConnectionPool(host='127.0.0.1', port=3000): Max retries exceeded with url: /api/public/otel/v1/traces (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=3000): Failed to establish a new connection: [Errno 61] Connection refused")) encountered while exporting span batch, retrying in 1.04s.
+Transient error HTTPConnectionPool(host='127.0.0.1', port=3000): Max retries exceeded with url: /api/public/otel/v1/traces (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=3000): Failed to establish a new connection: [Errno 61] Connection refused")) encountered while exporting span batch, retrying in 2.12s.
+Failed to export span batch due to timeout, max retries or shutdown.
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
