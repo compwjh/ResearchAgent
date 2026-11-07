@@ -219,3 +219,19 @@ tester 在架构师签字前报告准备度为 **9/10+**；本次 architect 签�
 - **验收边界诚实：**十项准备度为 9 PASS、1 N/A、0 BLOCKED。N/A 仅是 Task10 按已确认合同从现存图开始；新图创建的 `SEMANTIC_SCHOLAR_RATE_LIMITED`、0 节点结果仍明确保留，不冒充成功。人工步骤给出地图/节点入口、操作提示、等待条件、下一步与失败恢复；用户尚未实际执行步骤。
 
 未重跑全量回归，也未对 Task11 或 Spec043 作完成裁定。基于上述可复核证据，Task10 可交付用户人工验收；本签字不表示用户已通过人工验收。
+
+---
+
+## 2026-11-07 增量验收评审：七项合并批次（含地图级标签分类系统）
+
+完整报告见 [043-map-tags-batch-acceptance-review.md](043-map-tags-batch-acceptance-review.md)。本次为**主模型代行的跨端验收**（非独立验收）：`tester` 分派 `hy3` 返回 429、本地轻档多次零落盘；按 `SDD-GATE-CHECKLIST.md` Gate 2 失败处置第 4 条，验收报告属纯文档产出允许代行，三处留痕（完整报告头部 / spec 评审记录与变更日志 / `spec-status-changelog.md`）。
+
+- **结论：通过**。七项逐项通过；人工验收准备度 **10/10**；P0=0 / P1=0 / API E2E 失败=0 / 阻塞=0。
+- 验证：后端 `306 passed`、前端 `427 passed`（均 exit 0）；真实 API E2E 8 项全绿；真实浏览器 E2E（标签创建→徽标→筛选 7→1→7、「可用」筛选 5 张、三列 bottom `[1020,1020,1020]`、跳过明细中文原因）；部署 8000 重启生效（PID 29829，`health/home/css?v=30/js?v=44` 均 200）。
+- 产物：`docs/sdd/plans/043/artifacts/` 下 3 个 JSON 与 5 张截图；复盘 `docs/sdd/retro/2026-11-07-map-tags-batch-retro.md`；需求／技术／分端代码评审结论见 spec「2026-11-07 收口记录」。
+- 4 个 P2 观察项（第 1/6 项像素级与浏览器计数、binding 异常提示、第 7 项 LLM 全链路 E2E）如实记录，**未把单元测试等价表述为真实 API E2E**。
+- 架构师签字：**主模型代行（原因同上，纯文档签字允许代行并须注明）** — 2026-11-07。签字栏已填写，符合 Gate 5「留空不得转已完成」。
+
+### 2026-11-07 证据补强（追加）
+
+用户「继续任务」后补做：①第 7 项自然语言主路径**真实 API E2E 通过**——真实全文节点创建 `evidence_level=full` 会话，用截图原文草稿发消息，服务端 200 OK、`assistant status=completed`、2098 字符回答，处理步骤 `memory_recall→system_rule→rag_retrieval→generation`，零 `research_intake`、`research_session_id` 全 null；②P2-1 已核销（分组次级按钮 11px/44px、主题相似 5→0→5 条边与状态提示）；③P2-2 部分核销（有 `test_binding_read_failure_is_fail_closed` 与 `binding_lookup_failed` 分支，未做破坏性真实触发）；④如实新增 1 项观察：760px 下 `⋯` 按钮 22px 触摸目标偏小，不属已确认范围，本轮不改。详见 [043-map-tags-batch-acceptance-review.md](043-map-tags-batch-acceptance-review.md)「证据补强与 P2 核销」章节与 `docs/sdd/plans/043/artifacts/20261107-single-paper-rag-live-e2e.json`。验收结论「通过」不变。

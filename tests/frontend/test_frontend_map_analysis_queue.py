@@ -100,3 +100,23 @@ def test_manual_regeneration_warns_model_call_and_blocks_duplicate_submission() 
         assert "首次显式分析结果" in panel.inner_text()
         assert "第二次生成失败" in panel.inner_text()
         browser.close()
+
+
+def test_analysis_queue_skipped_items_render_title_and_reason_without_retry_button() -> None:
+    """FE-1b④：后端 skipped_items 必须在队列面板渲染为跳过明细，
+    列明论文（优先 title，缺失回落 node_id 短码）与中文原因（复用 safeAnalysisReason），
+    且不加重试 / 补摘要按钮。"""
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        page.goto(f"{FIXTURE.as_uri()}?queue", wait_until="load")
+        page.locator('[data-map-id="map-fixture"]').click()
+        page.wait_for_selector("#literature-map-analysis-queue:not([hidden])")
+        skipped = page.locator(".literature-map-analysis-queue-skipped")
+        assert skipped.count() == 1, "skipped_items 非空时必须渲染一个跳过明细区块"
+        text = skipped.inner_text()
+        assert "跳过论文一" in text, "应优先显示论文 title"
+        assert "node-skip-2" in text, "缺失 title 时应回落 node_id 短码"
+        assert "缺少摘要，不能生成摘要级分析；请先获取摘要。" in text, "应复用 MAP_ABSTRACT_UNAVAILABLE 中文文案"
+        assert skipped.get_by_role("button").count() == 0, "跳过明细不得包含重试 / 补摘要按钮"
+        browser.close()

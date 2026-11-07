@@ -1,0 +1,163 @@
+{
+  "timestamp": "2026-11-07T01:34:29.363734",
+  "steps": [
+    {
+      "step": "地图卡片数（初始）",
+      "value": 7
+    },
+    {
+      "step": "创建并绑定后卡片徽标数",
+      "value": 1
+    },
+    {
+      "step": "标签筛选区HTML",
+      "value": "<span class=\"literature-map-tag-filter-heading\">标签</span><div class=\"literature-map-tag-filter-list\"><button class=\"literature-map-tag-filter\" type=\"button\" data-tag-id=\"986921b131d44125a2f56cee154bd469\" aria-pressed=\"false\"><span class=\"literature-map-tag-dot\" style=\"--tag-color: #8d80e6;\"></span><span class=\"literature-map-tag-name\">E2E 浏览器标签</span></button></div>"
+    },
+    {
+      "step": "点击标签筛选",
+      "value": true
+    },
+    {
+      "step": "筛选后卡片数",
+      "value": 1
+    },
+    {
+      "step": "select 数量",
+      "value": 16
+    },
+    {
+      "step": "select[0] options",
+      "value": [
+        "Normal",
+        "Developer",
+        "深度研究"
+      ]
+    },
+    {
+      "step": "select[1] options",
+      "value": [
+        "关闭",
+        "低",
+        "中",
+        "高",
+        "极高"
+      ]
+    },
+    {
+      "step": "select[2] options",
+      "value": [
+        "qwen3.8:27b-q4_K_M",
+        "qwen3.8:27b-mlx",
+        "qwen3.8-27b-q4:latest",
+        "qwen3.8:27b",
+        "oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU",
+        "qwen3.8:27b-q4",
+        "dengcao/Qwen3-Reranker-0.6B:Q8_0",
+        "bge-m3:latest",
+        "deepseek-coder-v2:16b",
+        "qwen3.5:9b",
+        "deepseek-coder:33b",
+        "deepseek:deepseek-flash"
+      ]
+    },
+    {
+      "step": "select[3] options",
+      "value": []
+    },
+    {
+      "step": "select[4] options",
+      "value": [
+        "快速",
+        "均衡",
+        "高质量"
+      ]
+    },
+    {
+      "step": "select[5] options",
+      "value": [
+        "中文",
+        "English"
+      ]
+    },
+    {
+      "step": "select[6] options",
+      "value": [
+        "全局记忆",
+        "项目记忆"
+      ]
+    },
+    {
+      "step": "select[7] options",
+      "value": [
+        "请选择项目",
+        "文件记忆验收 20261026",
+        "Task08 live project 24134dce4api",
+        "AI Agent"
+      ]
+    },
+    {
+      "step": "select[8] options",
+      "value": [
+        "qwen3.8:27b-q4_K_M",
+        "qwen3.8:27b-mlx",
+        "qwen3.8-27b-q4:latest",
+        "qwen3.8:27b",
+        "oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU",
+        "qwen3.8:27b-q4",
+        "dengcao/Qwen3-Reranker-0.6B:Q8_0",
+        "bge-m3:latest",
+        "deepseek-coder-v2:16b",
+        "qwen3.5:9b",
+        "deepseek-coder:33b",
+        "deepseek:deepseek-flash"
+      ]
+    },
+    {
+      "step": "select[9] options",
+      "value": [
+        "v1 按页递归",
+        "v2 结构感知"
+      ]
+    },
+    {
+      "step": "select[10] options",
+      "value": [
+        "选择知识文档"
+      ]
+    },
+    {
+      "step": "select[11] options",
+      "value": [
+        "全部状态",
+        "生成中",
+        "可用",
+        "部分完成",
+        "失败",
+        "已停止"
+      ]
+    },
+    {
+      "step": "可用筛选后卡片数",
+      "value": 5
+    },
+    {
+      "step": "三列 bottom",
+      "value": [
+        1020,
+        1020,
+        0
+      ]
+    },
+    {
+      "step": "清理标签",
+      "value": 200
+    }
+  ],
+  "checks": {
+    "tag_created_and_chip_visible": true,
+    "tag_filter_narrows_list": true,
+    "tag_filter_cancels": true,
+    "available_filter_nonempty": true,
+    "three_columns_aligned": false
+  }
+}

@@ -9,7 +9,7 @@
 1. 作用域限定的新规则存在且取值符合裁决（字号 12px / ≥36px 高 / 高对比配色 / 三态 / ≤760px 触摸 44px）；
 2. **全局 `.secondary-button` 基础规则不被改动**（该 class 被会话、项目、论文、技能等视图复用）；
 3. 4 个按钮的 id / 文案 / 默认显隐与事件绑定不变（只改样式，不改交互）；
-4. 资源版本号 `literature-maps.css?v=29` 与 `app.js?v=71` 已同步到生产页与同名 fixture；
+4. 资源版本号 `literature-maps.css?v=31` 与 `app.js?v=71` 已同步到生产页与同名 fixture；
    同批次的 `styles.css` 因新增 `#kb-view` 失败态/提示样式，生效引用已同步升至 `v=69`。
 """
 
@@ -23,7 +23,7 @@ INDEX = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
 STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 MAP_CSS = (ROOT / "frontend/literature-maps.css").read_text(encoding="utf-8")
 MAP_JS = (ROOT / "frontend/literature-maps.js").read_text(encoding="utf-8")
-MAP_CSS_VERSION = 29
+MAP_CSS_VERSION = 31
 APP_JS_VERSION = 71
 # styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用由 68 升至 69。
 STYLES_VERSION = 69

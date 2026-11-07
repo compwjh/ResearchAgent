@@ -1,7 +1,7 @@
 {
   "schema_version": "upload-closure-matrix-v1",
   "inventory_git_revision": "8b0cde1",
-  "inventory_digest": "00695ddabddcba2708db0676e7875f293dccf01696e7b1260a0229263aec2609",
+  "inventory_digest": "589ebbb90bc51268f1bb0fca2fa2e710787267869d05631bc92af0ddacea6a9c",
   "inventory_digest_algorithm": "sha256(sorted(shasum-a-256-lines))",
   "inventory_files": [
     {
@@ -34,7 +34,7 @@
     },
     {
       "path": "backend/app/paper_discovery/application/paper_import.py",
-      "sha256": "42d1eb879f0176d76794aa32e38416180dbf489c56a0a166e752e0bceaee95d7"
+      "sha256": "fd56c02bc240539e349ca43d6d712cf79aa717004aaedd421a5924a24c3c75e5"
     }
   ],
   "closed_enums": {

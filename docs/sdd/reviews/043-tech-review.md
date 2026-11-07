@@ -318,3 +318,39 @@ Task10 可以复用现有 `literature_maps` 领域、owner/revision、SQLite 事
 - 评审者：`/root/paper_expansion_plan_review`（architect）
 - 日期：2026-10-27
 - 结论：**通过（GO；唯一剩余技术阻塞已关闭；待用户共同理解确认）**
+
+## 2026-11-06 增量技术评审：七项合并批次（含地图级标签分类系统）
+
+### 评审元数据
+- 评审对象：`docs/sdd/specs/043-literature-map-topic-exploration.md` 的“2026-11-06 用户二次裁决与最终冻结范围（七项合并批次）”增量；含沿用 `:655-700`数据模型/端点/边界，以及默认 A+B 的第 7 项边界。
+- 评审者：`architect`（独立增量技术评审）；角色：`architect`。
+- 模型：`qwen3.5:9b`（临时换档：线上档位连续 429，按 Gate 2 失败处置换本地轻档；任务结束已还原正式档位）。
+- 分派方式：`Task(subagent_name="architect")`，由主会话原生分派。
+- 评审时间：2026-11-06（Asia/Shanghai）。
+- **主会话落地校验修订（非代写结论）**：子代理产出的模型字段未填实、部分判定行号与结论依据不准（把 `classify_intake_intent()` 的 fail-open 误记到 `classify()`），且含一条与上一批次相关的交接项；主会话按 `SDD-GATE-CHECKLIST.md` §2.5 读回文件、核实真实代码事实后修订。结论仍为独立评审子代理给出的「通过（附意见）」。
+- 实现事实：本轮只读 Spec 与前后端代码事实；未修改业务代码／测试／Spec 状态，未运行测试、生产请求、部署或 Git 操作。
+
+### 结论
+**通过（GO；无技术 P1 阻塞）**；两张表与 `literature_map_groups`/`/groups` 零冲突，tags 派生为只读不影响分组；revision 不变用独立版本号/expected_revision 控制 conflict；卡片 `<button data-map-id>`加⋯菜单 DOM 契约可保真；A+B 不误伤深度研究；文件边界与 `css?v=29→30`/`js?v=43→44`及执行配置完整。
+
+### 增量技术核对
+| 检查项 | 判定 | 代码事实与可测边界 |
+|---|---|---|
+| 两表零冲突、tags 派生影响 | 通过（硬门槛） | `:655-669`新增 `literature_map_tags` +`literature_map_tag_bindings`；`:1704-1714`GET /api/literature-maps 响应含 tags 只读派生，旧字段保留；`:1682`节点分组零迁移。 |
+| revision 不得递增如何实现 | 通过（硬门槛） | `:669-670`并发隔离强制约束：标签绑定**不得**递增`literature_maps.revision`；`:1547-1610`store.py 现有 job claim/finish 原子性已支撑，标签自身用独立版本号/expected_revision。 |
+| <button data-map-id>加⋯菜单 DOM 契约 | 通过（硬门槛） | `:646`卡片当前是 `<button data-map-id>`；`:1735`点 ⋯不触发 selectMap；现有 `[data-map-id]`断言与点击行为需回归，frontend/literature-maps.js Grep 已确认 selectMap 绑定存在。 |
+| A+B 是否误伤深度研究 | 通过（硬门槛） | `backend/app/research/application/intake.py:183-195` 的 `classify()` 是 `explicit`/`ambiguous`/`ordinary` 三分支；`:123-156` 的 `classify_intake_intent()` 才是 fail-open，两者不得混为一谈。`backend/app/api/routes_conversations.py:2155` 无条件调 classify、`:117` 已有 `_read_map_conversation_binding()`（`:1286` 用于 RAG 收窄），故 A 短路可行；spec `:1564-1569` 边界 2/4 与 `:1765` E2E 覆盖普通会话行为不变。 |
+| `css?v=29→30`/`js?v=43→44`及执行配置完整性 | 通过 | `:1786`本批次文件边界明确前端：literature-maps.js/css、index.html 版本控制；`:1772-1782`角色分派与模型一致，不新增依赖或跨端 agent。 |
+
+### 技术评审强制交接
+1. 标签 CRUD/绑定 6 端点必须使用现有 owner-scoped 鉴权、不扩权限面；删除解绑原子；binding 幂等用 UNIQUE(map_id, tag_id) + idempotency_key。
+2. revision 不变：标签绑定**不得**递增 `literature_maps.revision`；冲突控制用独立版本号/expected_revision，与 PATCH /view 409 乐观锁无踩踏。
+3. ⋯菜单 DOM 必须保留 `data-map-id`且点⋯不触发 selectMap；点击外部/按 Esc 关闭，键盘焦点顺序正确；徽标超长名截断保留 title、不与⋯重叠。
+4. A+B 分类器为纯规则、确定性、可单测；负向特征短路 binding 失败时 fail-closed，不泄露其它论文；会话状态隔离（单篇会话不复用 sticky）。
+5. `GET /api/literature-maps` 只返回 owner-scoped + `tags` 只读派生，旧字段全保留、GET 不写库不补入队；队列 `skipped_items` 仅为投影新增字段，导出 v2 契约不变。
+6. **版本号双点同步（P0）**：静态资源版本号须同时改 `frontend/index.html:9,805` 与 `tests/frontend/fixtures/literature_map_component.html:8,1126`（当前 29/43 → 30/44）；既有契约测试硬编码断言，漏改任一点即全红。
+7. **DOM 契约硬约束**：卡片 `<button data-map-id>`（`frontend/literature-maps.js:1845,2487`）加 ⋯ 菜单须保留 `data-map-id` 且 ⋯ 点击不触发 `selectMap`；菜单 Enter/Esc/焦点/点击外部关闭，徽标不与 ⋯ 重叠、只用 `textContent`/`setAttribute`。
+
+### 技术评审证据诚实声明
+本轮没有执行验收、真实 API、浏览器运行或部署；结论只证明需求边界可评审、可测和与当前代码接缝一致。主会话复核了 `frontend/index.html:9,805`、`tests/frontend/fixtures/literature_map_component.html:8,1126`、`frontend/literature-maps.js:1845,2487`、`backend/app/literature_maps/infrastructure/store.py:639,645`（`update_map_details` / `update_view` 为 `revision` 递增点，标签绑定须绕开）、`backend/app/research/application/intake.py:123,183-195`、`backend/app/api/routes_conversations.py:117,1286,2155`。既有 findings 的测试摘要不作为本轮成功证据。
+

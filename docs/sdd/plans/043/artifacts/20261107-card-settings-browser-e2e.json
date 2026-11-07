@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-11-07T07:35:38.884180",
+  "base_url": "http://127.0.0.1:8000",
+  "view": "http://127.0.0.1:8000/#literature-maps-view",
+  "purpose": "Spec043 卡片设置列表：真实 Chromium 1440x900 / 760x900 端到端验收",
+  "entities": {
+    "map_id": "f7a098761caa427cab72bf357ddbc9eb",
+    "initial_name": "E2E 浏览器卡片设置 ui-card-settings-d0255377",
+    "initial_revision": 0,
+    "renamed_name": "E2E 浏览器已重命名 ui-card-settings-d0255377",
+    "revision_after_rename": 1,
+    "revision_after_external_bump": 2
+  },
+  "checks": {
+    "test_map_created_202": true,
+    "test_map_card_visible": true,
+    "level1_exactly_three_items": true,
+    "trigger_aria_renamed": true,
+    "no_export_in_menu": true,
+    "level2_tags_panel": true,
+    "back_button_present": true,
+    "tags_panel_width_le_200": true,
+    "tags_panel_width_is_200": true,
+    "tags_panel_empty_height_le_105": true,
+    "esc_level2_to_level1": true,
+    "esc_level1_closes": true,
+    "back_returns_to_level1": true,
+    "outside_click_closes": true,
+    "rename_prefilled": true,
+    "rename_status_success": true,
+    "rename_updates_card_title": true,
+    "rename_persisted_backend": true,
+    "external_revision_bump_200": true,
+    "stale_revision_shows_dedicated_notice": true,
+    "confirm_shows_map_name": true,
+    "confirm_shows_irreversible": true,
+    "cancel_returns_to_level1": true,
+    "cancel_sent_no_delete": true,
+    "confirm_removes_card": true,
+    "confirm_persisted_backend_delete": true,
+    "760_trigger_44px": true,
+    "760_trigger_does_not_cover_text": true,
+    "760_level1_in_viewport": true,
+    "760_level2_in_viewport": true,
+    "760_tags_panel_width_le_200": true,
+    "760_tags_panel_width_is_200": true
+  },
+  "steps": [
+    {
+      "step": "1440 一级设置列表 box",
+      "value": {
+        "x": 318.625,
+        "y": 450.9375,
+        "width": 160,
+        "height": 136
+      }
+    },
+    {
+      "step": "1440 二级标签面板 box",
+      "value": {
+        "x": 278.625,
+        "y": 450.9375,
+        "width": 200,
+        "height": 94.796875
+      },
+      "global_tag_count": 0
+    },
+    {
+      "step": "409 状态提示",
+      "value": "重命名失败：地图已在别处更新，请刷新后重试"
+    },
+    {
+      "step": "删除后状态提示",
+      "value": "地图已删除。"
+    },
+    {
+      "step": "760 触发器 box",
+      "value": {
+        "x": 301,
+        "y": 215.21875,
+        "width": 44,
+        "height": 44
+      }
+    },
+    {
+      "step": "760 触发器与卡片文本重叠",
+      "value": {
+        "ok": true,
+        "hits": []
+      }
+    },
+    {
+      "step": "760 一级列表 box",
+      "value": {
+        "x": 185,
+        "y": 265.21875,
+        "width": 160,
+        "height": 136
+      }
+    },
+    {
+      "step": "760 二级标签面板 box",
+      "value": {
+        "x": 145,
+        "y": 265.21875,
+        "width": 200,
+        "height": 94.796875
+      }
+    }
+  ],
+  "screenshots": [
+    "docs/sdd/plans/043/artifacts/20261107-card-settings-01-settings-list-1440.png",
+    "docs/sdd/plans/043/artifacts/20261107-card-settings-02-tags-panel-1440.png",
+    "docs/sdd/plans/043/artifacts/20261107-card-settings-03-rename-form.png",
+    "docs/sdd/plans/043/artifacts/20261107-card-settings-04-delete-confirm.png",
+    "docs/sdd/plans/043/artifacts/20261107-card-settings-05-settings-list-760.png",
+    "docs/sdd/plans/043/artifacts/20261107-card-settings-06-tags-panel-760.png"
+  ],
+  "page_errors": [],
+  "artifact_path": "docs/sdd/plans/043/artifacts/20261107-card-settings-browser-e2e.json"
+}

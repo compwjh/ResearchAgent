@@ -1,0 +1,116 @@
+{
+  "timestamp": "2026-11-07T05:17:57.925167",
+  "checks": {
+    "similarity_layer_toggles_edges": true,
+    "similarity_status_hint_visible": true,
+    "group_secondary_buttons_11px": true,
+    "group_secondary_touch_targets_44px": true
+  },
+  "steps": [
+    {
+      "step": "图渲染完成后初始",
+      "value": {
+        "checked": true,
+        "simEdges": 5,
+        "allEdges": 29,
+        "hint": []
+      }
+    },
+    {
+      "step": "点击关闭后",
+      "value": {
+        "checked": false,
+        "simEdges": 0,
+        "allEdges": 24,
+        "hint": [
+          "已隐藏 5 条主题相似连线"
+        ]
+      }
+    },
+    {
+      "step": "点击开启后",
+      "value": {
+        "checked": true,
+        "simEdges": 5,
+        "allEdges": 29,
+        "hint": [
+          "已显示 5 条主题相似连线"
+        ]
+      }
+    },
+    {
+      "step": "分组入口数量",
+      "value": 10
+    },
+    {
+      "step": "分组浮层次级按钮",
+      "value": [
+        {
+          "text": "重命名",
+          "cls": "secondary-button literature-map-group-rename",
+          "fontSize": "11px",
+          "color": "rgb(81, 69, 184)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "height": 44,
+          "width": 53
+        },
+        {
+          "text": "删除",
+          "cls": "secondary-button literature-map-group-delete",
+          "fontSize": "11px",
+          "color": "rgb(81, 69, 184)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "height": 44,
+          "width": 42
+        },
+        {
+          "text": "重命名",
+          "cls": "secondary-button literature-map-group-rename",
+          "fontSize": "11px",
+          "color": "rgb(81, 69, 184)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "height": 44,
+          "width": 53
+        },
+        {
+          "text": "删除",
+          "cls": "secondary-button literature-map-group-delete",
+          "fontSize": "11px",
+          "color": "rgb(81, 69, 184)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "height": 44,
+          "width": 42
+        }
+      ]
+    },
+    {
+      "step": "760px 分组次级按钮",
+      "value": [
+        {
+          "text": "重命名",
+          "h": 44
+        },
+        {
+          "text": "删除",
+          "h": 44
+        },
+        {
+          "text": "重命名",
+          "h": 44
+        },
+        {
+          "text": "删除",
+          "h": 44
+        }
+      ]
+    },
+    {
+      "step": "760px ⋯ 按钮高度",
+      "value": [
+        22,
+        22,
+        22
+      ]
+    }
+  ]
+}

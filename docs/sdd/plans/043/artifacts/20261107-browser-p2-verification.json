@@ -1,0 +1,228 @@
+{
+  "timestamp": "2026-11-07T05:15:42.248358",
+  "checks": {
+    "small_buttons_enlarged_to_11px": true,
+    "similarity_layer_toggles_edges": false,
+    "similarity_status_hint_visible": true,
+    "similarity_explanation_present": true,
+    "touch_targets_at_760": false
+  },
+  "steps": [
+    {
+      "step": "小字号按钮 computed style",
+      "value": [
+        {
+          "text": "刷新状态",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 37,
+          "minHeight": "36px"
+        },
+        {
+          "text": "新建地图",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 37,
+          "minHeight": "36px"
+        },
+        {
+          "text": "继续搜索",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "36px"
+        },
+        {
+          "text": "刷新预览",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "36px"
+        },
+        {
+          "text": "打开上次预览",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "36px"
+        },
+        {
+          "text": "停止任务",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "36px"
+        },
+        {
+          "text": "重试失败单元",
+          "cls": "secondary-button",
+          "fontSize": "12px",
+          "color": "rgb(74, 69, 96)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "36px"
+        },
+        {
+          "text": "全部状态生成中可用部分完成失败已停止",
+          "cls": "",
+          "fontSize": "11px",
+          "color": "rgb(37, 39, 43)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 32,
+          "minHeight": "auto"
+        },
+        {
+          "text": "203050",
+          "cls": "",
+          "fontSize": "11px",
+          "color": "rgb(37, 39, 43)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "0px"
+        },
+        {
+          "text": "不绑定项目",
+          "cls": "",
+          "fontSize": "11px",
+          "color": "rgb(37, 39, 43)",
+          "backgroundColor": "rgb(255, 255, 255)",
+          "rectH": 0,
+          "minHeight": "0px"
+        },
+        {
+          "text": "取消",
+          "cls": "secondary-button",
+          "fontSize": "10px",
+          "color": "rgb(139, 142, 150)",
+          "backgroundColor": "rgb(245, 245, 247)",
+          "rectH": 0,
+          "minHeight": "0px"
+        },
+        {
+          "text": "开始建图",
+          "cls": "send-button",
+          "fontSize": "10px",
+          "color": "rgb(255, 255, 255)",
+          "backgroundColor": "rgb(109, 93, 252)",
+          "rectH": 0,
+          "minHeight": "0px"
+        },
+        {
+          "text": "地图列表",
+          "cls": "secondary-button literature-map-mobile-list-open",
+          "fontSize": "12px",
+          "color": "rgb(139, 142, 150)",
+          "backgroundColor": "rgb(245, 245, 247)",
+          "rectH": 0,
+          "minHeight": "0px"
+        },
+        {
+          "text": "−",
+          "cls": "icon-button literature-map-tool",
+          "fontSize": "10px",
+          "color": "rgb(90, 93, 102)",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "rectH": 22,
+          "minHeight": "auto"
+        }
+      ]
+    },
+    {
+      "step": "similarity 勾选框数量",
+      "value": 1
+    },
+    {
+      "step": "初始",
+      "value": {
+        "checked": true,
+        "simEdges": 0,
+        "allEdges": 0
+      }
+    },
+    {
+      "step": "取消勾选后",
+      "value": {
+        "checked": true,
+        "simEdges": 5,
+        "allEdges": 29
+      }
+    },
+    {
+      "step": "重新勾选后",
+      "value": {
+        "checked": true,
+        "simEdges": 5,
+        "allEdges": 29
+      }
+    },
+    {
+      "step": "勾选后文本含相似提示",
+      "value": true
+    },
+    {
+      "step": "760px 下 <44px 按钮",
+      "value": [
+        {
+          "t": "×",
+          "h": 34
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "⋯",
+          "h": 22
+        },
+        {
+          "t": "地图列表",
+          "h": 32
+        },
+        {
+          "t": "−",
+          "h": 22
+        },
+        {
+          "t": "+",
+          "h": 22
+        },
+        {
+          "t": "适应",
+          "h": 24
+        }
+      ]
+    }
+  ]
+}

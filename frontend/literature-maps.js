@@ -68,6 +68,9 @@
   // 「未分组」在 state.groupHighlightId 里的哨兵值；分组 id 来自后端，不会撞值。
   const UNGROUPED_HIGHLIGHT_ID = '__ungrouped__';
 
+  // FE-1a 地图级标签：卡片最多渲染的标签数，超出显示 +N。
+  const MAP_CARD_TAG_LIMIT = 3;
+
   const state = {
     active: false,
     mounted: false,
@@ -93,6 +96,10 @@
     selectedNode: null,
     listQuery: '',
     listStatus: 'all',
+    // FE-1a 地图级标签：全量标签列表（GET /tags）与列表上方的单选筛选态（纯前端视图态）。
+    tags: [],
+    listTagId: null,
+    tagMenuOpenFor: null,
     job: null,
     eventCursor: 0,
     pollTimer: null,
@@ -1013,6 +1020,11 @@
     });
     listFilters.append(listSearch, listStatus);
     listPanel.append(listFilters);
+    // FE-1a：列表上方「标签」筛选区（在 listFilters 之后动态创建，不改 HTML 结构）。
+    const tagFilterBar = createElement('div', 'literature-map-tag-filter-bar');
+    tagFilterBar.id = 'literature-map-tag-filter-bar';
+    tagFilterBar.hidden = true;
+    listPanel.append(tagFilterBar);
     const mapList = createElement('div', 'literature-map-list');
     mapList.id = 'literature-map-list';
     mapList.setAttribute('role', 'list');
@@ -1166,7 +1178,13 @@
       checkbox.type = 'checkbox';
       checkbox.checked = true;
       checkbox.dataset.layer = kind;
-      const text = kind === 'citation' ? '引用关系' : '主题相似';
+      const isSimilarity = kind === 'similarity';
+      const text = isSimilarity ? '主题相似' : '引用关系';
+      if (isSimilarity) {
+        // 用 title 提供说明，保留复选框的可访问名称「主题相似」（来自 label 文本），
+        // 不覆盖 aria-label，避免既有 role=checkbox 定位断言（name='主题相似'）失效。
+        label.title = '显示基于标题/摘要相似度的论文连线（虚线）';
+      }
       label.append(checkbox, createElement('span', '', text));
       layerTools.append(label);
     });
@@ -1306,7 +1324,7 @@
     root.append(mobileBackdrop);
     mount.append(root);
 
-    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, canvas, groupsFab, groupsPopover, groupsFormDetails, groupsClearHighlight, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
+    Object.assign(refs, { root, listPanel, listClose, listSearch, listStatus, mapList, listEmpty, tagFilterBar, canvas, groupsFab, groupsPopover, groupsFormDetails, groupsClearHighlight, groupForm, groupNameInput, groupColorInput, groupCreateButton, groupList, groupEmpty, createPanel, form, topicInput, nameInput, yearStart: formGrid.children[0].querySelector('input'), yearEnd: formGrid.children[1].querySelector('input'), limitInput, sourceOptions, sourceNotice, conferenceOptions, conferenceNotice, projectInput, projectNotice, submitButton, cancelButton, currentTitle, currentMeta, svg, viewport, edgesGroup, nodesGroup, canvasEmpty: empty, groupLegend, exportJsonButton, exportPngButton, labelModeSelect, multiSelectToggle, selectionToolbar, selectionCount: selectionToolbar.querySelector('.literature-map-selected-count'), nodeStyleDisclosure, nodeStyle, detailPanel, detail, mobileListButton, mobileBackdrop, status: notice, count: listCount, continueButton, refreshPreviewButton, openSavedPreviewButton, stopJobButton, retryJobButton, queuePanel, previewPanel, spacingPreviewPanel });
     if (isMobileViewport()) {
       refs.listPanel.setAttribute('aria-hidden', 'true');
       refs.detailPanel.setAttribute('aria-hidden', 'true');
@@ -1315,6 +1333,7 @@
     bindEvents(newButton, refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
+    loadTags();
     renderGraph();
   }
 
@@ -1564,6 +1583,7 @@
         state.viewDirty = true;
         renderGraph();
         scheduleViewSave();
+        if (input.dataset.layer === 'similarity') showSimilarityLayerHint(input.checked);
       });
     });
     refs.labelModeSelect.addEventListener('change', () => {
@@ -1634,8 +1654,14 @@
     return state.maps.filter((map) => {
       const haystack = `${mapTitle(map)} ${map?.topic || ''}`.toLowerCase();
       const matchesQuery = !state.listQuery || haystack.includes(state.listQuery);
-      const matchesStatus = state.listStatus === 'all' || map?.status === state.listStatus;
-      return matchesQuery && matchesStatus;
+      // 「可用」筛选与卡片徽标同一「可用集合」：status==='ready' 或 status==='partial' 且有活动节点；
+      // 「部分完成」筛选仍严格按原始 status==='partial'（含无节点项）。
+      const isPartialUsable = String(map?.status || '').toLowerCase() === 'partial' && normalizeMapNodeCount(map?.node_count) > 0;
+      const matchesStatus = state.listStatus === 'all'
+        || map?.status === state.listStatus
+        || (state.listStatus === 'ready' && isPartialUsable);
+      const matchesTag = !state.listTagId || (map?.tags || []).some((tag) => tag?.tag_id === state.listTagId);
+      return matchesQuery && matchesStatus && matchesTag;
     });
   }
 
@@ -1829,10 +1855,11 @@
     refs.count.textContent = `${visibleMaps.length}/${state.maps.length}`;
     setHidden(refs.listEmpty, visibleMaps.length > 0);
     visibleMaps.forEach((map) => {
-      const item = createElement('button', 'literature-map-list-item');
-      item.type = 'button';
+      // FE-1a：卡片改为容器元素承载 data-map-id（保留选图行为），内部放 ⋯ 触发按钮。
+      const item = createElement('div', 'literature-map-list-item');
       item.dataset.mapId = map.map_id || '';
-      item.setAttribute('role', 'listitem');
+      item.setAttribute('role', 'button');
+      item.tabIndex = 0;
       item.setAttribute('aria-pressed', String(map.map_id === state.selectedMapId));
       const title = createElement('strong', 'literature-map-list-title', mapTitle(map));
       const topic = createElement('span', 'literature-map-list-topic', map.topic || '主题未提供');
@@ -1841,12 +1868,686 @@
       const cardNodeCount = mapCardNodeCount(map);
       if (cardNodeCount !== null) meta.append(createElement('span', '', `${cardNodeCount} 篇`));
       item.append(title, topic, meta);
+      const tagsRow = renderMapCardTags(map);
+      if (tagsRow) item.append(tagsRow);
+      const trigger = createElement('button', 'literature-map-card-menu-trigger', '⋯');
+      trigger.type = 'button';
+      trigger.setAttribute('aria-label', `卡片设置：${mapTitle(map)}`);
+      trigger.setAttribute('aria-haspopup', 'menu');
+      trigger.addEventListener('click', (event) => {
+        // ⋯ 点击必须 stopPropagation，不得触发 selectMap。
+        event.stopPropagation();
+        if (state.tagMenuOpenFor === map.map_id) closeTagMenu(false);
+        else openTagMenu(map.map_id, trigger);
+      });
+      item.append(trigger);
       item.addEventListener('click', () => {
+        // 切换地图清除标签筛选（纯前端视图态，不写库/不进导出/不触发视图保存 409）。
+        if (state.listTagId) {
+          state.listTagId = null;
+          renderTagFilterBar();
+        }
         selectMap(map.map_id);
         if (isMobileViewport()) closeMobilePanel('list');
       });
+      item.addEventListener('keydown', (event) => {
+        if (event.target !== item) return;
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          if (state.listTagId) {
+            state.listTagId = null;
+            renderTagFilterBar();
+          }
+          selectMap(map.map_id);
+          if (isMobileViewport()) closeMobilePanel('list');
+        }
+      });
       refs.mapList.append(item);
     });
+  }
+
+  // ---- 地图级标签系统（FE-1a）------------------------------------------------
+  // 与节点「分组」完全独立：此处术语一律用「标签」，既有「分组」UI 不改、不替换。
+  function normalizeTagName(name) {
+    const normalized = String(name || '').trim();
+    if (!normalized) throw new LiteratureMapError('标签名称不能为空。');
+    if (normalized.length > GROUP_NAME_MAX_LENGTH) {
+      throw new LiteratureMapError(`标签名称最多 ${GROUP_NAME_MAX_LENGTH} 个字符。`);
+    }
+    return normalized;
+  }
+
+  function tagErrorMessage(error) {
+    const status = Number(error?.status) || 0;
+    const code = String(error?.code || '').toLowerCase();
+    if (status === 409 || code.includes('conflict') || code.includes('duplicate') || code.includes('exists')) {
+      return '标签名称已存在，请换一个名称后重试。';
+    }
+    if (status === 422 || code.includes('forbidden') || code.includes('invalid') || code.includes('unauthorized')) {
+      return '所选标签不可用（可能不存在或无权限），请刷新后重试。';
+    }
+    if (status === 404) return '标签不存在或已被删除，请刷新后重试。';
+    if (status === 400) return '标签名称或颜色不合法，请检查后重试。';
+    if (status === 401) return '请先登录后再操作标签。';
+    return error?.message || '标签操作失败，请稍后重试。';
+  }
+
+  async function loadTags() {
+    try {
+      const payload = await request('/tags');
+      state.tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+    } catch (_) {
+      // 空标签列表或加载失败：不渲染筛选区、不报错。
+      state.tags = [];
+    }
+    renderTagFilterBar();
+  }
+
+  function renderTagFilterBar() {
+    if (!refs.tagFilterBar) return;
+    refs.tagFilterBar.replaceChildren();
+    if (!state.tags.length) {
+      refs.tagFilterBar.hidden = true;
+      return;
+    }
+    refs.tagFilterBar.hidden = false;
+    const heading = createElement('span', 'literature-map-tag-filter-heading', '标签');
+    refs.tagFilterBar.append(heading);
+    const list = createElement('div', 'literature-map-tag-filter-list');
+    state.tags.forEach((tag) => {
+      const active = state.listTagId === tag.tag_id;
+      const chip = createElement('button', 'literature-map-tag-filter');
+      chip.type = 'button';
+      chip.dataset.tagId = tag.tag_id;
+      chip.setAttribute('aria-pressed', String(active));
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const label = createElement('span', 'literature-map-tag-name', tag.name);
+      chip.append(dot, label);
+      chip.addEventListener('click', () => toggleTagFilter(tag.tag_id));
+      list.append(chip);
+    });
+    refs.tagFilterBar.append(list);
+  }
+
+  function toggleTagFilter(tagId) {
+    state.listTagId = state.listTagId === tagId ? null : tagId;
+    renderTagFilterBar();
+    renderMapList();
+  }
+
+  function renderMapCardTags(map) {
+    const tags = Array.isArray(map?.tags) ? map.tags : [];
+    if (!tags.length) return null;
+    const row = createElement('div', 'literature-map-list-tags');
+    const visible = tags.slice(0, MAP_CARD_TAG_LIMIT);
+    visible.forEach((tag) => {
+      const chip = createElement('span', 'literature-map-tag-chip');
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const name = createElement('span', 'literature-map-tag-name', tag.name);
+      name.title = tag.name;
+      chip.append(dot, name);
+      row.append(chip);
+    });
+    if (tags.length > MAP_CARD_TAG_LIMIT) {
+      const extra = tags.length - MAP_CARD_TAG_LIMIT;
+      const more = createElement('span', 'literature-map-tag-chip literature-map-tag-more', `+${extra}`);
+      const allNames = tags.map((t) => t.name).join('、');
+      more.title = allNames;
+      more.setAttribute('aria-label', allNames);
+      row.append(more);
+    }
+    return row;
+  }
+
+  // 浮层定位：宽度以「实际渲染宽度」为上限（一级列表 ~160px、二级面板 200px），
+  // 不再硬编码 280px，否则缩小后会出现菜单超出视口右侧的偏差。`menuForPosition`
+  // 允许在「内容替换前后尺寸变化」时按目标视图重算，避免二级面板跑到视口外。
+  function positionTagMenu(menu, anchor, menuForPosition) {
+    const rect = anchor.getBoundingClientRect();
+    // 测量前先清掉上一次写入的内联宽度约束，否则一级量到的 160px 会以「内联优先」压住
+    // 二级视图类声明的 200px，导致标签表单换行、空态高度涨到 105px 以上（T-11 回归）。
+    menu.style.maxWidth = '';
+    menu.style.minWidth = '';
+    menu.style.width = '';
+    const measured = (menuForPosition || menu).offsetWidth;
+    const menuWidth = Math.min(window.innerWidth - 16, measured || 200);
+    const menuHeight = (menuForPosition || menu).offsetHeight || 160;
+    let top = rect.bottom + 6;
+    if (top + menuHeight > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - menuHeight - 6);
+    }
+    let left = rect.right - menuWidth;
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - menuWidth - 8);
+    }
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '1090';
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+    menu.style.maxWidth = `${menuWidth}px`;
+    menu.style.maxHeight = `${window.innerHeight - 16}px`;
+    menu.style.overflow = 'auto';
+  }
+
+  function handleTagMenuPointerDown(event) {
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (refs.tagMenu?.contains(target) || refs.tagMenu?._anchor?.contains(target)) return;
+    closeTagMenu(false);
+  }
+
+  function handleTagMenuKeyDown(event) {
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
+    event.stopPropagation();
+    const menu = refs.tagMenu;
+    // 两级菜单：Esc 从二级面板退回一级设置列表，再按一次才关闭浮层。
+    if (menu && menu._view && menu._view !== 'settings') {
+      showTagMenuView('settings');
+      return;
+    }
+    closeTagMenu(true);
+  }
+
+  function attachTagMenuDismiss(anchor) {
+    if (refs.tagMenu) refs.tagMenu._anchor = anchor;
+    if (!state.active) return;
+    document.addEventListener('pointerdown', handleTagMenuPointerDown, true);
+    document.addEventListener('keydown', handleTagMenuKeyDown, true);
+  }
+
+  function detachTagMenuDismiss() {
+    document.removeEventListener('pointerdown', handleTagMenuPointerDown, true);
+    document.removeEventListener('keydown', handleTagMenuKeyDown, true);
+  }
+
+  function closeTagMenu(restoreFocus = true) {
+    detachTagMenuDismiss();
+    const menu = refs.tagMenu;
+    if (menu && menu.isConnected) {
+      const anchor = menu._anchor || null;
+      menu.remove();
+      if (restoreFocus && anchor && anchor.isConnected) anchor.focus();
+    }
+    refs.tagMenu = null;
+    state.tagMenuOpenFor = null;
+  }
+
+  // ---- 卡片设置（两级浮层）-------------------------------------------------
+  // 一级：紧凑的「卡片设置」列表，条目由数组驱动，**恰好 3 项**
+  //   （设置标签 / 重命名地图 / 删除地图；不搬入顶部工具栏的导出 JSON/PNG）。
+  // 二级：同一浮层内替换内容，顶部有「← 返回」；Esc 从二级回一级、再按 Esc 关闭。
+  // 两级状态只活在浮层 DOM 上（`menu._view`），关闭 / 切换地图时随浮层一起丢弃，
+  // 不残留待删 / 待改状态（T-12）。
+  const CARD_MENU_SETTING_ITEMS = [
+    { id: 'tags', label: '设置标签' },
+    { id: 'rename', label: '重命名地图' },
+    { id: 'delete', label: '删除地图' },
+  ];
+  // 浮层根节点上的「当前视图」锚点类（与内部元素类区分，避免与按钮类同名）。
+  const CARD_MENU_VIEW_CLASS = {
+    settings: 'literature-map-card-menu-settings',
+    tags: 'literature-map-card-menu-view-tags',
+    rename: 'literature-map-card-menu-view-rename',
+    delete: 'literature-map-card-menu-view-delete',
+  };
+  const MAP_NAME_MAX_LENGTH = 200;
+  const MAP_RENAME_CONFLICT_NOTICE = '地图已在别处更新，请刷新后重试';
+
+  function tagMenuMap(mapId) {
+    return state.maps.find((m) => m.map_id === mapId) || null;
+  }
+
+  // 统一入口：把浮层内容替换成目标视图，并在尺寸变化后重新定位。
+  function showTagMenuView(view) {
+    const menu = refs.tagMenu;
+    if (!menu) return;
+    menu._view = view;
+    menu.classList.remove(...Object.values(CARD_MENU_VIEW_CLASS));
+    menu.classList.add(CARD_MENU_VIEW_CLASS[view] || CARD_MENU_VIEW_CLASS.settings);
+    menu.setAttribute('aria-label', view === 'settings' ? '卡片设置' : '设置标签');
+    menu.replaceChildren(renderMenu());
+    positionTagMenu(menu, menu._anchor || menu, menu);
+    const firstFocusable = menu.querySelector('input, button');
+    if (firstFocusable) firstFocusable.focus();
+  }
+
+  function renderMenu() {
+    const menu = refs.tagMenu;
+    const view = menu?._view || 'settings';
+    const mapId = state.tagMenuOpenFor;
+    const map = tagMenuMap(mapId);
+    if (view === 'tags' && map) return renderTagPanel(mapId, map);
+    if (view === 'rename' && map) return renderMapRenameForm(mapId, map);
+    if (view === 'delete' && map) return renderMapDeleteConfirm(mapId, map);
+    return renderCardSettingsList();
+  }
+
+  function renderCardSettingsList() {
+    const list = createElement('div', 'literature-map-card-menu-list');
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', '卡片设置');
+    list.append(createElement('div', 'literature-map-card-menu-title', '卡片设置'));
+    CARD_MENU_SETTING_ITEMS.forEach((item) => {
+      const entry = createElement('button', 'literature-map-card-menu-entry', item.label);
+      entry.type = 'button';
+      entry.setAttribute('role', 'menuitem');
+      entry.dataset.action = item.id;
+      entry.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showTagMenuView(item.id);
+      });
+      list.append(entry);
+    });
+    return list;
+  }
+
+  function renderMenuBackRow(title) {
+    const head = createElement('div', 'literature-map-card-menu-head');
+    const back = createElement('button', 'literature-map-card-menu-back', '← 返回');
+    back.type = 'button';
+    back.setAttribute('aria-label', '返回卡片设置');
+    back.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showTagMenuView('settings');
+    });
+    head.append(back, createElement('span', 'literature-map-card-menu-title', title));
+    return head;
+  }
+
+  function renderTagPanel(mapId, map) {
+    const panel = createElement('div', 'literature-map-card-menu-panel');
+    panel.append(renderMenuBackRow('设置标签'));
+    const selected = new Set((map.tags || []).map((t) => t.tag_id));
+    const optionList = createElement('div', 'literature-map-card-menu-options');
+    state.tags.forEach((tag) => {
+      const optionRow = createElement('div', 'literature-map-card-menu-option');
+      const checkbox = createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selected.has(tag.tag_id);
+      checkbox.dataset.tagId = tag.tag_id;
+      checkbox.setAttribute('aria-label', `标签：${tag.name}`);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) selected.add(tag.tag_id);
+        else selected.delete(tag.tag_id);
+      });
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const name = createElement('span', 'literature-map-tag-name', tag.name);
+      name.title = tag.name;
+      const rename = createElement('button', 'secondary-button literature-map-card-menu-rename', '重命名');
+      rename.type = 'button';
+      rename.dataset.tagId = tag.tag_id;
+      rename.addEventListener('click', () => renameTag(tag, rename));
+      const remove = createElement('button', 'secondary-button literature-map-card-menu-delete', '删除');
+      remove.type = 'button';
+      remove.dataset.tagId = tag.tag_id;
+      remove.addEventListener('click', () => deleteTag(tag, remove));
+      optionRow.append(checkbox, dot, name, rename, remove);
+      optionList.append(optionRow);
+    });
+    panel.append(optionList);
+
+    // 新建标签表单（复用「名称 + 颜色 + 创建」风格）。
+    const newForm = createElement('form', 'literature-map-card-menu-new');
+    const newName = createElement('input');
+    newName.type = 'text';
+    newName.placeholder = '新标签名称';
+    newName.maxLength = GROUP_NAME_MAX_LENGTH;
+    newName.setAttribute('aria-label', '新标签名称');
+    const newColor = createElement('input');
+    newColor.type = 'color';
+    newColor.value = '#8d80e6';
+    newColor.setAttribute('aria-label', '新标签颜色');
+    const newButton = createElement('button', 'send-button literature-map-card-menu-create', '创建并绑定');
+    newButton.type = 'submit';
+    newForm.append(newName, newColor, newButton);
+    newForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      createTag(mapId, newName.value, newColor.value, selected, refs.tagMenu, refs.tagMenu?._anchor);
+    });
+    panel.append(newForm);
+
+    const saveButton = createElement('button', 'send-button literature-map-card-menu-save', '保存');
+    saveButton.type = 'button';
+    saveButton.addEventListener('click', () => saveMapTags(mapId, [...selected], refs.tagMenu, refs.tagMenu?._anchor));
+    panel.append(saveButton);
+    return panel;
+  }
+
+  function mapRenameErrorMessage(error) {
+    const status = Number(error?.status) || 0;
+    const code = String(error?.code || '').toLowerCase();
+    // 乐观锁冲突：用产品约定文案，不透传后端面向 PATCH /view 的提示。
+    if (status === 409 || code.includes('conflict') || code.includes('revision')) return MAP_RENAME_CONFLICT_NOTICE;
+    if (status === 404 || code.includes('not_found')) return '地图不存在或已被删除，请刷新列表后重试。';
+    if (status === 400 || status === 422) return '地图名称不合法，请检查后重试。';
+    // 5xx（含 503 与无法识别的错误）用本场景专属兜底，避免 errorAction 的「保存视图」措辞。
+    if (status >= 500 || status === 0) return '重命名失败，服务暂时不可用，请稍后重试。';
+    return errorAction(error, '重命名失败，请稍后重试。');
+  }
+
+  function mapDeleteErrorMessage(error) {
+    const status = Number(error?.status) || 0;
+    const code = String(error?.code || '').toLowerCase();
+    if (status === 404 || code.includes('not_found')) return '地图不存在或已被删除，请刷新列表后重试。';
+    if (status === 409 || code.includes('conflict') || code.includes('revision')) return MAP_RENAME_CONFLICT_NOTICE;
+    if (status === 400 || status === 422) return '删除地图的请求不合法，请刷新后重试。';
+    // 5xx（含 503 与无法识别的错误）用本场景专属兜底，避免 errorAction 的「保存视图」措辞。
+    if (status >= 500 || status === 0) return '删除失败，服务暂时不可用，请稍后重试。';
+    return errorAction(error, '删除失败，请稍后重试。');
+  }
+
+  function renderMapRenameForm(mapId, map) {
+    const panel = createElement('div', 'literature-map-card-menu-panel');
+    panel.append(renderMenuBackRow('重命名地图'));
+    const form = createElement('form', 'literature-map-card-menu-mapform');
+    const input = createElement('input');
+    input.type = 'text';
+    input.dataset.mapRenameInput = 'true';
+    input.maxLength = MAP_NAME_MAX_LENGTH;
+    input.setAttribute('aria-label', '地图名称');
+    // 预填走 input.value，不拼 HTML（T-6）。
+    input.value = mapTitle(map);
+    const hint = createElement('p', 'literature-map-card-menu-hint');
+    const submit = createElement('button', 'send-button literature-map-card-menu-submit', '保存名称');
+    submit.type = 'submit';
+    form.append(input, hint, submit);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void submitMapRename(mapId, input, hint, submit);
+    });
+    panel.append(form);
+    return panel;
+  }
+
+  function renderMapDeleteConfirm(mapId, map) {
+    const panel = createElement('div', 'literature-map-card-menu-panel');
+    panel.append(renderMenuBackRow('删除地图'));
+    panel.append(createElement('p', 'literature-map-card-menu-confirm-name', mapTitle(map)));
+    panel.append(createElement('p', 'literature-map-card-menu-hint', '删除后不可恢复'));
+    const actions = createElement('div', 'literature-map-card-menu-confirm-actions');
+    const cancel = createElement('button', 'secondary-button literature-map-card-menu-cancel', '取消');
+    cancel.type = 'button';
+    // 取消分支：只回到一级列表，零请求（不发 PATCH/DELETE）。
+    cancel.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showTagMenuView('settings');
+    });
+    const confirm = createElement('button', 'secondary-button literature-map-card-menu-confirm', '删除');
+    confirm.type = 'button';
+    confirm.addEventListener('click', () => {
+      void submitMapDelete(mapId, cancel, confirm);
+    });
+    actions.append(cancel, confirm);
+    panel.append(actions);
+    return panel;
+  }
+
+  // 重命名 / 删除发起前先收口在途的视图保存（T-7）：flush 一次已积累的 dirty，
+  // 再等同一张地图在途的 flush 落地，避免与 `PATCH /view` 的乐观锁互踩。
+  async function settlePendingViewSave(mapId) {
+    try {
+      await flushPendingViewSave();
+    } catch (_) {
+      // 视图保存失败不影响重命名 / 删除本身；下面的 flush 等待仍会兜住并发。
+    }
+    await waitForPendingViewFlush(mapId);
+  }
+
+  function mapRevisionFor(mapId) {
+    // 选中图以 state.map 的 revision 为准（可能已被视图保存 +1）；未选中图用列表对象的值。
+    if (state.map && state.map.map_id === mapId) return Number(state.map.revision) || 0;
+    const map = tagMenuMap(mapId);
+    return Number(map?.revision) || 0;
+  }
+
+  async function submitMapRename(mapId, input, hint, submit) {
+    const map = tagMenuMap(mapId);
+    if (!map || !input) return;
+    const name = String(input.value || '').trim();
+    // Q-5：trim 后空值或超 200 字符在前端拦下，不提交（后端不会拒绝空串）。
+    if (!name) {
+      if (hint) hint.textContent = '地图名称不能为空。';
+      input.focus();
+      return;
+    }
+    if (name.length > MAP_NAME_MAX_LENGTH) {
+      if (hint) hint.textContent = `地图名称最多 ${MAP_NAME_MAX_LENGTH} 个字符。`;
+      input.focus();
+      return;
+    }
+    if (hint) hint.textContent = '';
+    if (submit) submit.disabled = true;
+    await settlePendingViewSave(mapId);
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ expected_revision: mapRevisionFor(mapId), name }),
+      });
+      const updated = payload?.map && typeof payload.map === 'object' ? payload.map : null;
+      applyMapRenameResult(mapId, name, updated);
+      closeTagMenu();
+      setStatus('地图已重命名。', 'waiting');
+    } catch (error) {
+      if (submit) submit.disabled = false;
+      if (hint) hint.textContent = mapRenameErrorMessage(error);
+      setStatus(`重命名失败：${mapRenameErrorMessage(error)}`, 'error');
+    }
+  }
+
+  // 重命名成功后手动同步本地状态与视图（不依赖 loadMaps 重设 state.map）。
+  function applyMapRenameResult(mapId, name, updated) {
+    const index = state.maps.findIndex((m) => m.map_id === mapId);
+    const revision = Number(updated?.revision);
+    const displayName = updated?.name || name;
+    if (index >= 0) {
+      const patch = { name: displayName };
+      if (Number.isInteger(revision)) patch.revision = revision;
+      state.maps[index] = { ...state.maps[index], ...patch };
+    }
+    const isSelected = Boolean(state.map && state.map.map_id === mapId);
+    if (isSelected) {
+      state.map = { ...state.map, name: displayName };
+      if (Number.isInteger(revision)) state.map.revision = revision;
+      if (refs.currentTitle) refs.currentTitle.textContent = mapTitle(state.map);
+      renderCurrentMeta();
+    }
+    // 保留列表筛选与选中态：renderMapList 只重建 DOM，不改 state.listQuery/listStatus/listTagId。
+    renderMapList();
+    renderTagFilterBar();
+  }
+
+  async function submitMapDelete(mapId, cancelButton, confirmButton) {
+    const map = tagMenuMap(mapId);
+    if (!map) return;
+    if (cancelButton) cancelButton.disabled = true;
+    if (confirmButton) confirmButton.disabled = true;
+    await settlePendingViewSave(mapId);
+    try {
+      await request(`/${encodeURIComponent(mapId)}`, { method: 'DELETE' });
+    } catch (error) {
+      if (cancelButton) cancelButton.disabled = false;
+      if (confirmButton) confirmButton.disabled = false;
+      setStatus(`删除失败：${mapDeleteErrorMessage(error)}`, 'error');
+      return;
+    }
+    closeTagMenu();
+    await finalizeMapDeletion(mapId);
+  }
+
+  async function finalizeMapDeletion(mapId) {
+    const wasSelected = state.selectedMapId === mapId || state.map?.map_id === mapId;
+    state.maps = state.maps.filter((m) => m.map_id !== mapId);
+    // 标签本身仍存在：筛选条保留，只清理被删地图相关的筛选命中。
+    if (state.listTagId && !state.maps.some((m) => (m.tags || []).some((tag) => tag?.tag_id === state.listTagId))) {
+      state.listTagId = null;
+      renderTagFilterBar();
+    }
+    renderMapList();
+    const nextMap = filteredMaps()[0] || state.maps[0] || null;
+    if (wasSelected && nextMap) {
+      // selectMap → resetMapSelectionState 会 ++state.mapRequest，使在途 graph/groups 请求失效。
+      await selectMap(nextMap.map_id);
+      setStatus(`地图已删除；已切换到「${mapTitle(nextMap)}」。`, 'waiting');
+      return;
+    }
+    if (wasSelected) {
+      applyEmptyMapSelection();
+      setStatus('地图已删除；当前没有其它地图，点击“新建地图”重新开始。', 'waiting');
+      return;
+    }
+    setStatus('地图已删除。', 'waiting');
+    // Q-3②：删除已生效（上面已从本地 state.maps 移除），若重取列表失败须明确告知
+    // 用户当前状态，并提示点刷新重试；loadMaps 的通用提示保留给其它调用方。
+    const refreshed = await loadMaps();
+    if (refreshed === false) {
+      setStatus('地图已在本地移除，但列表刷新失败，请点击刷新重新加载地图列表。', 'error');
+    }
+  }
+
+  // 无其它地图时的显式空态：selectMap() 无参数会直接 return，不能依赖它清状态。
+  function applyEmptyMapSelection() {
+    ++state.mapRequest;
+    state.selectedMapId = null;
+    state.map = null;
+    state.graph = null;
+    state.groups = [];
+    state.job = null;
+    state.selectedNodeId = null;
+    state.selectedNode = null;
+    state.positions = Object.create(null);
+    state.positionsMapId = null;
+    state.positionsDirty = false;
+    state.viewDirty = false;
+    state.layoutPendingIds.clear();
+    state.layoutPreview = null;
+    state.layoutPreviewActive = false;
+    renderMapList();
+    renderGroups();
+    renderNodeDetail(null);
+    renderGraph();
+    renderJobActions();
+    if (refs.currentTitle) refs.currentTitle.textContent = '选择一张地图';
+    renderCurrentMeta();
+  }
+
+  function openTagMenu(mapId, anchor) {
+    const map = tagMenuMap(mapId);
+    if (!map) return;
+    closeTagMenu(false);
+    const menu = createElement('div', 'literature-map-card-menu');
+    menu.setAttribute('role', 'menu');
+    menu._anchor = anchor;
+    menu._view = 'settings';
+    refs.root.append(menu);
+    refs.tagMenu = menu;
+    state.tagMenuOpenFor = mapId;
+    showTagMenuView('settings');
+    attachTagMenuDismiss(anchor);
+  }
+
+  async function saveMapTags(mapId, tagIds, menu, anchor) {
+    const button = menu ? menu.querySelector('.literature-map-card-menu-save') : null;
+    if (button) button.disabled = true;
+    try {
+      const payload = await request(`/${encodeURIComponent(mapId)}/tags`, {
+        method: 'PUT',
+        body: JSON.stringify({ tag_ids: tagIds }),
+      });
+      const map = state.maps.find((m) => m.map_id === mapId);
+      if (map) map.tags = Array.isArray(payload?.tags) ? payload.tags.filter(Boolean) : [];
+      renderMapList();
+      renderTagFilterBar();
+      setStatus('标签已保存。', 'waiting');
+      closeTagMenu();
+    } catch (error) {
+      if (button) button.disabled = false;
+      setStatus(`标签保存失败：${tagErrorMessage(error)}`, 'error');
+    }
+  }
+
+  async function createTag(mapId, name, color, selected, menu, anchor) {
+    let values;
+    try {
+      values = { name: normalizeTagName(name), color: normalizeHexColor(color) || '#8d80e6' };
+    } catch (error) {
+      setStatus(tagErrorMessage(error), 'error');
+      return;
+    }
+    const createButton = menu ? menu.querySelector('.literature-map-card-menu-create') : null;
+    if (createButton) createButton.disabled = true;
+    try {
+      const tag = await request('/tags', {
+        method: 'POST',
+        body: JSON.stringify({ name: values.name, color: values.color }),
+      });
+      if (!state.tags.some((t) => t.tag_id === tag.tag_id)) state.tags.push(tag);
+      selected.add(tag.tag_id);
+      renderTagFilterBar();
+      // POST /tags 后自动把当前地图加入新标签（绑定）。
+      await saveMapTags(mapId, [...selected], menu, anchor);
+    } catch (error) {
+      if (createButton) createButton.disabled = false;
+      setStatus(`新建标签失败：${tagErrorMessage(error)}`, 'error');
+    }
+  }
+
+  async function renameTag(tag, button) {
+    if (!tag) return;
+    const nextName = window.prompt('请输入新的标签名称', tag.name);
+    if (nextName === null) return;
+    let normalized;
+    try {
+      normalized = normalizeTagName(nextName);
+    } catch (error) {
+      setStatus(tagErrorMessage(error), 'error');
+      return;
+    }
+    if (button) button.disabled = true;
+    try {
+      const updated = await request(`/tags/${tag.tag_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: normalized }),
+      });
+      const existing = state.tags.find((t) => t.tag_id === tag.tag_id);
+      if (existing) {
+        existing.name = updated?.name || normalized;
+        if (updated?.color) existing.color = updated.color;
+      }
+      renderTagFilterBar();
+      renderMapList();
+      setStatus('标签已重命名。', 'waiting');
+      closeTagMenu();
+    } catch (error) {
+      if (button) button.disabled = false;
+      setStatus(`重命名失败：${tagErrorMessage(error)}`, 'error');
+    }
+  }
+
+  async function deleteTag(tag, button) {
+    if (!tag) return;
+    if (!window.confirm(`确定删除标签「${tag.name}」？该标签会从所有地图移除。`)) return;
+    if (button) button.disabled = true;
+    try {
+      await request(`/tags/${tag.tag_id}`, { method: 'DELETE' });
+      state.tags = state.tags.filter((t) => t.tag_id !== tag.tag_id);
+      state.maps.forEach((m) => {
+        if (Array.isArray(m.tags)) m.tags = m.tags.filter((t) => t.tag_id !== tag.tag_id);
+      });
+      if (state.listTagId === tag.tag_id) state.listTagId = null;
+      renderTagFilterBar();
+      renderMapList();
+      setStatus('标签已删除。', 'waiting');
+      closeTagMenu();
+    } catch (error) {
+      if (button) button.disabled = false;
+      setStatus(`删除失败：${tagErrorMessage(error)}`, 'error');
+    }
   }
 
   function renderMultiSelectControls() {
@@ -2254,8 +2955,10 @@
       } else if (!state.map) {
         setStatus('选择一张地图查看已保存的图谱。');
       }
+      return true;
     } catch (error) {
       setStatus(`地图列表加载失败：${errorAction(error, '请确认服务已启动后重试。')}`, 'error');
+      return false;
     }
   }
 
@@ -5918,6 +6621,7 @@
       return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
     };
     const failedItems = Array.isArray(candidate.failed_items) ? candidate.failed_items.slice(0, 50) : [];
+    const skippedItems = Array.isArray(candidate.skipped_items) ? candidate.skipped_items.slice(0, 50) : [];
     return {
       map_id: candidate.map_id || state.selectedMapId,
       queue_job_id: candidate.queue_job_id || null,
@@ -5932,6 +6636,7 @@
         skipped: count(counts.skipped),
       },
       current: candidate.current && typeof candidate.current === 'object' ? candidate.current : null,
+      skipped_items: skippedItems,
       failed_items: failedItems,
     };
   }
@@ -5990,6 +6695,30 @@
     return safeAnalysisReason(metadataText(item, '某个分析项'), '某个分析项');
   }
 
+  // 切换「主题相似」图层时给出可见状态提示（数量取自当前图 similarity 边）。
+  function showSimilarityLayerHint(visible) {
+    const container = refs.root?.querySelector('.literature-map-layer-tools');
+    if (!container) return;
+    let hint = container.querySelector('.literature-map-layer-hint');
+    if (!hint) {
+      hint = createElement('span', 'literature-map-layer-hint', '');
+      hint.setAttribute('role', 'status');
+      container.append(hint);
+    }
+    const count = normalizeEdges(state.graph || {}).filter((edge) => edge?.kind === 'similarity').length;
+    hint.textContent = visible ? `已显示 ${count} 条主题相似连线` : `已隐藏 ${count} 条主题相似连线`;
+    hint.hidden = false;
+    if (hint._layerHintTimer) clearTimeout(hint._layerHintTimer);
+    hint._layerHintTimer = setTimeout(() => { hint.hidden = true; }, 2800);
+  }
+
+  // 跳过项的论文标识：优先用标题，缺失时回落 node_id 短码（过长截断，保留尾部）。
+  function shortNodeCode(nodeId) {
+    const id = String(nodeId || '').trim();
+    if (!id) return '某个分析项';
+    return id.length > 12 ? `…${id.slice(-12)}` : id;
+  }
+
   function renderAnalysisQueue() {
     if (!refs.queuePanel) return;
     refs.queuePanel.replaceChildren();
@@ -6044,6 +6773,20 @@
     if (queue.failed_items?.length) {
       const failed = createElement('p', 'literature-map-analysis-queue-failed', `失败项 ${queue.failed_items.length} 个：${queue.failed_items.slice(0, 5).map(queueItemLabel).join('、')}`);
       refs.queuePanel.append(failed);
+    }
+    // FE-1b④：跳过明细（后端 skipped_items）。只列论文（优先 title，缺失回落 node_id 短码）与中文原因，
+    // 不加重试/补摘要按钮；skipped_items 为空时本块整体不渲染。
+    if (queue.skipped_items?.length) {
+      const skipped = createElement('div', 'literature-map-analysis-queue-skipped');
+      skipped.append(createElement('p', 'literature-map-analysis-queue-skipped-title', `跳过项 ${queue.skipped_items.length} 个：`));
+      const list = createElement('ul', 'literature-map-analysis-queue-skipped-list');
+      queue.skipped_items.forEach((item) => {
+        const label = item?.title || shortNodeCode(item?.node_id);
+        const reason = safeAnalysisReason(item?.skip_reason, '（原因未提供）');
+        list.append(createElement('li', 'literature-map-analysis-queue-skipped-item', `${label}：${reason}`));
+      });
+      skipped.append(list);
+      refs.queuePanel.append(skipped);
     }
   }
 

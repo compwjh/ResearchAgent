@@ -116,6 +116,9 @@ function makeSandbox() {
   vm.runInContext(
     [
       `const PARTIAL_MAP_CARD_NOTICE = ${JSON.stringify(PARTIAL_BADGE_TITLE)};`,
+      // FE-1a 让 renderMapList 调用 renderMapCardTags，但本测试只校验徽标/计数，不校验标签，
+      // 故在沙箱里桩一个返回 null 的实现（不影响任何既有断言，仅让 renderMapList 可运行）。
+      'function renderMapCardTags() { return null; }',
       createElementSrc,
       setHiddenSrc,
       normalizeMapNodeCountSrc,
@@ -131,6 +134,7 @@ function makeSandbox() {
       'this.__renderMapList = renderMapList;',
       'this.__normalizeMap = normalizeMap;',
       'this.__mapStatusLabel = mapStatusLabel;',
+      'this.__filteredMaps = filteredMaps;',
     ].join('\n'),
     sandbox,
   );
@@ -263,14 +267,38 @@ for (const [status, label] of [
   assert.equal(card.badge.getAttribute('title'), null, `status=${status} 不得挂 partial 说明 title`);
 }
 
-// ---- 8. 全局 label 表与筛选下拉不受影响 ----
+// ---- 8. 筛选谓词与「可用」徽标同一语义 + label/dropdown 不变 ----
 {
   const sandbox = makeSandbox();
+  // label 表与下拉保持原样（不随卡片徽标局部映射改变）
   assert.equal(sandbox.__mapStatusLabel('partial'), '部分完成', 'mapStatusLabel(partial) 必须保持「部分完成」');
   assert.ok(
     MODULE.includes("['partial', '部分完成']"),
     '状态筛选下拉里的 partial 仍是「部分完成」，不随卡片徽标局部映射改变',
   );
+
+  // 新正确语义：选「可用」筛选时，partial 且有活动节点的地图也应出现（与卡片徽标同一「可用集合」）
+  const ready = sandbox.__normalizeMap({ map_id: 'g8a', name: 'A', topic: 't', status: 'ready', node_count: 5 });
+  const partialUsable = sandbox.__normalizeMap({ map_id: 'g8b', name: 'B', topic: 't', status: 'partial', node_count: 5 });
+  const partialNoNode = sandbox.__normalizeMap({ map_id: 'g8c', name: 'C', topic: 't', status: 'partial', node_count: 0 });
+  sandbox.state.maps = [ready, partialUsable, partialNoNode];
+
+  sandbox.state.listStatus = 'ready';
+  assert.deepEqual(
+    sandbox.__filteredMaps().map((m) => m.map_id).sort(),
+    ['g8a', 'g8b'],
+    '「可用」筛选必须同时包含 ready 与 partial+有节点（与卡片徽标同一集合）',
+  );
+
+  sandbox.state.listStatus = 'partial';
+  assert.deepEqual(
+    sandbox.__filteredMaps().map((m) => m.map_id).sort(),
+    ['g8b', 'g8c'],
+    '「部分完成」筛选仍按原始 status==="partial" 严格匹配（含无节点项）',
+  );
+
+  sandbox.state.listStatus = 'all';
+  assert.equal(sandbox.__filteredMaps().length, 3, '「全部状态」应显示全部地图');
 }
 
 // ---- 9. normalizeMap 透传 node_count；非法值视为缺失 ----

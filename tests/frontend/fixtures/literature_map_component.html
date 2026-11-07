@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=29">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=31">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -456,9 +456,10 @@
       queue_job_id: queueMode ? 'queue-fixture' : null,
       state: queueMode ? 'active' : 'completed',
       pause_reason: null,
-      counts: queueMode ? { total: 4, completed: 1, queued: 1, running: 1, failed: 1, skipped: 0 } : { total: 0, completed: 0, queued: 0, running: 0, failed: 0, skipped: 0 },
+      counts: queueMode ? { total: 4, completed: 1, queued: 1, running: 1, failed: 1, skipped: 2 } : { total: 0, completed: 0, queued: 0, running: 0, failed: 0, skipped: 0 },
       current: queueMode ? { analysis_id: 'analysis-queue-current', node_id: 'node-a', status: 'running' } : null,
       failed_items: queueMode ? [{ analysis_id: 'analysis-queue-failed', node_id: 'node-b', retryable: true }] : [],
+      skipped_items: queueMode ? [{ node_id: 'node-skip-1', title: '跳过论文一', skip_reason: 'MAP_ABSTRACT_UNAVAILABLE', retryable: false }, { node_id: 'node-skip-2', skip_reason: 'MAP_ABSTRACT_UNAVAILABLE', retryable: false }] : [],
     };
     const queueEnvelope = () => ({ schema_version: 'literature-map-v1', ...queueState, counts: { ...queueState.counts }, current: queueState.current ? { ...queueState.current } : null, failed_items: queueState.failed_items.map((item) => ({ ...item })) });
     if (latestRestore) mockGraph.latest_job = { ...mockGraph.latest_job, job_id: 'job-restore', operation: 'restore', status: 'completed', step: 'restore' };
@@ -1123,7 +1124,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=43"></script>
+  <script src="../../../frontend/literature-maps.js?v=45"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>
