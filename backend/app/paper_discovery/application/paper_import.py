@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import os
 import shutil
 import stat
 import tempfile
@@ -273,6 +274,32 @@ def _cleanup_download(
     return "cleanup_pending"
 
 
+def _rmtree_is_symlink_attack_resistant() -> bool:
+    """Return True when ``shutil.rmtree`` removes trees without following symlinks.
+
+    The upstream marker ``shutil.rmtree.avoids_symlink_attacks`` is missing when
+    ``rmtree`` has been wrapped by a shim that does not forward the attribute.
+    In that case fall back to the same capability the stdlib itself relies on:
+    file-descriptor-based removal (``shutil._use_fd_functions``) together with
+    ``O_NOFOLLOW`` and dir-fd support on the required syscalls.
+    """
+    marker = getattr(shutil.rmtree, "avoids_symlink_attacks", None)
+    if marker is not None:
+        return bool(marker)
+    # Judge by capability *name*, not by function-object identity.  A
+    # sitecustomize shim may replace ``os.unlink`` / ``os.rmdir`` with new
+    # function objects while ``os.supports_dir_fd`` still holds the originals,
+    # so an identity-based ``issubset`` would falsely report no fd support and
+    # leave import-owned attempt roots behind.  The names below are the stable
+    # public identifiers the stdlib's fd-based removal relies on.
+    fd_capable_names = {getattr(fn, "__name__", "") for fn in os.supports_dir_fd}
+    return bool(
+        getattr(shutil, "_use_fd_functions", False)
+        and hasattr(os, "O_NOFOLLOW")
+        and {"open", "stat", "unlink", "rmdir"}.issubset(fd_capable_names)
+    )
+
+
 def _cleanup_attempt_root(
     root: Optional[Path],
     *,
@@ -289,7 +316,7 @@ def _cleanup_attempt_root(
         return
     try:
         root_path = Path(root)
-        if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
+        if not _rmtree_is_symlink_attack_resistant():
             return
         root_stat = root_path.lstat()
         if not stat.S_ISDIR(root_stat.st_mode) or root_path.is_symlink():
