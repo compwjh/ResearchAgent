@@ -1,6 +1,7 @@
 # Spec044 合并 main 部署后确认（2026-11-08 11:38 CST）
 
-> 依据 `deploy/VERIFICATION.md` 第 1–7 节逐项确认。仅记录脱敏的状态、版本与结果摘要。
+> 依据 `deploy/VERIFICATION.md` 第 1–7 节的可适用项逐项确认。仅记录脱敏的状态、版本与结果摘要。
+> **未执行项如实说明**：未执行「创建测试会话 → 手动 `POST /compactions`」，以免改动用户真实会话数据；本 spec 不涉及上下文压缩链路，全量回归已覆盖该领域测试。其余接口均为真实只读确认。
 > 服务：`http://127.0.0.1:8000`（`launchctl` 托管 `com.researchagent.recovery8000`，PID 88588）。
 > 分支：`feature/spec-044-conversation-answer-display-and-provenance` @ `74573d7d`，合并前 `main` @ `715a2d7b`。
 
@@ -80,3 +81,20 @@ vendor/katex/katex.min.js?v=1
 - Reranker 模型文件缺失 → 服务以 RRF 降级模式运行，**未声称已启用精排**。
 - SSE `progress` 帧按设计不携带 `detail_json`，证据明细经历史接口水合。
 - 全量回归有 OTel 导出到 `127.0.0.1:3000` 连接被拒的非阻塞告警；浏览器 4 条 404 来自历史会话列表已删除会话的 GET。
+
+## 9. 合并与推送结果（2026-11-08 补录）
+
+```
+git checkout main                                            → Switched to branch 'main'
+git merge --squash feature/spec-044-...                       → 100 files staged，无冲突标记
+git commit -F <msg>                                          → ce47ee16（1 个 squash 提交）
+git diff --quiet HEAD feature/spec-044-...                    → exit 0（tree 与 feature 完全一致）
+git diff --check                                             → OK
+git push origin main                                         → 715a2d7b..ce47ee16  main -> main（非 force）
+git fetch origin --prune && git rev-list --left-right --count main...origin/main → 0  0
+git merge-base --is-ancestor 715a2d7b origin/main             → exit 0（上一版 main 保留，可回滚）
+```
+
+- 远端 `origin/main` HEAD = `ce47ee16`，与本地 `main` 完全一致；远端 spec-044 分支本就不存在（从未 push 该分支），故无需删除远端分支。
+- 本地源分支采用 `git branch -D` 删除：squash 合并不产生 merge 关系，`git branch -d` 会报「not fully merged」；删除前已用 tree 一致性 + 远端已推送 + 上一版 main 可回滚三点确认内容零丢失。
+- 服务未重启（代码与合并前运行版本完全相同），合并后再次探活见第 3 节结果，全部 200。
