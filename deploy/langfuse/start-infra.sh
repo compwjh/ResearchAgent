@@ -9,7 +9,29 @@
 
 set -euo pipefail
 
-PGBIN="/opt/homebrew/opt/postgresql@17/bin"
+# postgresql@17 的 bin 目录：优先 brew --prefix，再回退 Intel / Apple Silicon 常见 prefix
+PGBIN=""
+BREW_PREFIX="$(brew --prefix 2>/dev/null || true)"
+if [ -n "$BREW_PREFIX" ] && [ -x "$BREW_PREFIX/opt/postgresql@17/bin/pg_ctl" ]; then
+  PGBIN="$BREW_PREFIX/opt/postgresql@17/bin"
+else
+  for cand in "/usr/local/opt/postgresql@17/bin" "/opt/homebrew/opt/postgresql@17/bin"; do
+    if [ -x "$cand/pg_ctl" ]; then PGBIN="$cand"; break; fi
+  done
+fi
+if [ -z "$PGBIN" ]; then
+  echo "[FAIL] 未找到 postgresql@17 的 pg_ctl；请先执行：brew install postgresql@17"
+  exit 1
+fi
+
+# redis-server / minio 走 PATH 查找，缺失时明确报错（不要静默失败）
+for bin in redis-server minio; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "[FAIL] 未找到 $bin；请先执行：brew install redis minio（并确认 brew --prefix/bin 在 PATH 中）"
+    exit 1
+  fi
+done
+
 PGDATA="$HOME/opt/pgdata"
 CH_DIR="$HOME/opt/clickhouse"
 CH_DATA="$HOME/opt/clickhouse/data"
@@ -46,8 +68,18 @@ echo "[1/4] ClickHouse"
 if [ ! -x "$CH_DIR/clickhouse" ]; then
   echo "  [DL]  下载 ClickHouse 稳定版 26.4（官方二进制，非 master 构建）"
   mkdir -p "$CH_DIR"
+  CH_MACHINE="$(uname -m)"
+  case "$CH_MACHINE" in
+    arm64)  CH_ARCH="macos-aarch64" ;;
+    x86_64) CH_ARCH="macos" ;;
+    *)
+      echo "  [FAIL] 不支持的 CPU 架构：$CH_MACHINE（仅支持 arm64 / x86_64）"
+      exit 1
+      ;;
+  esac
+  echo "  [DL]  $CH_MACHINE -> $CH_ARCH"
   curl -sL --max-time 500 -o "$CH_DIR/clickhouse" \
-    "https://builds.clickhouse.com/26.4/macos-aarch64/clickhouse"
+    "https://builds.clickhouse.com/26.4/$CH_ARCH/clickhouse"
   chmod +x "$CH_DIR/clickhouse"
 fi
 if port_up 8123; then

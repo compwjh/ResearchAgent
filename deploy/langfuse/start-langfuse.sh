@@ -8,12 +8,26 @@
 #   bash deploy/langfuse/start-langfuse.sh --migrate    # 先跑 Prisma + ClickHouse 迁移再启动
 #
 # 前置：bash deploy/langfuse/start-infra.sh
-# 注意：Langfuse 要求 Node 24，本机系统默认是 v26，必须切到 nvm 的 v24.20.0
+# 注意：Langfuse 要求 Node 24；默认优先 ~/opt/node24/bin，可用 NODE_BIN=/path/to/bin 覆盖
 
 set -euo pipefail
 
-LANG_FUSE_DIR="/Users/wjh/ResearchAgent/vendor/langfuse"
-NODE_BIN="/Users/wjh/.nvm/versions/node/v24.20.0/bin"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LANG_FUSE_DIR="${LANG_FUSE_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)/vendor/langfuse}"
+# Node 24 的 bin 目录：可覆盖，未指定时依次探测 ~/opt/node24 / nvm v24 / brew node@24
+NODE_BIN="${NODE_BIN:-}"
+if [ -z "$NODE_BIN" ]; then
+  for cand in \
+    "$HOME/opt/node24/bin" \
+    "$HOME"/.nvm/versions/node/v24.*/bin \
+    "$(brew --prefix 2>/dev/null || echo /usr/local)/opt/node@24/bin"; do
+    if [ -x "$cand/node" ]; then NODE_BIN="$cand"; break; fi
+  done
+fi
+if [ -z "$NODE_BIN" ]; then
+  echo "[FAIL] 未找到 Node 24：已尝试 ~/opt/node24/bin、nvm v24、brew node@24；可用 NODE_BIN=/path/to/bin 指定"
+  exit 1
+fi
 RUN_MIGRATE="false"
 [ "${1:-}" = "--migrate" ] && RUN_MIGRATE="true"
 
@@ -33,7 +47,7 @@ if [ ! -x "$NODE_BIN/node" ]; then
   exit 1
 fi
 
-export PATH="$NODE_BIN:/opt/homebrew/bin:$PATH"
+export PATH="$NODE_BIN:$(brew --prefix 2>/dev/null || echo /usr/local)/bin:$PATH"
 echo "  [OK]   Node $(node -v) / pnpm $(corepack pnpm -v 2>/dev/null || echo '?')"
 
 # ---------- 1. 基础设施就绪检查 ----------

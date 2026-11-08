@@ -6,6 +6,7 @@ sk-lf-local-dev-0001），非真实密钥；仅用于本机 Langfuse 只读导�
 from __future__ import annotations
 
 import os
+import re
 
 # ---------- 本机服务端点（全部 loopback，离线前提） ----------
 LANGFUSE_BASE = os.getenv("LANGFUSE_BASE", "http://127.0.0.1:3000")
@@ -20,6 +21,24 @@ ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"}
 PRIMARY_JUDGE = os.getenv("PRIMARY_JUDGE", "qwen3.5:9b")
 FALLBACK_JUDGE = os.getenv("FALLBACK_JUDGE", "qwen3.8:27b")
 REPEATS = 3  # 同一条温度 0 重复评分次数（判官自一致门禁）
+
+# 判官请求固定 seed（可复现基线）；不改变 temperature:0 / think:False /
+# num_predict:160 的确定性语义，仅让同输入同模型两次调用结果可比。
+JUDGE_SEED = 42
+
+# ---------- 共享脱敏正则（runner / cli / report 三处收敛为一处） ----------
+# URL userinfo（含凭据）脱敏：匹配任意 scheme 的 `scheme://user@host`。
+_URL_USERINFO_RE = re.compile(
+    r"(?P<prefix>[a-z][a-z0-9+.-]*://)(?P<userinfo>[^/\s@]+)@",
+    re.IGNORECASE,
+)
+# 赋值式凭据脱敏（authorization/api_key/token/key/secret/... = value）。
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?P<key>authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"password|secret|credential|token|key)(?P<separator>\s*[:=]\s*)"
+    r"(?P<value>[^\s,;]+)",
+    re.IGNORECASE,
+)
 
 # 判官自一致门禁：3 次标签完全一致的项占比 >= 此值才算「稳定」
 SELF_CONSISTENCY_THRESHOLD = 0.90

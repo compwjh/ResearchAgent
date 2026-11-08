@@ -9,11 +9,105 @@ from __future__ import annotations
 
 import re
 import string
+from collections import Counter
+from collections.abc import Mapping
+from dataclasses import dataclass
 
-from .config import ENUM_MAPS, OLLAMA_BASE, PROMPTS
+from .config import ENUM_MAPS, JUDGE_SEED, OLLAMA_BASE, PROMPTS
 from .offline_guard import http_post_json
 
 _ANSWER_RE = re.compile(r"answer\s*:\s*([a-z_]+)", re.IGNORECASE)
+
+
+# 平票裁决规则（与 dict 插入顺序无关、确定性）。记录在报告 metadata 的
+# ``tie_break_rule`` 中，便于跨运行复现与历史结果对照。
+TIE_BREAK_RULE = (
+    "majority_label: among labels tied at the top count, prefer the label with "
+    "the highest mapped score (per task ENUM_MAPS); ties broken alphabetically"
+)
+
+
+@dataclass
+class JudgeResult:
+    """Shared result of judging one item with one model (repeats calls)."""
+
+    model: str
+    task: str
+    labels: list[str]
+    scored_calls: list[dict]
+    all_calls: list[dict]
+    unavailable_count: int
+    all_unavailable: bool
+    majority: str | None
+
+
+def _majority_label(labels: list[str], task: str | None = None) -> str | None:
+    """多数投票标签，平票时与标签插入顺序无关（确定性）。
+
+    规则：取计数最高的标签集合；若唯一直接返回；若平票则在候选中按
+    (映射分数降序, 标签字母序) 排序取首个。
+    """
+    if not labels:
+        return None
+    counts = Counter(labels)
+    top = max(counts.values())
+    candidates = [label for label, count in counts.items() if count == top]
+    if len(candidates) == 1:
+        return candidates[0]
+    enums = ENUM_MAPS.get(task, {})
+
+    def sort_key(label: str) -> tuple[float, str]:
+        score = enums.get(label)
+        score_key = float(score) if isinstance(score, (int, float)) else float("-inf")
+        return (-score_key, label)
+
+    return sorted(candidates, key=sort_key)[0]
+
+
+def judge_majority(
+    model: str,
+    task: str,
+    question: str,
+    answer: str,
+    repeats: int = 3,
+    ctx: str | None = None,
+) -> JudgeResult:
+    """共用 judge 编排入口：对单条用单模型重复评分，返回标签与多数票。
+
+    runner / consistency / memory_probe 三处此前各写一份近似逻辑，现统一收敛
+    到此处，保证平票裁决与不可用判定一致。``all_unavailable`` 仅在所有 repeats
+    都不可用时为 True；否则 ``labels`` 为已成功评分的标签列表。
+    """
+    calls = judge_repeats(model, task, question, answer, repeats, ctx=ctx)
+    labels: list[str] = []
+    scored_calls: list[dict] = []
+    unavailable_count = 0
+    if isinstance(calls, list):
+        for call in calls:
+            if not isinstance(call, Mapping):
+                unavailable_count += 1
+                continue
+            if call.get("status") == "scored":
+                label = call.get("label")
+                if isinstance(label, str):
+                    labels.append(label)
+                    scored_calls.append(call)
+                else:
+                    unavailable_count += 1
+            else:
+                unavailable_count += 1
+    all_unavailable = isinstance(calls, list) and bool(calls) and unavailable_count == len(calls)
+    majority = _majority_label(labels, task) if labels else None
+    return JudgeResult(
+        model=model,
+        task=task,
+        labels=labels,
+        scored_calls=scored_calls,
+        all_calls=calls if isinstance(calls, list) else [],
+        unavailable_count=unavailable_count,
+        all_unavailable=all_unavailable,
+        majority=majority,
+    )
 
 
 def _render(tmpl: str, q: str, a: str, ctx: str | None = None) -> str:
@@ -61,6 +155,7 @@ def call_ollama(model: str, messages: list[dict], timeout: int = 180) -> str:
     body = {
         "model": model,
         "think": False,
+        "seed": JUDGE_SEED,
         "messages": messages,
         "options": {"temperature": 0, "num_predict": 160},
         "stream": False,

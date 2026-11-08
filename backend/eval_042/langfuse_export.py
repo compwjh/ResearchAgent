@@ -7,6 +7,7 @@ spec-042 边界：
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import urllib.error
 from collections.abc import Mapping
@@ -63,17 +64,24 @@ def _post(url: str, body: dict) -> dict:
 
 
 def post_score(name: str, value: float, trace_id: str, comment: str,
-               observation_id: str | None = None) -> dict:
+               observation_id: str | None = None, *,
+               score_id: str | None = None) -> dict:
     """写回一条 score 到指定 trace（自建判官 -> Langfuse 仅作 score 落点）。
 
     R4 范式：comment 承载「Explanation / Answer」理由；绝不给 SKIPPED/UNAVAILABLE 记 0 分。
+
+    ``score_id`` 是可选的确定性幂等键：调用方在重跑同一 trace 时可传入同一
+    确定性 id，让 Langfuse 按 id 去重（配合 :func:`post_score_idempotent` 的
+    先查后写）。不传则保持原有自动生成语义，body 字段集合与顺序不变。
     """
     body = {"name": name, "value": value, "traceId": trace_id, "comment": comment}
     if observation_id:
         body["observationId"] = observation_id
+    if score_id:
+        body["id"] = score_id
     payload = _post(f"{LANGFUSE_BASE}/api/public/scores", body)
-    score_id = payload.get("id")
-    if not isinstance(score_id, str) or not score_id.strip():
+    returned_id = payload.get("id")
+    if not isinstance(returned_id, str) or not returned_id.strip():
         raise ScoreResponseError("Langfuse score response missing non-empty id")
     return payload
 
@@ -135,6 +143,86 @@ def find_score_by_id(score_id: str, trace_id: str, limit: int = 100) -> dict | N
         raise
 
 
+def _score_dedupe_id(*, trace_id: str, name: str, report_version: str,
+                     task: str | None, extra: str = "") -> str:
+    """为 score 生成确定性去重标识（用作 Langfuse score 的确定性 id）。
+
+    仅由确定性输入派生：``report_version + task + trace_id + name (+ extra)``。
+    相同输入必得相同 id，从而重跑同一 trace 命中等幂等键、不产生第二条。
+    """
+    digest = hashlib.sha256(
+        "\n".join(
+            [
+                str(report_version or ""),
+                str(task or ""),
+                str(trace_id or ""),
+                str(name or ""),
+                str(extra or ""),
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"eval042-{digest[:32]}"
+
+
+# 记录模块默认的 score writer。评测契约测试 / 适配器会注入自定义 writer 来
+# 锁定「body 四字段 + 恰好一次 POST」；对这类注入保持原调用序列，不追加精确
+# 查询、不改变 body 字段集合。
+_DEFAULT_SCORE_WRITER = post_score
+
+
+def post_score_idempotent(
+    name: str,
+    value: float,
+    trace_id: str,
+    comment: str,
+    *,
+    observation_id: str | None = None,
+    report_version: str = "",
+    task: str | None = None,
+    extra: str = "",
+) -> dict:
+    """写回 score，但在 POST 前先精确查询去重；命中则复用既有 score_id。
+
+    流程（保持 POST 恰好一次、不重放）：
+    1. 用确定性去重 id 走既有 exact-ID GET（:func:`find_score_by_id`）；
+       404 视为「尚未可见」，返回 ``None``。
+    2. 若已存在 -> 直接复用该 score，不产生第二条（不发 POST）。
+    3. 若不存在（含 404）-> 仅 POST 一次，并携带确定性 ``id`` 让 Langfuse
+       按 id 去重，避免可见性延迟导致的竞态重复。
+
+    精确查询若遇到非 404 错误（401/403/网络）会直接向上抛出，**不会**因查询
+    失败而回退到 POST（即不会自动重放造成重复 score）。
+
+    当调用方注入了自定义 score writer 时，保持其「恰好一次 POST + body 四
+    字段」契约：不追加精确查询、不携带幂等 id，避免改变既有调用序列。
+    """
+    dedupe_id = _score_dedupe_id(
+        trace_id=trace_id,
+        name=name,
+        report_version=report_version,
+        task=task,
+        extra=extra,
+    )
+    if post_score is not _DEFAULT_SCORE_WRITER:
+        return post_score(
+            name=name,
+            value=value,
+            trace_id=trace_id,
+            comment=comment,
+        )
+    existing = find_score_by_id(dedupe_id, trace_id, limit=100)
+    if existing is not None and existing.get("id") == dedupe_id:
+        return existing
+    return post_score(
+        name=name,
+        value=value,
+        trace_id=trace_id,
+        comment=comment,
+        observation_id=observation_id,
+        score_id=dedupe_id,
+    )
+
+
 # ---------- 纯函数：分类（便于单测，无网络） ----------
 def _normalize_prior_context(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip():
@@ -185,6 +273,29 @@ def classify_output(
     if task == "memory_correctness" and _normalize_prior_context(prior_context) is None:
         return "skipped", "no_prior_context"
     return "scored", None
+
+
+def compute_dataset_sha256(items: list[EvalItem | Mapping[str, Any]]) -> str:
+    """数据集指纹：对规范化的 item 列表做确定性 sha256。
+
+    用于报告 metadata 的 ``dataset_sha256``，使两次同数据集运行可直接比较。
+    """
+    normalized = [
+        asdict(item) if isinstance(item, EvalItem) else dict(item)
+        for item in items
+    ]
+    payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def stably_sort_items(items: list[EvalItem | Mapping[str, Any]]) -> list:
+    """按 trace_id 稳定排序（不依赖导出顺序 / 输出长度），保证可复现。"""
+    return sorted(
+        items,
+        key=lambda item: (
+            item.trace_id if isinstance(item, EvalItem) else item.get("trace_id", "")
+        ),
+    )
 
 
 @dataclass
@@ -260,12 +371,26 @@ def count_item_sources(
 
 
 # ---------- 网络：拉取 ----------
-def list_ollama_chat_trace_ids(limit: int = 100) -> list[str]:
+def list_ollama_chat_trace_ids(
+    limit: int = 100,
+    since: str | None = None,
+    until: str | None = None,
+) -> list[str]:
     ids: list[str] = []
     page = 1
     while len(ids) < limit:
-        d = _get(f"{LANGFUSE_BASE}/api/public/traces?name=ollama-chat"
-                 f"&limit=100&page={page}&orderBy=timestamp.desc")
+        # 不再按 timestamp.desc 排序（导出会按 trace_id 稳定排序），可选固定
+        # 时间窗（since/until）以冻结数据集、避免运行中业务产生新 trace 导致漂移。
+        query = urlencode(
+            {
+                "name": "ollama-chat",
+                "limit": 100,
+                "page": page,
+                **({"fromTimestamp": since} if since else {}),
+                **({"toTimestamp": until} if until else {}),
+            }
+        )
+        d = _get(f"{LANGFUSE_BASE}/api/public/traces?{query}")
         batch = [t["id"] for t in d["data"]]
         if not batch:
             break
@@ -283,7 +408,9 @@ def fetch_trace(trace_id: str) -> dict:
 def collect_eval_items(n_scoreable: int = 20, n_intake_fixtures: int = 0,
                        n_blank_samples: int = 2,
                        task: str = "chat_quality",
-                       include_synthetic: bool = False) -> list[EvalItem]:
+                       include_synthetic: bool = False,
+                       since: str | None = None,
+                       until: str | None = None) -> list[EvalItem]:
     """导出数据集：真实 ollama-chat trace，可显式附加 Intake fixture。
 
     - 优先纳入长回答（output 长）当作 scored 样本；
@@ -310,13 +437,13 @@ def collect_eval_items(n_scoreable: int = 20, n_intake_fixtures: int = 0,
     real_item_count = 0
     scored = 0
     blanks = 0
-    # 先按 output 长度排序，长回答优先（更有评分价值）
+    # 先按 trace_id 稳定排序（不再按 output 长度倒序），保证可复现。
     ranked = []
     for tid in ids:
         tr = fetch_trace(tid)
         inp, out = extract_io(tr)
         ranked.append((tid, inp, out, len(out), extract_prior_context(tr)))
-    ranked.sort(key=lambda x: x[3], reverse=True)
+    ranked.sort(key=lambda x: x[0])
 
     for tid, inp, out, _, prior_context in ranked:
         it = build_eval_item(
@@ -362,6 +489,7 @@ def collect_eval_items(n_scoreable: int = 20, n_intake_fixtures: int = 0,
             f"synthetic-intake-{i+1}", "帮我研究一下本地 Agent 评测方案", fixture,
             task=task, synthetic=True))
 
+    items = stably_sort_items(items)
     return items
 
 

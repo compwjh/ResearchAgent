@@ -27,12 +27,14 @@ from backend.app.chat.application.chat_runner import build_role_aware_messages, 
 from backend.app.memory.markdown_store import read_user_memory_or_empty
 from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
-    flush,
+    decide_sampling,
+    enqueue_flush,
     prompt_observation_metadata,
     record_ollama_generation,
     redact_prompt_messages,
     utc_now,
 )
+from backend.app.platform.observability.request_id import bind_request_id
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     ArticleSettings,
@@ -109,6 +111,11 @@ def run_agent(request: ChatRequest):
     article_tasks().save(task)
 
     def generate():
+        # spec-045 Task 06：请求入口绑定统一 ID（手工埋点，不新增中间件）。
+        # SSE 跨 yield 后 ContextVar 会丢，写入点前按同一 rid 重新绑定。
+        rid = bind_request_id()
+        # spec-045 Task 05：在请求入口做出单次采样决策并缓存，使本请求内各阶段共用。
+        decide_sampling()
         yield stream_event("meta", task_id=task.task_id)
         yield stream_event("normalized", normalized_query=task.normalized_query)
         yield stream_event("intent", intent=task.intent, confidence=task.intent_confidence, skill=SKILL_NAME if task.intent == "download_paper" else None)
@@ -139,6 +146,7 @@ def run_agent(request: ChatRequest):
                 except Exception as error:
                     if run.result is not None:
                         try:
+                            bind_request_id(rid)
                             record_ollama_generation(
                                 model=request.model,
                                 prompt_messages=observation_messages,
@@ -151,12 +159,13 @@ def run_agent(request: ChatRequest):
                                 error_type=type(error).__name__,
                                 extra_metadata=observation_metadata,
                             )
-                            flush()
+                            enqueue_flush()
                         except Exception:
                             pass
                     raise
                 if run.result is not None:
                     try:
+                        bind_request_id(rid)
                         record_ollama_generation(
                             model=request.model,
                             prompt_messages=observation_messages,
@@ -166,7 +175,7 @@ def run_agent(request: ChatRequest):
                             tags=["chat", "agent"],
                             extra_metadata=observation_metadata,
                         )
-                        flush()
+                        enqueue_flush()
                     except Exception:
                         pass
                 yield stream_event("done")

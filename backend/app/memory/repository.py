@@ -1146,6 +1146,15 @@ class MemoryRepository:
         conversation = self.get_conversation(conversation_id, owner_id)
         if not conversation:
             raise LookupError("conversation not found")
+        # spec-045 Task 06：三套观测写入路径共用统一值级脱敏；payload 加大小上限
+        # （超限截断并标记，但仍写事件，绝不丢事件）；注入统一 request_id 供串联。
+        # 方法内延迟导入，避免 memory 层与观测层形成导入环。
+        from backend.app.platform.observability import redaction
+        from backend.app.platform.observability.request_id import ensure_request_id
+
+        safe_payload = redaction.redact_payload(payload)
+        safe_payload = redaction.with_request_id(safe_payload, ensure_request_id())
+        safe_payload = redaction.bounded_payload(safe_payload)
         now, event_id = _now(), uuid.uuid4().hex
         try:
             with self.transaction() as db:
@@ -1155,7 +1164,7 @@ class MemoryRepository:
                         raise LookupError("message not found")
                     if message_row["conversation_id"] != conversation_id:
                         raise ValueError("message conversation mismatch")
-                db.execute("INSERT INTO raw_events(event_id, owner_id, conversation_id, message_id, event_kind, payload, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (event_id, owner_id, conversation_id, message_id, event_kind.strip()[:80], json.dumps(payload, ensure_ascii=False, sort_keys=True), idempotency_key, now))
+                db.execute("INSERT INTO raw_events(event_id, owner_id, conversation_id, message_id, event_kind, payload, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (event_id, owner_id, conversation_id, message_id, event_kind.strip()[:80], json.dumps(safe_payload, ensure_ascii=False, sort_keys=True), idempotency_key, now))
         except sqlite3.IntegrityError:
             if idempotency_key:
                 with self.connection() as db:

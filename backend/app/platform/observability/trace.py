@@ -21,6 +21,10 @@ from typing import List, Optional
 
 from backend.app.platform.observability import client as obs_client
 from backend.app.platform.observability import config as obs_config
+from backend.app.platform.observability.request_id import (
+    bind_request_id,
+    get_request_id,
+)
 from backend.app.platform.observability.safe import safe_call
 
 logger = logging.getLogger(__name__)
@@ -83,12 +87,20 @@ def start_trace(
     if client is None:
         return ""
 
-    trace_id = create_trace_id()
+    # spec-045 Task 06：复用请求入口绑定的统一 ID 作为 trace id；没有入口绑定时
+    # 用 create_trace_id() 生成并反向写入 request_id ContextVar，使 Langfuse
+    # trace 与自建 raw_events / research_events / 路由决策记录共用同一值。
+    trace_id = get_request_id() or bind_request_id(create_trace_id())
+    # spec-045 Task 05：在 trace 入口做出单次采样决策并缓存到 ContextVar，
+    # 使本 trace 内各阶段（record_event / record_ollama_generation / phase span）
+    # 共用同一决策，避免采样不一致撕碎瀑布图。
+    obs_config.decide_sampling()
     # 先把 ContextVar 指向本 trace，使 start_trace 之后创建的 observation 自动归入。
     token = _current_trace_id.set(trace_id)
     _trace_token.set(token)
 
     extra_meta = dict(metadata or {})
+    extra_meta["request_id"] = trace_id
     if session_id is not None:
         extra_meta["session_id"] = session_id
     if tags is not None:
@@ -114,6 +126,8 @@ def end_trace() -> None:
 
     没有活动 trace 时安全（no-op）；复位异常也不冒泡。
     """
+    # spec-045 Task 05：同时复位采样决策 ContextVar（与 trace id 同源的调用级状态）。
+    obs_config.reset_sample_decision()
     token = _trace_token.get()
     if token is None:
         return

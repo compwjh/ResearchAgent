@@ -4,6 +4,8 @@
 任何配置缺失或取值非法，都退化为「不上报」而不是抛异常。
 """
 
+import contextlib
+import contextvars
 import logging
 import random
 
@@ -39,8 +41,15 @@ def sample_rate() -> float:
     return rate
 
 
-def should_sample() -> bool:
-    """本次调用是否应被采样上报。"""
+# 采样决策 ContextVar（spec-045 Task 05，F11）：同一 trace/请求级只随机决策一次，
+# 全链路（record_event / record_ollama_generation / record_routing_observation /
+# 各 phase span）共用，避免同一 trace 内各阶段采样不一致撕碎瀑布图。
+_sample_decision = contextvars.ContextVar("obs_sample_decision", default=None)
+_sample_token = contextvars.ContextVar("obs_sample_token", default=None)
+
+
+def _compute_decision() -> bool:
+    """enabled / credentials / 采样率校验 + 随机决策（不缓存）。"""
     if not enabled():
         return False
     if not credentials_ready():
@@ -51,6 +60,43 @@ def should_sample() -> bool:
     if rate >= 1.0:
         return True
     return random.random() < rate
+
+
+def decide_sampling() -> bool:
+    """做出 trace/请求级单次采样决策并缓存到 ContextVar，全链路共用；幂等。
+
+    确定性结果（rate<=0 或 rate>=1）不缓存——它们与配置强相关，配置变化时同上下文
+    内的后续判断应反映最新配置，同时不影响 0<rate<1 随机采样的链路一致性。
+    """
+    cached = _sample_decision.get()
+    if cached is not None:
+        return cached
+    if not enabled() or not credentials_ready():
+        return False
+    rate = sample_rate()
+    if rate <= 0.0 or rate >= 1.0:
+        return rate >= 1.0
+    decision = random.random() < rate
+    token = _sample_decision.set(decision)
+    _sample_token.set(token)
+    return decision
+
+
+def should_sample() -> bool:
+    """本次调用是否应被采样上报（spec-045 Task 05：同 trace 内返回同一决策）。"""
+    cached = _sample_decision.get()
+    if cached is not None:
+        return cached
+    return decide_sampling()
+
+
+def reset_sample_decision() -> None:
+    """复位采样决策 ContextVar（供 trace.end_trace 与测试清理调用）。"""
+    token = _sample_token.get()
+    if token is not None:
+        with contextlib.suppress(ValueError, LookupError):
+            _sample_decision.reset(token)
+        _sample_token.set(None)
 
 
 def route() -> str:

@@ -55,12 +55,16 @@ from backend.app.platform.model_catalog import is_online_model
 # routes below continue to resolve paths through the knowledge-base boundary.
 from backend.app.platform.observability import (
     end_trace,
-    flush,
+    enqueue_flush,
     prompt_observation_metadata,
     record_ollama_generation,
     redact_prompt_messages,
     start_trace,
     utc_now,
+)
+from backend.app.platform.observability.request_id import (
+    bind_request_id,
+    reset_request_id,
 )
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
@@ -1013,6 +1017,9 @@ def kb_ask(request: KBAskRequest):
     chunker = request.chunker or CHUNKER_V1
 
     def generate():
+        # spec-045 Task 06：请求入口绑定统一 ID（手工埋点，不新增中间件）。
+        # SSE 跨 yield 后 ContextVar 会丢，trace / 写入点前按同一 rid 重新绑定。
+        rid = bind_request_id()
         started_at = time.perf_counter()
         started = utc_now()
         yield stream_event("meta", model=request.model, top_k=top_k, chunker=chunker, project_id=request.project_id)
@@ -1021,6 +1028,7 @@ def kb_ask(request: KBAskRequest):
             # 观测初始化也必须隔离；例如 SDK/client 被替换或初始化异常时，
             # 不得阻断检索与 SSE 主链路。
             try:
+                bind_request_id(rid)
                 start_trace("kb-ask", tags=["kb"])
             except Exception:
                 pass
@@ -1073,6 +1081,7 @@ def kb_ask(request: KBAskRequest):
                 # 失败也要留痕：否则失败请求既进不了错误率统计，也丢失了诊断信息。
                 if run.result is not None:
                     try:
+                        bind_request_id(rid)
                         record_ollama_generation(
                             model=request.model,
                             prompt_messages=observation_messages,
@@ -1085,11 +1094,12 @@ def kb_ask(request: KBAskRequest):
                             success=False,
                             error_type=type(error).__name__,
                         )
-                        flush()
+                        enqueue_flush()
                     except Exception:
                         pass
                 return
             try:
+                bind_request_id(rid)
                 record_ollama_generation(
                     model=request.model,
                     prompt_messages=observation_messages,
@@ -1100,7 +1110,7 @@ def kb_ask(request: KBAskRequest):
                     tags=["kb"],
                     extra_metadata={**kb_metadata, **observation_metadata},
                 )
-                flush()
+                enqueue_flush()
             except Exception:
                 # 上报失败绝不影响 SSE 输出，也绝不替换/吞噬原有业务异常。
                 pass
@@ -1115,5 +1125,6 @@ def kb_ask(request: KBAskRequest):
             except Exception:
                 # trace 收尾失败不能改变已经生成的业务结果或 SSE 契约。
                 pass
+            reset_request_id()
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

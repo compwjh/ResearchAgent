@@ -40,17 +40,19 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
-# Langfuse 私有符号：升版改名/移除时不得让整个 observability 模块在**导入期**崩溃
-# （导入期异常不在 safe_call 保护范围内，会连 record_event 一起挂）。故容错导入：
-# 缺失时降级为 None，运行期跳过富化属性，但仍照常创建并上报子 span。
-try:
-    from langfuse._client.attributes import create_span_attributes as _create_span_attributes
-except ImportError:  # pragma: no cover - 仅在 langfuse 私有符号变动时触发
-    _create_span_attributes = None
-
 from backend.app.platform.observability import client as obs_client
 from backend.app.platform.observability import config as obs_config
+from backend.app.platform.observability import redaction
+from backend.app.platform.observability.request_id import ensure_request_id
 from backend.app.platform.observability.safe import safe_call
+from backend.app.platform.observability.sdk_compat import (
+    create_span_attributes as _create_span_attributes,
+)
+from backend.app.platform.observability.sdk_compat import (
+    get_otel_span,
+    get_otel_tracer,
+    set_otel_span_start_time,
+)
 from backend.app.platform.observability.trace import get_current_trace_id
 from backend.app.platform.ollama_direct import OllamaChatResult
 from backend.app.research.application.routing_observation import (
@@ -162,12 +164,13 @@ def _backdate_generation_start(generation: Any, base: datetime) -> None:
     （与 `completion_start_time`、`_report_phase_spans` 同源的起点）。实测：回填
     7000ms 后 Langfuse 读回的 startTime 与 endTime 之差正好 7000ms。
 
-    失效语义（fail-open）：`_otel_span` 缺失、没有 `_start_time` 属性、或 `base` 不在
-    过去，一律**静默跳过**，退化为「起点≈上报时刻」的既有行为，绝不抛异常、不影响业务。
+    私有符号（`generation._otel_span._start_time`）访问已收拢到 sdk_compat：
+    符号缺失时由兼容层**显式降级 + 告警**（不再静默跳过），写失败同样告警，
+    但均不影响 generation 上报与业务。
     """
-    span = getattr(generation, "_otel_span", None)
-    if span is None or not hasattr(span, "_start_time"):
-        logger.debug("generation 底层 otel span 不可回填，跳过（退化为既有行为）")
+    # 兼容层负责访问私有 `_otel_span` 并在缺失时显式告警返回 None。
+    span = get_otel_span(generation)
+    if span is None:
         return
 
     target_ns = _to_ns(base)
@@ -177,10 +180,8 @@ def _backdate_generation_start(generation: Any, base: datetime) -> None:
         logger.debug("回填起点不在过去，跳过（避免未来时间戳）")
         return
 
-    try:
-        span._start_time = target_ns
-    except Exception as error:  # noqa: BLE001 — 回填失败不得影响 generation 上报
-        logger.warning("generation 起点回填失败（已忽略）：%s", type(error).__name__)
+    # 兼容层负责写私有 `_start_time`，写失败显式告警但不影响 generation 上报。
+    set_otel_span_start_time(span, target_ns)
 
 
 # Langfuse 私有属性 key（硬编码字符串而非 import，避免依赖私有符号导致导入失败）。
@@ -235,7 +236,8 @@ def _report_phase_spans(
     不影响其余阶段与 generation 上报。整段已处在 `_report` 的 `safe_call` 内，
     任何意外都不会冒泡到业务。
     """
-    tracer = getattr(langfuse, "_otel_tracer", None)
+    # 私有符号 langfuse._otel_tracer 的访问已收拢到 sdk_compat（缺失时显式告警返回 None）。
+    tracer = get_otel_tracer(langfuse)
     if tracer is None:
         return
 
@@ -350,6 +352,8 @@ def record_ollama_generation(
             input_chars=input_chars,
             extra=extra_metadata,
         )
+        # spec-045 Task 06：Langfuse / raw_events / 路由观测共用同一请求 ID。
+        metadata["request_id"] = ensure_request_id()
         if error_type and not success:
             metadata["error_code"] = str(error_type)
 
@@ -371,7 +375,19 @@ def record_ollama_generation(
             # 延迟分位统计恒为个位数毫秒。必须在建子 span **之前**、generation
             # 被 end **之前**执行；失效时静默退化为既有行为。
             _backdate_generation_start(generation, base)
-            generation.update(output=_truncate(result.content, obs_config.max_output_chars()))
+            # spec-013:101 / spec-045 Task 06：thinking 正文与 content 分离上报。
+            # 只调用一次 update（既有长输出截断契约）；start metadata 保持
+            # Spec024 allowlist（仅 reasoning_present / reasoning_chars）。
+            # 真 SDK 的 update 明确支持 metadata（未知 kwarg 会被忽略），
+            # 故正文同时落在 generation.metadata.thinking 供瀑布图读取。
+            update_fields: Dict[str, Any] = {
+                "output": _truncate(result.content, obs_config.max_output_chars()),
+            }
+            if result.thinking:
+                thinking_text = _truncate(result.thinking, obs_config.max_output_chars())
+                update_fields["thinking"] = thinking_text
+                update_fields["metadata"] = {**metadata, "thinking": thinking_text}
+            generation.update(**update_fields)
             for metric_name in SCORE_METRICS:
                 generation.score(
                     name=metric_name,
@@ -402,11 +418,18 @@ def redact_prompt_messages(messages: Sequence[Dict[str, str]]) -> List[Dict[str,
     """Return observation input for a prompt, preserving role and content.
 
     spec-041：用户已裁决「无需隐私设计，input 与 output 全量可见」，因此
-    ``content`` 原样保留（不再清零）。仅做 role 归一化与 content 缺省兜底，
-    返回结构（逐条 ``{role, content}``）与签名保持不变，调用方用法无需改动。
+    ``content`` 不清零、不整段脱敏，返回结构（逐条 ``{role, content}``）
+    与签名保持不变，调用方用法无需改动。
+
+    spec-045 Task 06：只对**值级精确凭据模式**（sk-* / Bearer / URL 等）做替换，
+    统一走 ``redaction.redact_text``，与 raw_events / 路由观测共用同一口径；
+    普通学术文本逐字保留（含 "token" 一词不会被误伤）。
     """
     return [
-        {"role": str(message.get("role", "unknown")), "content": str(message.get("content", "") or "")}
+        {
+            "role": str(message.get("role", "unknown")),
+            "content": redaction.redact_text(str(message.get("content", "") or "")),
+        }
         for message in messages
     ]
 
@@ -443,7 +466,8 @@ def record_event(
     if langfuse is None:
         return
 
-    extra: Dict[str, Any] = dict(metadata or {})
+    extra: Dict[str, Any] = redaction.redact_payload(dict(metadata or {}))
+    extra["request_id"] = ensure_request_id()
     if duration_ms is not None:
         extra["duration_ms"] = round(max(0.0, duration_ms), 3)
 
@@ -451,11 +475,11 @@ def record_event(
         with langfuse.start_as_current_observation(
             as_type="span",
             name=name,
-            input=input_data,
+            input=redaction.redact_value(input_data),
             metadata=extra or None,
             trace_context=_trace_context(),
          ) as span:
-            span.update(output=output_data)
+            span.update(output=redaction.redact_value(output_data))
 
     safe_call(_report)
 
@@ -481,18 +505,25 @@ def record_routing_observation(
     # client initialization, or Langfuse.  Rejection is intentionally quiet
     # and diagnostic only by field name; values are never logged or emitted.
     try:
+        # spec-045 Task 06：先做统一值级凭据过滤，再过 Spec031 白名单校验。
+        # 否则含 URL / Bearer / sk-* 的 reason 会被 _bounded_text 整条拒绝，
+        # 路由决策记录静默丢失（且没有任何诊断信息）。
+        safe_task_type = redaction.redact_text(str(task_type or ""))
+        safe_chosen_model = redaction.redact_text(str(chosen_model or ""))
+        safe_reason = redaction.redact_text(str(reason or ""))
+        safe_policy_version = redaction.redact_text(str(policy_version or ""))
         allowed_keys = {"tier", "role", "attempt", "worker_grant", "quality_profile", "has_evidence"}
         safe_features = _safe_features({
             str(key): value for key, value in (features or {}).items()
             if str(key) in allowed_keys
         })
         metadata: Dict[str, Any] = {
-            "task_type": _bounded_text(task_type, name="task_type", limit=80),
+            "task_type": _bounded_text(safe_task_type, name="task_type", limit=80),
             "features": safe_features,
             "candidate_models": _safe_models(list(candidate_models or [])[:16]),
-            "chosen_model": _bounded_text(chosen_model, name="chosen_model", limit=128),
-            "reason": _bounded_text(reason, name="reason", limit=256),
-            "policy_version": _bounded_text(policy_version, name="policy_version", limit=80),
+            "chosen_model": _bounded_text(safe_chosen_model, name="chosen_model", limit=128),
+            "reason": _bounded_text(safe_reason, name="reason", limit=256),
+            "policy_version": _bounded_text(safe_policy_version, name="policy_version", limit=80),
         }
         if outcome is not None:
             metadata["outcome"] = {
@@ -500,6 +531,8 @@ def record_routing_observation(
                 for key in ("schema_valid", "quality_score", "ttft", "duration", "tokens", "error_code")
                 if key in outcome
             }
+        metadata = redaction.redact_payload(metadata)
+        metadata["request_id"] = ensure_request_id()
     except Exception as exc:  # noqa: BLE001 - observation must never block routing
         logger.warning("路由观测值被拒绝（已忽略）：%s", type(exc).__name__)
         return

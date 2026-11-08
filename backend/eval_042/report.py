@@ -9,6 +9,8 @@ claiming a cross-file filesystem transaction.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import html
 import json
 import os
@@ -435,10 +437,38 @@ class ReportWriter:
         self.output_dir = _validate_output_dir(output_dir)
         self.json_path = self.output_dir / REPORT_JSON_NAME
         self.markdown_path = self.output_dir / REPORT_MARKDOWN_NAME
+        # Advisory inter-process lock (standard library only).  It covers the
+        # whole checkpoint critical section so concurrent writers sharing
+        # --output-dir cannot interleave the two projections or the rollback.
+        # The kernel releases it automatically if the holding process crashes.
+        self._lock_path = self.output_dir / ".report.writer.lock"
+        self._lock_fd = open(self._lock_path, "a")
         self.document = make_report(metadata)
         # The skeleton is intentionally written immediately so malformed input
         # or a later runtime exception still has a local artifact to update.
         self.checkpoint(self.document)
+
+    @contextlib.contextmanager
+    def _lock(self):
+        """Acquire the advisory exclusive lock for one checkpoint section."""
+        fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+
+    def close(self) -> None:
+        """Release the lock file descriptor (best-effort, idempotent)."""
+        fd = getattr(self, "_lock_fd", None)
+        if fd is None:
+            return
+        with contextlib.suppress(OSError):
+            fd.close()
+
+    def __del__(self) -> None:
+        # The kernel releases the lock on process exit regardless, but close
+        # the descriptor promptly so it is not leaked while the process lives.
+        self.close()
 
     def checkpoint(self, document: dict[str, Any]) -> dict[str, Any]:
         """Write both projections, restoring the prior pair if publication fails."""
@@ -447,58 +477,59 @@ class ReportWriter:
             safe_document, ensure_ascii=False, indent=2, sort_keys=True
         ) + "\n"
         markdown_content = render_markdown(safe_document)
-        json_tmp: str | None = None
-        markdown_tmp: str | None = None
-        previous_json: bytes | None = None
-        previous_markdown: bytes | None = None
-        json_replaced = False
-        markdown_replaced = False
-        try:
-            previous_json = (
-                self.json_path.read_bytes() if self.json_path.exists() else None
-            )
-            previous_markdown = (
-                self.markdown_path.read_bytes()
-                if self.markdown_path.exists()
-                else None
-            )
-            json_tmp = _write_temp(self.json_path, json_content)
-            markdown_tmp = _write_temp(self.markdown_path, markdown_content)
-            os.replace(json_tmp, self.json_path)
-            json_tmp = None
-            json_replaced = True
-            os.replace(markdown_tmp, self.markdown_path)
-            markdown_tmp = None
-            markdown_replaced = True
-        except (OSError, TypeError, ValueError) as exc:
-            rollback_error: BaseException | None = None
+        with self._lock():
+            json_tmp: str | None = None
+            markdown_tmp: str | None = None
+            previous_json: bytes | None = None
+            previous_markdown: bytes | None = None
+            json_replaced = False
+            markdown_replaced = False
             try:
-                if markdown_replaced:
-                    _restore_snapshot(self.markdown_path, previous_markdown)
-                if json_replaced:
-                    _restore_snapshot(self.json_path, previous_json)
-            except (OSError, TypeError, ValueError, UnicodeError) as restore_exc:
-                rollback_error = restore_exc
-            message = (
-                "failed to write local evaluation report "
-                f"({self.json_path.name}, {self.markdown_path.name}): {type(exc).__name__}"
-            )
-            if json_replaced or markdown_replaced:
-                if rollback_error is None:
-                    message += "; previous report pair restored"
-                else:
-                    message += (
-                        "; rollback incomplete: "
-                        f"{type(rollback_error).__name__}"
-                    )
-            raise ReportWriteError(message) from exc
-        finally:
-            for temporary in (json_tmp, markdown_tmp):
-                if temporary:
-                    try:
-                        os.unlink(temporary)
-                    except OSError:
-                        pass
+                previous_json = (
+                    self.json_path.read_bytes() if self.json_path.exists() else None
+                )
+                previous_markdown = (
+                    self.markdown_path.read_bytes()
+                    if self.markdown_path.exists()
+                    else None
+                )
+                json_tmp = _write_temp(self.json_path, json_content)
+                markdown_tmp = _write_temp(self.markdown_path, markdown_content)
+                os.replace(json_tmp, self.json_path)
+                json_tmp = None
+                json_replaced = True
+                os.replace(markdown_tmp, self.markdown_path)
+                markdown_tmp = None
+                markdown_replaced = True
+            except (OSError, TypeError, ValueError) as exc:
+                rollback_error: BaseException | None = None
+                try:
+                    if markdown_replaced:
+                        _restore_snapshot(self.markdown_path, previous_markdown)
+                    if json_replaced:
+                        _restore_snapshot(self.json_path, previous_json)
+                except (OSError, TypeError, ValueError, UnicodeError) as restore_exc:
+                    rollback_error = restore_exc
+                message = (
+                    "failed to write local evaluation report "
+                    f"({self.json_path.name}, {self.markdown_path.name}): {type(exc).__name__}"
+                )
+                if json_replaced or markdown_replaced:
+                    if rollback_error is None:
+                        message += "; previous report pair restored"
+                    else:
+                        message += (
+                            "; rollback incomplete: "
+                            f"{type(rollback_error).__name__}"
+                        )
+                raise ReportWriteError(message) from exc
+            finally:
+                for temporary in (json_tmp, markdown_tmp):
+                    if temporary:
+                        try:
+                            os.unlink(temporary)
+                        except OSError:
+                            pass
         self.document = safe_document
         return safe_document
 

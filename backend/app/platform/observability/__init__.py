@@ -18,8 +18,21 @@
     )
 """
 
-from backend.app.platform.observability import client, config, safe  # noqa: F401
-from backend.app.platform.observability.client import flush, get_client
+from backend.app.platform.observability import (  # noqa: F401
+    client,
+    config,
+    safe,
+    sdk_compat,
+)
+from backend.app.platform.observability.client import (
+    enqueue_flush,
+    flush,
+    get_client,
+)
+from backend.app.platform.observability.config import (
+    decide_sampling,
+    reset_sample_decision,
+)
 from backend.app.platform.observability.spans import (
     derive_metrics,
     prompt_observation_metadata,
@@ -40,14 +53,18 @@ __all__ = [
  "client",
  "config",
  "safe",
+ "sdk_compat",
  "get_client",
  "flush",
+ "enqueue_flush",
+ "decide_sampling",
+ "reset_sample_decision",
  "derive_metrics",
  "prompt_observation_metadata",
  "redact_prompt_messages",
-    "record_event",
-    "record_ollama_generation",
-    "record_routing_observation",
+ "record_event",
+ "record_ollama_generation",
+ "record_routing_observation",
  "utc_now",
  "start_trace",
  "end_trace",

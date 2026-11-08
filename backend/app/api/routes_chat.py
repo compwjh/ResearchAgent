@@ -22,12 +22,14 @@ from backend.app.platform.config import (
 )
 from backend.app.platform.model_catalog import is_online_model
 from backend.app.platform.observability import (
-    flush,
+    decide_sampling,
+    enqueue_flush,
     prompt_observation_metadata,
     record_ollama_generation,
     redact_prompt_messages,
     utc_now,
 )
+from backend.app.platform.observability.request_id import bind_request_id
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
@@ -72,6 +74,12 @@ def chat(request: ChatRequest):
     selected_model = request.model
 
     def generate():
+        # spec-045 Task 06：请求入口绑定统一 ID（手工埋点，不新增中间件）。
+        # SSE 每次 next() 都会 copy_context()，跨 yield 后需按同一 rid 重新绑定。
+        rid = bind_request_id()
+        # spec-045 Task 05：在请求入口做出单次采样决策并缓存，使本请求内各阶段共用，
+        # 避免采样不一致撕碎瀑布图（KB 链路由 start_trace 负责，chat 链路在此落点）。
+        decide_sampling()
         started = utc_now()
         wall_start = time.perf_counter()
 
@@ -166,6 +174,7 @@ def chat(request: ChatRequest):
         except Exception as error:
             if run.result is not None:
                 try:
+                    bind_request_id(rid)
                     record_ollama_generation(
                         model=selected_model,
                         prompt_messages=observation_messages,
@@ -179,7 +188,7 @@ def chat(request: ChatRequest):
                         error_type=type(error).__name__,
                         extra_metadata=observation_metadata,
                     )
-                    flush()
+                    enqueue_flush()
                 except Exception:
                     pass
             detail = str(error) if request.mode == "developer" else f"无法连接 Ollama，请确认服务已启动且模型 {MODEL_NAME} 已安装"
@@ -192,6 +201,7 @@ def chat(request: ChatRequest):
 
         if run.result is not None:
             try:
+                bind_request_id(rid)
                 record_ollama_generation(
                     model=selected_model,
                     prompt_messages=observation_messages,
@@ -201,7 +211,7 @@ def chat(request: ChatRequest):
                     tags=["chat"],
                     extra_metadata=observation_metadata,
                 )
-                flush()
+                enqueue_flush()
             except Exception:
                 pass
 

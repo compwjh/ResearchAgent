@@ -8,31 +8,36 @@ hidden reasoning.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import socket
 import time
 import urllib.error
-from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
 from . import judge_client, langfuse_export
-from .config import FALLBACK_JUDGE, PRIMARY_JUDGE, REPEATS
-from .report import ReportWriter
+from .config import (
+    _SECRET_ASSIGNMENT_RE,
+    _URL_USERINFO_RE,
+    FALLBACK_JUDGE,
+    JUDGE_SEED,
+    PRIMARY_JUDGE,
+    PROMPTS,
+    REPEATS,
+)
+from .judge_client import TIE_BREAK_RULE, _majority_label, judge_majority
+from .langfuse_export import compute_dataset_sha256
+from .report import REPORT_SCHEMA_VERSION, ReportWriter
 
 KNOWN_TASKS = frozenset(("chat_quality", "memory_correctness"))
 _VALID_INPUT_STATUSES = frozenset(("scored", "skipped"))
 _VERIFY_ATTEMPTS = 6
 _VERIFY_BACKOFF_SECONDS = (1, 2, 3, 4, 5)
-_URL_USERINFO_RE = re.compile(r"(?P<prefix>https?://)(?P<userinfo>[^/\s@]+)@", re.IGNORECASE)
-_SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?P<key>authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|"
-    r"password|secret|credential)(?P<separator>\s*[:=]\s*)(?P<value>[^\s,;]+)",
-    re.IGNORECASE,
-)
+# 脱敏正则 _URL_USERINFO_RE / _SECRET_ASSIGNMENT_RE 已从 .config 收敛为共享定义，此处不再重复。
 _SOURCE_LABEL_RE = (
     r"(?:question|answer|q|a|ctx|context|prior[\s_-]*context|q\s*/\s*a)"
 )
@@ -452,42 +457,70 @@ def _score_item(
     primary: str,
     repeats: int,
     checkpoint: Callable[[dict[str, Any]], object] | None = None,
+    fallback: str | None = None,
 ) -> dict[str, Any]:
     question = item["input"]
     answer = item["output"] or ""
     context = item.get("prior_context")
-    try:
-        calls = judge_client.judge_repeats(
-            primary,
+
+    def _judge(model: str) -> judge_client.JudgeResult:
+        # 共用 judge_client.judge_majority 编排（与 consistency/memory_probe 统一）。
+        return judge_majority(
+            model,
             item["task"],
             question,
             answer,
             repeats,
             ctx=context,
         )
-    except Exception as exc:
-        return _judge_unavailable_record(item, primary, [], error=exc)
 
-    if not isinstance(calls, list) or len(calls) != repeats:
+    def _calls_usable(calls: object) -> bool:
+        # 严格语义：任一 call 非 scored / 形变即整条不可用（partial 失败测试依赖）。
+        if not isinstance(calls, list) or len(calls) != repeats:
+            return False
+        return all(
+            isinstance(call, Mapping)
+            and call.get("status") == "scored"
+            and isinstance(call.get("label"), str)
+            and isinstance(call.get("score"), (int, float))
+            and not isinstance(call.get("score"), bool)
+            and 0.0 <= float(call["score"]) <= 1.0
+            for call in calls
+        )
+
+    model = primary
+    result: judge_client.JudgeResult | None = None
+    error: object | None = None
+    try:
+        result = _judge(model)
+    except Exception as exc:
+        error = exc
+    if (result is None or not _calls_usable(result.all_calls)) and (
+        fallback is not None and fallback != primary
+    ):
+        # primary 不可用（异常 / 非 list / 全 unavailable / partial 失败）→ 切 fallback 重跑。
+        try:
+            fallback_result = _judge(fallback)
+        except Exception as fallback_exc:
+            fallback_result = None
+            error = fallback_exc
+        if fallback_result is not None and _calls_usable(fallback_result.all_calls):
+            result = fallback_result
+            model = fallback
+            error = None
+    if result is None or not _calls_usable(result.all_calls):
+        # 两者都不可用才记 UNAVAILABLE。
         return _judge_unavailable_record(
             item,
             primary,
-            calls,
-            error=ValueError("judge_repeats returned an unexpected result shape"),
+            result.all_calls if result is not None else [],
+            error=error,
         )
-    if any(
-        not isinstance(call, Mapping)
-        or call.get("status") != "scored"
-        or not isinstance(call.get("label"), str)
-        or not isinstance(call.get("score"), (int, float))
-        or isinstance(call.get("score"), bool)
-        or not 0.0 <= float(call["score"]) <= 1.0
-        for call in calls
-    ):
-        return _judge_unavailable_record(item, primary, calls)
 
+    calls = result.all_calls
     labels = [call["label"] for call in calls]
-    label = Counter(labels).most_common(1)[0][0]
+    # 多数投票：与标签插入顺序无关（平票按映射分高者、再字母序）。
+    label = _majority_label(labels, item["task"])
     score = judge_client.enum_to_score(item["task"], label)
     if score is None or not 0.0 <= float(score) <= 1.0:
         return _judge_unavailable_record(
@@ -510,7 +543,7 @@ def _score_item(
         "task": item["task"],
         "status": "scored",
         "synthetic": item["synthetic"],
-        "judge_model": primary,
+        "judge_model": model,
         "label": label,
         "score": float(score),
         "explanation": explanation,
@@ -527,11 +560,13 @@ def _score_item(
     if checkpoint is not None:
         checkpoint(record)
     try:
-        posted = langfuse_export.post_score(
+        posted = langfuse_export.post_score_idempotent(
             name=item["task"],
             value=float(score),
             trace_id=item["trace_id"],
             comment=f"Explanation: {explanation}; Label: {label}",
+            report_version=REPORT_SCHEMA_VERSION,
+            task=item["task"],
         )
         score_id = posted.get("id") if isinstance(posted, Mapping) else None
         if not isinstance(score_id, str) or not score_id.strip():
@@ -686,6 +721,29 @@ def run(
                 "selected dataset contains no real trace items; synthetic-only evaluation is refused"
             )
 
+        # 可复现指纹：在创建报告骨架后补齐 metadata（数据集 sha / 模型摘要 / prompt 摘要 / seed / 平票规则）。
+        prompt_parts: list[str] = []
+        for task_name in sorted(KNOWN_TASKS):
+            prompt_map = PROMPTS.get(task_name)
+            if isinstance(prompt_map, Mapping):
+                for value in prompt_map.values():
+                    if isinstance(value, str):
+                        prompt_parts.append(value)
+        metadata.update(
+            {
+                "dataset_sha256": compute_dataset_sha256(selected),
+                "judge_model_digest": hashlib.sha256(
+                    primary.encode("utf-8")
+                ).hexdigest(),
+                "prompt_sha256": hashlib.sha256(
+                    "\n".join(prompt_parts).encode("utf-8")
+                ).hexdigest(),
+                "seed": JUDGE_SEED,
+                "tie_break_rule": TIE_BREAK_RULE,
+            }
+        )
+        writer.document["metadata"] = dict(metadata)
+
         for item in selected:
             active_sources = (
                 item.get("input"),
@@ -724,6 +782,7 @@ def run(
                             pending,
                             index=report_index,
                         ),
+                        fallback=fallback,
                     )
             if record["status"] in {"unavailable", "failed"}:
                 overall_failed = True

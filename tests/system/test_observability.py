@@ -38,6 +38,7 @@ def _result(**overrides) -> OllamaChatResult:
 class SampleRateTests(unittest.TestCase):
     def setUp(self):
         obs_client.reset_for_tests()
+        obs_config.reset_sample_decision()
 
     def tearDown(self):
         obs_client.reset_for_tests()
@@ -100,6 +101,7 @@ class MetricsTests(unittest.TestCase):
 class NoOpSafetyTests(unittest.TestCase):
     def setUp(self):
         obs_client.reset_for_tests()
+        obs_config.reset_sample_decision()
 
     def tearDown(self):
         obs_client.reset_for_tests()
@@ -274,6 +276,7 @@ class TraceContextTests(unittest.TestCase):
 
     def setUp(self):
         obs_client.reset_for_tests()
+        obs_config.reset_sample_decision()
 
     def tearDown(self):
         obs_client.reset_for_tests()

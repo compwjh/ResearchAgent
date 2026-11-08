@@ -77,6 +77,7 @@ from backend.app.platform.config import (
 )
 from backend.app.platform.model_catalog import get_online_model, is_online_model
 from backend.app.platform.observability import record_ollama_generation, redact_prompt_messages, utc_now
+from backend.app.platform.observability.request_id import bind_request_id
 from backend.app.platform.ollama import (
     EffortResolutionError,
     ReasoningCapabilities,
@@ -973,10 +974,11 @@ def patch_conversation_reasoning(conversation_id: str, payload: ConversationReas
 def _redact_sensitive(value: object) -> str:
     """Keep progress/tool summaries useful without persisting credentials or paths."""
     text = " ".join(str(value or "").split())
-    import re
-    text = re.sub(r"(?i)(api[_-]?key|token|secret|password|authorization|cookie)\s*[:=]\s*[^\s,;]+", r"\1=[REDACTED]", text)
-    text = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~-]+", "Bearer [REDACTED]", text)
-    return text[:500]
+    # spec-045 Task 06：与 Langfuse / raw_events 共用同一处值级凭据过滤
+    # （sk-* / Bearer / URL userinfo / 凭据赋值），不再在路由层另写一套正则。
+    from backend.app.platform.observability import redaction
+
+    return redaction.redact_text(text)[:500]
 
 
 def _iter_run_events(run):
@@ -1254,6 +1256,9 @@ def _step_evidence_payload(records):
 
 def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str, reasoning_effort: str | None = None, capabilities_source: str = "cache"):
     def generate():
+        # spec-045 Task 06：请求入口绑定统一 ID（手工埋点，不新增中间件）。
+        # SSE 每次 next() 会 copy_context()，跨 yield 后按同一 rid 重新绑定。
+        rid = bind_request_id()
         stream_started = time.monotonic()
         sequencer = EventSequencer(assistant_message.message_id)
         def frame(event_type: str, **payload):
@@ -1283,6 +1288,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             # Raw events are an append-only audit/input stream for the local
             # evolution worker.  They are advisory and never block SSE.
             with contextlib.suppress(Exception):
+                bind_request_id(rid)
                 repo.append_raw_event(OWNER_ID, conversation.conversation_id, "user_message", {"content": user_message.content}, message_id=user_message.message_id, idempotency_key=f"message:{user_message.message_id}")
             yield frame("meta", project_id=conversation.project_id, conversation_id=conversation.conversation_id, user_message_id=user_message.message_id, assistant_message_id=assistant_message.message_id, model=model, mode=mode, reasoning_effort=selected_effort, capabilities_source=capabilities_source)
             recall_running = repo.create_processing_step(assistant_message.message_id, "memory_recall", "running", label="记忆召回")
@@ -1511,6 +1517,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
             history = [message for message in repo.list_context_messages(conversation.conversation_id, OWNER_ID) if message.message_id != user_message.message_id]
             if sum(len(message.content or "") for message in history) > 12000:
                 with contextlib.suppress(Exception):
+                    bind_request_id(rid)
                     repo.append_raw_event(OWNER_ID, conversation.conversation_id, "context_pressure", {"summary": "会话上下文达到整理阈值"}, message_id=user_message.message_id, idempotency_key=f"pressure:{user_message.message_id}")
             segments = repo.list_conversation_segments(conversation.conversation_id, OWNER_ID, conversation.project_id)
             # spec-038 P3：工具输出预裁剪。旧步骤结构化塌缩成一行，最近 N 步保留原文，
@@ -1735,6 +1742,7 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     adapter_event_seq = incoming_seq
                 if event.get("type") in {"error", "tool_error"}:
                     with contextlib.suppress(Exception):
+                        bind_request_id(rid)
                         repo.append_raw_event(OWNER_ID, conversation.conversation_id, "tool_failure", {"error": _redact_sensitive(event.get("message") or event.get("content") or "工具失败"), "verified": False}, message_id=user_message.message_id, idempotency_key=f"tool-failure:{user_message.message_id}")
                 if event.get("type") in {"thinking", "reasoning_delta"} and selected_effort != "off" and not answer_started:
                     clean = reasoning_stream_filter.push(event.get("content") or "")
@@ -1938,6 +1946,8 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
     """Serialize a durable Intake result using the existing conversation SSE shape."""
     owner_id = getattr(user_message, "owner_id", OWNER_ID)
     def generate():
+        # spec-045 Task 06：research / Intake 链路入口绑定统一 ID。
+        rid = bind_request_id()
         started = time.monotonic()
         sequencer = EventSequencer(assistant_message.message_id)
         finished = False
@@ -1994,6 +2004,8 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
                     summary="参数已齐，正在生成研究计划…",
                 )
                 try:
+                    # 跨 SSE yield 后重新绑定，research 会话计划写入可共用同一 ID。
+                    bind_request_id(rid)
                     plan_result = _ensure_research_session_plan(result.session)
                     if plan_result:
                         persist_plan_projection(repo, assistant_message, plan_result)
@@ -2164,6 +2176,8 @@ def _failed_message_stream(repo, conversation, user_message, assistant_message, 
         return output
 
     def generate():
+        # spec-045 Task 06：失败流同样绑定统一 ID（该链路不写观测三套记录）。
+        bind_request_id()
         yield frame(
             "meta",
             project_id=conversation.project_id,
