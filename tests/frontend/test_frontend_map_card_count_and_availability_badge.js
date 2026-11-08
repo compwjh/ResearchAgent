@@ -96,6 +96,8 @@ function makeSandbox() {
       maps: [],
       listQuery: '',
       listStatus: 'all',
+      // 任务 D：标签筛选态改为多选 Set，filteredMaps() 依赖该字段。
+      listTagIds: new Set(),
       selectedMapId: null,
     },
     refs: {

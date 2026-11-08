@@ -665,9 +665,44 @@ def _task_runtime_observability(research_task_id: str) -> dict:
     }
 
 
+def _task_duration_ms(created_at: object, completed_at: object) -> int | None:
+    """completed_at − created_at 的毫秒差；无有效时间/倒挂/非法时返回 None（绝不造 0）。
+
+    领域模型 ResearchTask 只有 created_at / updated_at / completed_at，没有
+    started_at 或 duration_ms；列表 summary 的耗时在此按两个时间戳推导，不落库、
+    不改 schema。该值是含等待的墙钟时长（含排队/调度等待），非纯执行耗时。
+    """
+
+    def _parse(value: object):
+        text = str(value or "").strip()
+        if not text or len(text) > 64:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        # 历史行可能是 naive UTC；统一到 UTC，避免 naive/aware 相减抛 TypeError。
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    start = _parse(created_at)
+    end = _parse(completed_at)
+    if start is None or end is None:
+        return None
+    delta_ms = (end - start).total_seconds() * 1000
+    if delta_ms < 0:
+        return None
+    return int(delta_ms)
+
+
 def _task_summary(task) -> dict:
     """任务摘要（不含完整 goal：只给截断摘要，避免大段原文进列表响应）。"""
     goal = task.goal or ""
+    # 领域模型暂无 started_at：用 getattr 安全读取，缺失时诚实返回 None，
+    # 不引用不存在的属性、不造值。
+    started_at = getattr(task, "started_at", None)
+    completed_at = getattr(task, "completed_at", None)
     return {
         "research_task_id": task.research_task_id,
         "status": task.status,
@@ -683,6 +718,9 @@ def _task_summary(task) -> dict:
         # returns a real handle.  Never infer or echo a client-supplied ID.
         "search_id": getattr(task, "search_id", None),
         "created_at": task.created_at,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "duration_ms": _task_duration_ms(task.created_at, completed_at),
         "runtime_observability": _task_runtime_observability(task.research_task_id),
     }
 

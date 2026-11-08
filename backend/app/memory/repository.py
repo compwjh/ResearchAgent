@@ -644,6 +644,21 @@ class MemoryRepository:
         next_cursor = encode_cursor("projects_activity", page[-1]["last_activity_at"], page[-1]["project_id"]) if len(rows) > limit else None
         return [self._project(row) for row in page], next_cursor
 
+    def list_active_projects(self, owner_id: str) -> list[Project]:
+        """一次性列出全部 active 项目（不分页），供项目记忆列表枚举。
+
+        以 ``projects`` 表为唯一数据源：``status='active'`` 隐含未删除，归档
+        (archived) 与已删除 (deleted) 都不返回；``projects/`` 目录里没有项目
+        记录的孤儿 md 也不会进入结果，因为这里不扫描目录。
+        """
+        with self.connection() as db:
+            rows = db.execute(
+                "SELECT * FROM projects WHERE owner_id=? AND status='active' AND status!='deleted' "
+                "ORDER BY project_id",
+                (owner_id,),
+            ).fetchall()
+        return [self._project(row) for row in rows]
+
     def get_last_reasoning_effort(self, owner_id: str) -> str:
         with self.connection() as db:
             row = db.execute("SELECT last_reasoning_effort FROM user_chat_preferences WHERE owner_id=?", (owner_id,)).fetchone()

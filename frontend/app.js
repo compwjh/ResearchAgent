@@ -1,3 +1,17 @@
+// 任务 C：ID / hash / 版本号只显示短码，全文交给原生 title 悬浮查看。
+function formatShortHash(value, n = 8) {
+  const text = value == null ? '' : String(value);
+  return text.length > n ? `${text.slice(0, n)}…` : text;
+}
+
+function withTooltip(el, fullText) {
+  if (!el) return el;
+  const text = fullText == null ? '' : String(fullText);
+  el.title = text;
+  if (typeof el.setAttribute === 'function') el.setAttribute('aria-label', text);
+  return el;
+}
+
 const form = document.querySelector('#chat-form');
 const input = document.querySelector('#question');
 const messages = document.querySelector('#messages');
@@ -53,6 +67,12 @@ const memoryDocumentConflictCopy = document.querySelector('#memory-document-conf
 const memoryDocumentConflictRefreshButton = document.querySelector('#memory-document-conflict-refresh-button');
 const memoryDocumentCount = document.querySelector('#memory-document-count');
 const memoryDocumentEmpty = document.querySelector('#memory-document-empty');
+// 任务 D：项目记忆列表（所有 active 项目一次性展示，点击复用单文档编辑器）。
+const memoryProjectDocuments = document.querySelector('#memory-project-documents');
+const memoryProjectDocumentsList = document.querySelector('#memory-project-documents-list');
+const memoryProjectDocumentsEmpty = document.querySelector('#memory-project-documents-empty');
+const memoryProjectDocumentsStatus = document.querySelector('#memory-project-documents-status');
+const memoryProjectDocumentsRefresh = document.querySelector('#memory-project-documents-refresh');
 const systemRuleCard = document.querySelector('#system-rule-card');
 const systemRuleContent = document.querySelector('#system-rule-content');
 const systemRuleUpdated = document.querySelector('#system-rule-updated');
@@ -116,6 +136,14 @@ const memoryState = {
   saving: false,
   requestGeneration: 0,
   requestKey: '',
+};
+// 任务 D：项目记忆列表状态，与单文档编辑态（memoryState）完全隔离，不改 OCC / 409 逻辑。
+const memoryProjectDocumentsState = {
+  items: [],
+  loading: false,
+  loaded: false,
+  error: '',
+  requestGeneration: 0,
 };
 const systemRuleState = { content: '', enabled: false, updatedAt: null, loaded: false, loading: false };
 const memoryNavigationSnapshot = { scope: null, projectId: null, scrollTop: 0, projectCollapsed: false, expandedProjectId: null };
@@ -409,7 +437,7 @@ function renderConversationFailure(message, error, context = null) {
   usableActions.forEach((action) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'secondary-button conversation-error-action';
+    button.className = 'secondary-button btn-outline conversation-error-action';
     button.dataset.errorAction = action.kind;
     button.textContent = action.label;
     attachConversationErrorAction(button, action, context);
@@ -620,7 +648,7 @@ function renderReasoningEffortState(loadState, staleCachedAt) {
 function appendRecheckButton(stateEl) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'secondary-button reasoning-effort-recheck';
+  btn.className = 'secondary-button btn-outline reasoning-effort-recheck';
   btn.textContent = '重新检测';
   btn.setAttribute('aria-label', '重新检测模型能力');
   btn.addEventListener('click', () => { loadReasoningOptions(activeModel, { refresh: true }); });
@@ -886,7 +914,7 @@ function renderContextUsageError() {
     contextStatus.textContent = '上下文占比加载失败';
     const retry = document.createElement('button');
     retry.type = 'button';
-    retry.className = 'context-retry secondary-button';
+    retry.className = 'context-retry secondary-button btn-outline';
     retry.textContent = '重试';
     retry.addEventListener('click', () => {
       if (retry.disabled) return;
@@ -1649,9 +1677,9 @@ function renderStepEvidenceSourceText(record) {
   const id = record.chunk_id || record.document_id || record.ref_id || record.conversation_id || record.target || '';
   const known = STEP_EVIDENCE_SOURCE_KIND_WHITELIST.has(sourceKind);
   if (!known) {
-    return id ? `来源：${sourceKind || '未知'} · ${id}` : `来源：${sourceKind || '未知'}`;
+    return id ? `来源：${sourceKind || '未知'} · ${formatShortHash(id)}` : `来源：${sourceKind || '未知'}`;
   }
-  return id ? `来源：${sourceKind} · ${id}` : `来源：${sourceKind}`;
+  return id ? `来源：${sourceKind} · ${formatShortHash(id)}` : `来源：${sourceKind}`;
 }
 
 // Spec044 task-04：按 source_kind 渲染真实可解析的来源动作；未知类型或必填字段缺失时
@@ -1729,13 +1757,16 @@ function renderStepEvidencePanel(step, records, state) {
     card.append(kind, recordTitle, snippet);
     const meta = document.createElement('div'); meta.className = 'step-evidence-meta';
     const metaParts = [];
-    if (typeof record.score === 'number' && Number.isFinite(record.score)) metaParts.push(`得分 ${record.score}`);
-    if (record.occurred_at) metaParts.push(`时间 ${record.occurred_at}`);
-    if (record.document_id) metaParts.push(`文档 ${record.document_id}`);
-    if (metaParts.length) { meta.textContent = metaParts.join(' · '); card.appendChild(meta); }
+    const metaFullParts = [];
+    if (typeof record.score === 'number' && Number.isFinite(record.score)) { metaParts.push(`得分 ${record.score}`); metaFullParts.push(`得分 ${record.score}`); }
+    if (record.occurred_at) { metaParts.push(`时间 ${record.occurred_at}`); metaFullParts.push(`时间 ${record.occurred_at}`); }
+    if (record.document_id) { metaParts.push(`文档 ${formatShortHash(record.document_id)}`); metaFullParts.push(`文档 ${record.document_id}`); }
+    if (metaParts.length) { meta.textContent = metaParts.join(' · '); withTooltip(meta, metaFullParts.join(' · ')); card.appendChild(meta); }
     const sourceText = renderStepEvidenceSourceText(record);
     if (sourceText) {
+      const sourceFullId = record.chunk_id || record.document_id || record.ref_id || record.conversation_id || record.target || '';
       const source = document.createElement('div'); source.className = 'step-evidence-source'; source.textContent = sourceText;
+      withTooltip(source, sourceFullId ? `来源：${record.source_kind || '未知'} · ${sourceFullId}` : sourceText);
       card.appendChild(source);
     }
     const sourceActions = renderStepEvidenceSourceActions(record);
@@ -2051,7 +2082,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
       saveBtn.addEventListener('click', () => saveIntakeEdits(panel, saveBtn));
       const cancelBtn = document.createElement('button');
       cancelBtn.type = 'button';
-      cancelBtn.className = 'secondary-button danger-button conversation-intake-cancel';
+      cancelBtn.className = 'secondary-button btn-outline danger-button conversation-intake-cancel';
       cancelBtn.textContent = '取消本次研究';
       cancelBtn.addEventListener('click', () => {
         const sid = panel.dataset.researchSessionId;
@@ -2075,7 +2106,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   choices.forEach((choice) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'secondary-button conversation-intake-choice';
+    button.className = 'secondary-button btn-outline conversation-intake-choice';
     button.dataset.intakeChoice = choice.id;
     button.setAttribute('aria-pressed', 'false');
     button.textContent = INTAKE_CHOICE_LABELS[choice.id];
@@ -2364,7 +2395,7 @@ function setResearchCommandState(button, state, label = '') {
 function addConversationResearchRefresh(button) {
   const panel = button?.closest('.conversation-research-plan');
   if (!panel || panel.querySelector('.conversation-research-refresh')) return;
-  const refresh = document.createElement('button'); refresh.type = 'button'; refresh.className = 'secondary-button conversation-research-refresh'; refresh.textContent = '刷新计划/重新加载会话';
+  const refresh = document.createElement('button'); refresh.type = 'button'; refresh.className = 'secondary-button btn-outline conversation-research-refresh'; refresh.textContent = '刷新计划/重新加载会话';
   refresh.addEventListener('click', async () => {
     const sessionId = panel.dataset.researchSessionId;
     if (!sessionId) return;
@@ -2396,7 +2427,7 @@ function showConversationResearchNextStep(panel, command, result = {}) {
   if (actions && !actions.querySelector('.conversation-research-open-task')) {
     const openTask = document.createElement('button');
     openTask.type = 'button';
-    openTask.className = 'secondary-button conversation-research-open-task';
+    openTask.className = 'secondary-button btn-outline conversation-research-open-task';
     openTask.textContent = '查看研究进度';
     openTask.addEventListener('click', () => {
       const nav = document.querySelector('[data-view="research"]');
@@ -2448,7 +2479,7 @@ function renderConversationApprovals(panel, approvals, plan) {
     if (pending) {
       const approveCommand = kind === 'plan' ? 'approve_plan' : kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
       const approve = document.createElement('button'); approve.type = 'button'; approve.className = 'send-button conversation-research-command'; approve.dataset.command = approveCommand; approve.textContent = RESEARCH_COMMAND_LABELS[approveCommand];
-      const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
+      const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button btn-outline conversation-research-command'; decline.dataset.command = 'decline_request'; decline.textContent = '拒绝';
       approve.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, approveCommand, approval.subject_version, researchCommandScope(approveCommand, approval, plan), approve, (result) => {
         status.textContent = approveCommand === 'approve_plan' ? '已批准' : '已完成';
         card.dataset.status = 'approved';
@@ -2499,9 +2530,9 @@ function updateConversationResearchPlan(assistantMessage, payload = {}) {
   if (hasApprovalProjection) renderConversationApprovals(panel, approvals, plan || {});
   const actions = panel.querySelector('.conversation-research-plan-actions'); actions.replaceChildren();
   if (plan && panel.dataset.researchSessionId && version > 0) {
-    const revise = document.createElement('button'); revise.type = 'button'; revise.className = 'secondary-button conversation-research-command'; revise.dataset.command = 'revise_plan'; revise.textContent = RESEARCH_COMMAND_LABELS.revise_plan;
+    const revise = document.createElement('button'); revise.type = 'button'; revise.className = 'secondary-button btn-outline conversation-research-command'; revise.dataset.command = 'revise_plan'; revise.textContent = RESEARCH_COMMAND_LABELS.revise_plan;
     revise.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'revise_plan', version, researchCommandScope('revise_plan', null, plan), revise));
-    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button danger-button conversation-research-command'; cancel.dataset.command = 'cancel_research'; cancel.textContent = RESEARCH_COMMAND_LABELS.cancel_research;
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button btn-outline danger-button conversation-research-command'; cancel.dataset.command = 'cancel_research'; cancel.textContent = RESEARCH_COMMAND_LABELS.cancel_research;
     cancel.addEventListener('click', () => submitResearchSessionCommand(panel.dataset.researchSessionId, 'cancel_research', version, {}, cancel));
     actions.append(revise, cancel);
   }
@@ -2716,7 +2747,7 @@ function createConversationMemoryResults(assistantMessage, userMessageId) {
   const body = document.createElement('div'); body.className = 'conversation-memory-results-body'; body.hidden = true;
   const list = document.createElement('div'); list.className = 'conversation-memory-results-list';
   const actions = document.createElement('div'); actions.className = 'conversation-memory-results-actions';
-  const more = document.createElement('button'); more.type = 'button'; more.className = 'secondary-button memory-analysis-more'; more.textContent = '加载更多'; more.hidden = true;
+  const more = document.createElement('button'); more.type = 'button'; more.className = 'secondary-button btn-outline memory-analysis-more'; more.textContent = '加载更多'; more.hidden = true;
   title.addEventListener('click', () => { const expanded = title.getAttribute('aria-expanded') === 'true'; title.setAttribute('aria-expanded', expanded ? 'false' : 'true'); body.hidden = expanded; });
   more.addEventListener('click', () => loadMemoryAnalysisPage(userMessageId, assistantMessage, section));
   header.append(title, summary); body.append(list, actions, more); section.append(header, body);
@@ -2748,7 +2779,7 @@ function renderMemoryAnalysisResult(section, userMessageId) {
     const meta = document.createElement('p'); meta.className = 'conversation-memory-result-meta'; meta.textContent = `${memoryAnalysisLabel(item)} · ${item.suggested_scope || item.scope || 'project'} · 置信度 ${Math.round(Number(item.confidence || 0) * 100)}%`;
     const rationale = document.createElement('p'); rationale.className = 'conversation-memory-result-rationale'; rationale.textContent = item.rationale_summary || '';
     const buttons = document.createElement('div'); buttons.className = 'conversation-memory-result-actions';
-    const addDecision = (label, decision) => { const button = document.createElement('button'); button.type = 'button'; button.className = decision === 'ignore' ? 'secondary-button' : 'send-button'; button.dataset.memoryDecision = decision; button.dataset.itemId = item.item_id || ''; button.textContent = label; button.disabled = !item.item_id || !['pending_confirmation', 'pending', 'conflict'].includes(item.decision_status); buttons.appendChild(button); };
+    const addDecision = (label, decision) => { const button = document.createElement('button'); button.type = 'button'; button.className = decision === 'ignore' ? 'secondary-button btn-outline' : 'send-button'; button.dataset.memoryDecision = decision; button.dataset.itemId = item.item_id || ''; button.textContent = label; button.disabled = !item.item_id || !['pending_confirmation', 'pending', 'conflict'].includes(item.decision_status); buttons.appendChild(button); };
     if (['pending_confirmation', 'pending', 'conflict'].includes(item.decision_status)) {
       const currentProjectId = conversationState.projectId || null;
       if (!currentProjectId) {
@@ -2775,7 +2806,7 @@ function renderMemoryAnalysisResult(section, userMessageId) {
   const decisionItems = visibleItems.filter((item) => ['pending_confirmation', 'pending', 'conflict'].includes(item.decision_status));
   if (decisionItems.length) {
     const saveAll = document.createElement('button'); saveAll.type = 'button'; saveAll.className = 'send-button'; saveAll.dataset.memoryBatchDecision = 'save_suggested'; saveAll.textContent = '按建议保存全部';
-    const ignoreAll = document.createElement('button'); ignoreAll.type = 'button'; ignoreAll.className = 'secondary-button'; ignoreAll.dataset.memoryBatchDecision = 'ignore'; ignoreAll.textContent = '全部不保存';
+    const ignoreAll = document.createElement('button'); ignoreAll.type = 'button'; ignoreAll.className = 'secondary-button btn-outline'; ignoreAll.dataset.memoryBatchDecision = 'ignore'; ignoreAll.textContent = '全部不保存';
     actions.append(saveAll, ignoreAll);
   }
   more.hidden = !state.nextCursor;
@@ -3408,7 +3439,7 @@ function attachSystemRuleSuggestion(message, text) {
   const bubble = message.querySelector('.bubble');
   if (!bubble || bubble.querySelector('[data-system-rule-suggestion]')) return;
   const hint = document.createElement('p'); hint.className = 'system-rule-suggestion'; hint.textContent = '识别到系统规则建议；保存前请先确认。';
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-button'; button.dataset.systemRuleSuggestion = 'true'; button.textContent = '预填系统规则编辑器';
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-button btn-outline'; button.dataset.systemRuleSuggestion = 'true'; button.textContent = '预填系统规则编辑器';
   button.addEventListener('click', () => openSystemRuleEditor(suggestion));
   bubble.append(hint, button);
 }
@@ -3434,7 +3465,7 @@ function applyConversationDraft(options = {}) {
   notice.textContent = `已有草稿未覆盖（${options.evidence_level === 'full' ? '全文索引片段依据' : '摘要级'}）。`;
   const insert = document.createElement('button');
   insert.type = 'button';
-  insert.className = 'secondary-button';
+  insert.className = 'secondary-button btn-outline';
   insert.textContent = '插入建议问题';
   insert.addEventListener('click', () => {
     const existing = input.value.trimEnd();
@@ -3769,6 +3800,122 @@ function handleMemoryDocumentInput() {
   renderMemoryDocument();
 }
 
+// ---- 任务 D：项目记忆列表（GET /api/memory-documents/projects）---------------
+// 与单文档编辑态 memoryState 完全隔离；只展示后端返回的 active 项目，不扫描孤儿 md。
+// 点击某条复用 switchMemoryDocument()/loadMemoryDocument()/OCC revision，不改编辑/保存/409 契约。
+async function loadMemoryProjectDocuments() {
+  if (memoryProjectDocumentsState.loading) return;
+  const generation = ++memoryProjectDocumentsState.requestGeneration;
+  memoryProjectDocumentsState.loading = true;
+  memoryProjectDocumentsState.error = '';
+  renderMemoryProjectDocuments();
+  try {
+    const data = await conversationFetch('/api/memory-documents/projects');
+    if (generation !== memoryProjectDocumentsState.requestGeneration) return;
+    memoryProjectDocumentsState.items = Array.isArray(data) ? data.filter(Boolean) : [];
+    memoryProjectDocumentsState.loaded = true;
+  } catch (error) {
+    if (generation !== memoryProjectDocumentsState.requestGeneration) return;
+    // 可诊断失败：不静默 catch——状态区显示具体原因 + HTTP 状态，并落 console 便于排查。
+    const statusPart = error && error.status ? `（HTTP ${error.status}）` : '';
+    memoryProjectDocumentsState.error = `项目记忆加载失败：${memoryDocumentErrorMessage(error, '读取')}${statusPart}`;
+    console.error('[memory-project-documents]', error);
+  } finally {
+    if (generation === memoryProjectDocumentsState.requestGeneration) {
+      memoryProjectDocumentsState.loading = false;
+      renderMemoryProjectDocuments();
+    }
+  }
+}
+
+function renderMemoryProjectDocuments() {
+  const list = memoryProjectDocumentsList;
+  if (!list) return;
+  const state = memoryProjectDocumentsState;
+  list.replaceChildren();
+  // 状态区：失败可诊断 / 加载中 / 正常清空。
+  if (memoryProjectDocumentsStatus) {
+    if (state.error) {
+      memoryProjectDocumentsStatus.textContent = state.error;
+      memoryProjectDocumentsStatus.setAttribute('data-state', 'error');
+    } else if (state.loading) {
+      memoryProjectDocumentsStatus.textContent = '正在读取项目记忆…';
+      memoryProjectDocumentsStatus.setAttribute('data-state', 'loading');
+    } else {
+      memoryProjectDocumentsStatus.textContent = '';
+      memoryProjectDocumentsStatus.setAttribute('data-state', '');
+    }
+  }
+  // 空态：仅「成功加载且无项目」时显示；错误时不当作「无数据」误导。
+  if (memoryProjectDocumentsEmpty) {
+    memoryProjectDocumentsEmpty.textContent = '暂无项目记忆';
+    memoryProjectDocumentsEmpty.hidden = state.loading || Boolean(state.error) || state.items.length > 0;
+  }
+  // 一次性列出所有 active 项目（后端已过滤 deleted/archived/孤儿，此处不再按 projectId 逐个选）。
+  memoryProjectDocumentsState.items.forEach((item) => {
+    const projectId = String(item.project_id || '');
+    const projectName = String(item.project_name || '未命名项目');
+    const documentName = String(item.document || '');
+    // 任务 J / 后端任务 G：失败项带 available=false + error=MEMORY_DOCUMENT_UNAVAILABLE，
+    // 其余字段为空串/0。照常全部展示（用户裁决「都展示」），仅把该条标成明确不可用态，
+    // 并配合 data-state="error" 强调；空串字段用占位符，不渲染成误导性的「0 字 / 空版本」。
+    const unavailable = item.available === false || Boolean(item.error);
+    const li = document.createElement('li');
+    li.className = 'memory-project-doc';
+    li.dataset.projectId = projectId;
+    if (unavailable) li.setAttribute('data-state', 'error');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'memory-project-doc-open';
+    open.setAttribute('aria-label', `打开项目记忆：${projectName}`);
+    const head = document.createElement('div');
+    head.className = 'memory-project-doc-head';
+    const name = document.createElement('strong');
+    name.className = 'memory-project-doc-name';
+    name.textContent = projectName;
+    const file = document.createElement('code');
+    file.className = 'memory-project-doc-file truncate';
+    file.textContent = documentName;
+    withTooltip(file, documentName);
+    head.append(name, file);
+    const meta = document.createElement('div');
+    meta.className = 'memory-project-doc-meta';
+    const updated = document.createElement('span');
+    updated.className = 'memory-project-doc-updated';
+    updated.textContent = String(item.updated_at || '—');
+    withTooltip(updated, String(item.updated_at || ''));
+    const revision = document.createElement('code');
+    revision.className = 'memory-project-doc-revision hash-inline';
+    const revisionFull = String(item.revision || '');
+    // 空 revision 用占位符，不渲染成看不出问题的「空版本」。
+    revision.textContent = revisionFull ? formatShortHash(revisionFull, 8) : '—';
+    withTooltip(revision, revisionFull);
+    const length = document.createElement('span');
+    length.className = 'memory-project-doc-length';
+    const contentLength = Number(item.content_length) || 0;
+    // 空 content_excerpt / 0 字数用占位符，不渲染成误导性的「0 字」。
+    length.textContent = contentLength > 0 ? `${contentLength} 字` : '—';
+    meta.append(updated, revision, length);
+    const excerpt = document.createElement('p');
+    excerpt.className = 'memory-project-doc-excerpt clamp-3';
+    const excerptText = String(item.content_excerpt == null ? '' : item.content_excerpt);
+    // 失败项显示明确的不可用文案；正常空文档仍为空字符串（既有契约），由 :empty::before 兜底。
+    const excerptShown = unavailable ? '该项目记忆不可用' : excerptText;
+    excerpt.textContent = excerptShown;
+    withTooltip(excerpt, excerptShown);
+    open.append(head, meta, excerpt);
+    open.addEventListener('click', () => {
+      // 同步作用域控件使编辑器下拉与打开的文档一致；typeof 守卫让纯渲染沙箱也能触发。
+      if (typeof memoryScopeSelect !== 'undefined' && memoryScopeSelect) memoryScopeSelect.value = 'project';
+      if (typeof memoryProjectLabel !== 'undefined' && memoryProjectLabel) memoryProjectLabel.hidden = false;
+      if (typeof memoryProjectSelect !== 'undefined' && memoryProjectSelect) memoryProjectSelect.value = projectId;
+      switchMemoryDocument('project', projectId);
+    });
+    li.append(open);
+    list.append(li);
+  });
+}
+
 function appendConversationEvent(assistantMessage, processing, eventData) {
   if (eventData.type === 'progress') updateConversationProcessing(processing, eventData);
   if (eventData.type === 'processing_step') {
@@ -4076,6 +4223,8 @@ if (memoryRefreshButton) memoryRefreshButton.addEventListener('click', () => {
   memoryState.dirty = false;
   loadMemoryDocument({ scope: memoryScopeSelect?.value || 'global', projectId: memoryProjectSelect?.value || null });
 });
+// 任务 D：项目记忆列表独立刷新（不触碰单文档草稿 / OCC）。
+if (memoryProjectDocumentsRefresh) memoryProjectDocumentsRefresh.addEventListener('click', () => loadMemoryProjectDocuments());
 if (memoryDocumentEditor) memoryDocumentEditor.addEventListener('input', handleMemoryDocumentInput);
 if (memoryDocumentSaveButton) memoryDocumentSaveButton.addEventListener('click', saveMemoryDocument);
 if (memoryDocumentConflictRefreshButton) memoryDocumentConflictRefreshButton.addEventListener('click', refreshMemoryDocumentKeepingDraft);
@@ -4688,7 +4837,7 @@ function renderPaperResults(candidates, pageInfo = {}) {
     const sourceNames = candidate.source_kinds.map((kind) => PAPER_SOURCE_LABELS[kind] || '受控来源').join('、') || '受控来源';
     const stage = PAPER_PUBLICATION_STAGE_TEXT[candidate.publication_stage] || '出版阶段待确认';
     status.textContent = `出版阶段：${stage} · 来源：${sourceNames}`; item.appendChild(status);
-    const action = document.createElement('button'); action.type = 'button'; action.className = 'secondary-button paper-import-one';
+    const action = document.createElement('button'); action.type = 'button'; action.className = 'secondary-button btn-outline paper-import-one';
     action.dataset.candidateId = paperText(candidate.candidate_id, '');
     action.disabled = Boolean(candidate.existing_paper_id || !candidate.candidate_id); action.textContent = candidate.existing_paper_id ? '已在知识库' : '添加到知识库';
     action.addEventListener('click', () => importPaperCandidates([candidate])); item.appendChild(action);
@@ -5071,11 +5220,11 @@ function renderPaperBatch(batch) {
     if (item.error_code) { const error = document.createElement('span'); error.className = 'paper-import-error'; error.textContent = PAPER_ERROR_TEXT[item.error_code] || '该论文导入失败'; row.appendChild(error); }
     if ((item.status || item.state) === 'waiting_login') loginItems.push(item);
     if (item.paper_id) {
-      const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'secondary-button'; jump.textContent = '在知识库中查看';
+      const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'secondary-button btn-outline'; jump.textContent = '在知识库中查看';
       jump.addEventListener('click', () => jumpToKnowledgeBase(item.paper_id)); row.appendChild(jump);
     }
     if ((item.status || item.state) === 'failed' && item.item_id) {
-      const retryItem = document.createElement('button'); retryItem.type = 'button'; retryItem.className = 'secondary-button'; retryItem.textContent = '重试';
+      const retryItem = document.createElement('button'); retryItem.type = 'button'; retryItem.className = 'secondary-button btn-outline'; retryItem.textContent = '重试';
       if (paperState.retryingBatchIds.has(batchId)) retryItem.disabled = true;
       retryItem.addEventListener('click', async () => {
         if (!paperState.enabled) return;
@@ -5104,7 +5253,7 @@ function renderPaperBatch(batch) {
   });
   const failedItems = (batch.items || []).filter((item) => (item.status || item.state) === 'failed');
   if (failedItems.length) {
-    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button'; retry.textContent = '重试失败项';
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button btn-outline'; retry.textContent = '重试失败项';
     if (paperState.retryingBatchIds.has(batchId)) retry.disabled = true;
     retry.addEventListener('click', async () => {
       if (!paperState.enabled) return;
@@ -5130,7 +5279,7 @@ function renderPaperBatch(batch) {
   }
   const batchState = batch.status || batch.state;
   if (['queued', 'waiting_login', 'failed'].includes(batchState)) {
-    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button'; cancel.textContent = '取消';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button btn-outline'; cancel.textContent = '取消';
     cancel.addEventListener('click', async () => {
       if (!paperState.enabled) return;
       cancel.disabled = true;
@@ -5152,9 +5301,9 @@ function renderPaperBatch(batch) {
   const loginList = document.createElement('ul'); loginQueue.appendChild(loginList);
   loginItems.forEach((item) => {
     const row = document.createElement('li'); const text = document.createElement('span'); text.textContent = '论文需要登录后下载'; row.appendChild(text);
-    const login = document.createElement('button'); login.type = 'button'; login.className = 'secondary-button'; login.textContent = '打开登录';
+    const login = document.createElement('button'); login.type = 'button'; login.className = 'secondary-button btn-outline'; login.textContent = '打开登录';
     login.addEventListener('click', () => paperLogin(item, login));
-    const resume = document.createElement('button'); resume.type = 'button'; resume.className = 'secondary-button'; resume.textContent = '登录完成，继续';
+    const resume = document.createElement('button'); resume.type = 'button'; resume.className = 'secondary-button btn-outline'; resume.textContent = '登录完成，继续';
     resume.addEventListener('click', () => paperResume(item, resume)); row.append(login, resume); loginList.appendChild(row);
   });
   batchContainer.appendChild(loginQueue);
@@ -5186,7 +5335,7 @@ function renderDirectImports() {
     const state = document.createElement('span'); state.textContent = item.existing ? '已在知识库' : '已完成';
     row.appendChild(state);
     if (item.paper_id) {
-      const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'secondary-button';
+      const jump = document.createElement('button'); jump.type = 'button'; jump.className = 'secondary-button btn-outline';
       jump.textContent = '在知识库中查看';
       jump.addEventListener('click', () => jumpToKnowledgeBase(item.paper_id));
       row.appendChild(jump);
@@ -5462,7 +5611,7 @@ async function renderManagedConferences() {
   paperManagedConferences.replaceChildren();
   paperState.conferences.forEach((conference) => {
     const item = document.createElement('li'); const label = document.createElement('span'); label.textContent = conference.short_name || conference.name || '未命名会议';
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'secondary-button'; toggle.textContent = conference.enabled ? '停用' : '启用'; toggle.disabled = !conference.conference_id;
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'secondary-button btn-outline'; toggle.textContent = conference.enabled ? '停用' : '启用'; toggle.disabled = !conference.conference_id;
     toggle.addEventListener('click', async () => {
       toggle.disabled = true;
       try {
@@ -5603,6 +5752,7 @@ function showView(view) {
     if (memoryProjectLabel) memoryProjectLabel.hidden = !isProject;
     restoreMemoryViewState();
     loadSystemRule();
+    loadMemoryProjectDocuments(); // 任务 D：进入视图即刷新全部 active 项目的记忆列表（默认可见）。
     const scope = memoryScopeSelect?.value || 'global';
     const projectId = scope === 'project' ? memoryProjectSelect?.value || null : null;
     if (!memoryState.loaded || memoryDocumentKey(scope, projectId) !== memoryDocumentKey(memoryState.scope, memoryState.projectId)) {
@@ -5747,7 +5897,7 @@ function renderSkillList() {
     actions.className = 'st-actions';
     const detailBtn = document.createElement('button');
     detailBtn.type = 'button';
-    detailBtn.className = 'secondary-button';
+    detailBtn.className = 'secondary-button btn-outline';
     detailBtn.textContent = '详情';
     detailBtn.disabled = !skill.name;
     // spec-023.1 F1：点击即禁用并显示 loading，避免连点并发；请求结束后恢复。
@@ -5760,7 +5910,7 @@ function renderSkillList() {
     });
     const toggle = document.createElement('button');
     toggle.type = 'button';
-    toggle.className = 'secondary-button';
+    toggle.className = 'secondary-button btn-outline';
     toggle.textContent = skill.enabled ? '停用' : '启用';
     toggle.disabled = !skill.name;
     toggle.addEventListener('click', (event) => { event.stopPropagation(); toggleSkill(skill, toggle); });
@@ -5868,7 +6018,7 @@ function renderToolList() {
     // spec-034 Task03：「代码」按钮放在启停按钮之前，点击后只读查看入口函数源码。
     const codeBtn = document.createElement('button');
     codeBtn.type = 'button';
-    codeBtn.className = 'secondary-button';
+    codeBtn.className = 'secondary-button btn-outline';
     codeBtn.textContent = '代码';
     codeBtn.disabled = !tool.name;
     // 点击即禁用并显示 loading，避免连点并发；请求结束后由 openToolCode 的 finally 恢复。
@@ -5880,7 +6030,7 @@ function renderToolList() {
     });
     const toggle = document.createElement('button');
     toggle.type = 'button';
-    toggle.className = 'secondary-button';
+    toggle.className = 'secondary-button btn-outline';
     toggle.textContent = tool.enabled ? '停用' : '启用';
     toggle.disabled = !tool.name;
     toggle.addEventListener('click', () => toggleTool(tool, toggle));
@@ -7159,7 +7309,7 @@ async function loadKbHealth() {
       slot.textContent = `组件状态读取失败：${error.message}`;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'kb-health-retry secondary-button';
+      btn.className = 'kb-health-retry secondary-button btn-outline';
       btn.textContent = '重试';
       btn.addEventListener('click', () => {
         if (btn.disabled) return;

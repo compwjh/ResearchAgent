@@ -250,6 +250,8 @@ function makeSandbox(options = {}) {
     closeExpansionPanel() {},
     closeAllMobilePanels() {},
     closeCreatePanel() {},
+    closeTagFilterMenu() {}, // 任务 D：setActive(false) 新增的筛选浮层清理
+    closeGroupsPopover() {}, // 补齐 HEAD 基线既有的沙箱夹具缺口（setActive 一直调用它）
     stopPolling() {},
     stopAnalysisPolling() {},
     stopAnalysisQueuePolling() {},

@@ -62,7 +62,7 @@ def test_report_action_uses_an_explicit_versioned_generation_button() -> None:
     assert "generateReportVersion" in RESEARCH
     assert "readGeneratedReportVersion" in action
     assert "button.disabled = state.acquisition.reportActionInFlight" in RESEARCH
-    assert "/assets/research-tasks.js?v=21" in INDEX
+    assert "/assets/research-tasks.js?v=22" in INDEX
 
 
 def test_upload_only_surfaces_report_action_and_does_not_generate_implicitly() -> None:

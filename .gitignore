@@ -47,6 +47,8 @@ data/memory/projects/
 # 知识库重建会把旧库整体移入 data/.trash/kb-<时间戳>/（含 PDF 与 qdrant 快照），
 # 每次重建都会新增一个目录，属运行期残留，必须忽略。
 data/.trash/
+# 数据库清理备份，运行期数据不入版本库
+data/backup/
 deploy/reranker/.runtime/
 deploy/run.pid
 

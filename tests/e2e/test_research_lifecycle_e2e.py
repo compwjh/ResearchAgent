@@ -39,6 +39,9 @@ def _open_research(page: Page) -> None:
 
 
 def _fill_and_create(page: Page, goal: str = "LLM 安全对齐方向的综述调研") -> None:
+    # 任务 B 把创建表单移进默认 hidden 的「创建研究会话」tab；fill 前先切过去，
+    # 否则 #research-goal 不可见会导致 fill 超时。其余创建流程保持不变。
+    page.click("#research-tab-create")
     page.fill("#research-goal", goal)
     page.fill("#research-year-from", "2020")
     page.fill("#research-year-to", "2024")

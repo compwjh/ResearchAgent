@@ -23,10 +23,10 @@ INDEX = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
 STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 MAP_CSS = (ROOT / "frontend/literature-maps.css").read_text(encoding="utf-8")
 MAP_JS = (ROOT / "frontend/literature-maps.js").read_text(encoding="utf-8")
-MAP_CSS_VERSION = 31
-APP_JS_VERSION = 72
+MAP_CSS_VERSION = 33
+APP_JS_VERSION = 73
 # styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用由 69 升至 70。
-STYLES_VERSION = 70
+STYLES_VERSION = 71
 HEADER_ACTION_IDS = (
     "literature-map-refresh-button",
     "literature-map-new-button",
@@ -242,9 +242,13 @@ def test_four_header_buttons_keep_id_text_and_hidden_contract():
     }
     for button_id, (text, hidden) in expected.items():
         assert f"id = '{button_id}'" in MAP_JS, f"按钮 id 契约被破坏：{button_id}"
-        assert f"createElement('button', 'secondary-button', '{text}')" in MAP_JS, (
-            f"按钮 {button_id} 的文案必须仍为「{text}」"
-        )
+        # 任务 C 以「追加类」方式给真实可用按钮加了 `.btn-outline`；任务 J 显式
+        # 冻结该组合（评审 LOW：二选一正则删掉 btn-outline 仍会放过），删掉
+        # btn-outline 会让按钮退回不可用观感。id/文案/显隐/事件仍逐字校验。
+        assert re.search(
+            rf"createElement\('button', 'secondary-button btn-outline', '{re.escape(text)}'\)",
+            MAP_JS,
+        ), f"按钮 {button_id} 必须显式带 `secondary-button btn-outline` 且文案仍为「{text}」"
         hidden_expr = "true" if hidden else None
         if hidden_expr is not None:
             assert re.search(

@@ -8,6 +8,20 @@
   if (root && root.document) api.boot(root.document);
 }(typeof globalThis !== 'undefined' ? globalThis : this, function researchTasksFactory(root) {
   const sessionUI = root.ResearchSessionUI || (typeof module === 'object' && typeof require === 'function' ? require('./research-session-ui.js') : null);
+  // 任务 C：ID / hash / 版本号只显示短码，全文交给原生 title 悬浮查看。
+  function formatShortHash(value, n = 8) {
+    const text = value == null ? '' : String(value);
+    return text.length > n ? `${text.slice(0, n)}…` : text;
+  }
+
+  function withTooltip(el, fullText) {
+    if (!el) return el;
+    const text = fullText == null ? '' : String(fullText);
+    el.title = text;
+    if (typeof el.setAttribute === 'function') el.setAttribute('aria-label', text);
+    return el;
+  }
+
   const TERMINAL_STATUSES = new Set(['partial', 'completed', 'failed', 'cancelled', 'interrupted']);
   const EVENT_TYPES = ['task', 'plan', 'worker', 'model', 'coverage', 'report', 'terminal', 'processing_step'];
   const NOTIFICATION_EVENT_TYPES = ['completed', 'partial', 'failed', 'waiting_approval', 'interrupted'];
@@ -159,6 +173,7 @@
     notificationSyncError: '',
     createIdempotencyKey: null,
     triggerMessageId: null,
+    hydrateErrors: new Map(),
     taskActionInFlight: false,
     selectTaskInFlight: null,
     taskListRequestGeneration: 0,
@@ -869,6 +884,65 @@
     return error.message || fallback;
   }
 
+  const RESEARCH_TAB_IDS = Object.freeze({
+    tasks: { tab: 'research-tab-tasks', panel: 'research-tabpanel-tasks' },
+    create: { tab: 'research-tab-create', panel: 'research-tabpanel-create' },
+  });
+  const RESEARCH_TAB_ORDER = Object.freeze(['tasks', 'create']);
+
+  // Switch the two primary research tabs in place. Following the kb-inspection
+  // activateTab() pattern, only hidden / aria-selected / tabIndex change — the
+  // panels (grid + create form) are never rebuilt, so form values survive.
+  function activateResearchTab(name, focus = false) {
+    const key = RESEARCH_TAB_IDS[name] ? name : 'tasks';
+    RESEARCH_TAB_ORDER.forEach((tabKey) => {
+      const ids = RESEARCH_TAB_IDS[tabKey];
+      const selected = tabKey === key;
+      const tab = byId(ids.tab);
+      const panel = byId(ids.panel);
+      if (tab) {
+        tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      if (panel) panel.hidden = !selected;
+    });
+    state.activeResearchTab = key;
+    if (focus) {
+      const tab = byId(RESEARCH_TAB_IDS[key].tab);
+      if (tab && typeof tab.focus === 'function') tab.focus();
+    }
+  }
+
+  function moveResearchTab(event, current) {
+    const index = RESEARCH_TAB_ORDER.indexOf(current);
+    if (index < 0) return;
+    let nextIndex = index;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % RESEARCH_TAB_ORDER.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + RESEARCH_TAB_ORDER.length) % RESEARCH_TAB_ORDER.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = RESEARCH_TAB_ORDER.length - 1;
+    if (nextIndex === index) return;
+    event.preventDefault();
+    activateResearchTab(RESEARCH_TAB_ORDER[nextIndex], true);
+  }
+
+  function bindResearchTabs() {
+    RESEARCH_TAB_ORDER.forEach((key) => {
+      const tab = byId(RESEARCH_TAB_IDS[key].tab);
+      if (!tab) return;
+      tab.addEventListener('click', () => activateResearchTab(key));
+      tab.addEventListener('keydown', (event) => {
+        if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+          moveResearchTab(event, key);
+        } else if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          activateResearchTab(key);
+        }
+      });
+    });
+    activateResearchTab('tasks');
+  }
+
   function showView() {
     const doc = state.document;
     doc.querySelectorAll('.main-area').forEach((section) => { section.hidden = section.id !== 'research-view'; });
@@ -927,13 +1001,22 @@
     return sessionUI?.projectSession?.(session) || null;
   }
 
+  function formatSessionElapsed(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return '—';
+    const seconds = ms / 1000;
+    const label = seconds.toFixed(seconds >= 10 ? 0 : 1);
+    // Sub-100ms windows round to "0.0"; treat them as no usable duration so
+    // seeded demo rows (created_at === completed_at) never show a bogus zero.
+    if (Number(label) === 0) return '—';
+    return `${label} 秒`;
+  }
   function sessionDurationText(item) {
     if (sessionUI?.durationText) return sessionUI.durationText(item);
     const duration = Number(item?.duration_ms);
-    if (Number.isFinite(duration) && duration >= 0) return `${(duration / 1000).toFixed(duration >= 10000 ? 0 : 1)} 秒`;
+    if (Number.isFinite(duration) && duration > 0) return formatSessionElapsed(duration);
     const start = Date.parse(item?.started_at || item?.created_at || '');
     const end = Date.parse(item?.completed_at || item?.updated_at || '');
-    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) return `${((end - start) / 1000).toFixed((end - start) >= 10000 ? 0 : 1)} 秒`;
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) return formatSessionElapsed(end - start);
     return '—';
   }
 
@@ -1009,6 +1092,49 @@
     return merged;
   }
 
+  // Update an existing card in place: only text/status that actually changed is
+  // written, and the badge (including the green "已完成" state) is never rebuilt.
+  function updateTaskCard(item, task) {
+    const button = item.querySelector?.('.research-task-card') || null;
+    if (!button) return;
+    button.dataset.taskId = text(task.research_task_id, '');
+    button.dataset.sessionId = text(task.research_session_id, '');
+    if (typeof button.classList?.toggle === 'function') {
+      button.classList.toggle('is-selected', task.research_task_id === state.selectedTaskId || task.research_session_id === state.selectedSessionId);
+    }
+    const title = button.querySelector?.('.research-task-card-title') || item.querySelector?.('.research-task-card-title');
+    const badge = button.querySelector?.('.research-badge') || item.querySelector?.('.research-badge');
+    const meta = button.querySelector?.('.research-task-card-meta') || item.querySelector?.('.research-task-card-meta');
+    const details = button.querySelector?.('.research-task-card-details') || item.querySelector?.('.research-task-card-details');
+    if (title) title.textContent = text(task.goal_excerpt, '未命名研究任务');
+    if (badge) { badge.dataset.status = text(task.status, ''); badge.textContent = statusLabel(task.status); }
+    if (meta) {
+      const sessionFull = task.research_session_id ? `会话 ${task.research_session_id}` : '未绑定会话';
+      const sessionShort = task.research_session_id ? `会话 ${formatShortHash(task.research_session_id)}` : '未绑定会话';
+      const planPart = ` · 计划 v${text(task.current_plan_version, '—')}`;
+      meta.textContent = sessionShort + planPart;
+      withTooltip(meta, sessionFull + planPart);
+    }
+    if (details) details.textContent = [
+      `阶段：${text(task.current_phase || task.phase || task.stage, '—')}`,
+      sessionProgressText(task), sessionApprovalText(task), `耗时：${sessionDurationText(task)}`,
+      sessionAgentToolText(task),
+      retryInsightText(task),
+    ].filter(Boolean).join(' · ');
+    const open = item.querySelector?.('.research-open-session');
+    if (open) {
+      if (task.conversation_id) {
+        open.dataset.conversationId = String(task.conversation_id);
+        open.hidden = false;
+      } else {
+        open.hidden = true;
+      }
+    }
+    // Diagnosable hydration failures instead of silently swallowing 404s.
+    if (task.hydrateError && typeof item.setAttribute === 'function') item.setAttribute('data-error', '会话详情读取失败');
+    else if (typeof item.removeAttribute === 'function') item.removeAttribute('data-error');
+  }
+
   function createTaskCard(task) {
     const doc = state.document;
     const item = doc.createElement('div');
@@ -1016,70 +1142,123 @@
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'research-task-card';
-    button.dataset.taskId = text(task.research_task_id, '');
-    button.dataset.sessionId = text(task.research_session_id, '');
-    button.classList.toggle('is-selected', task.research_task_id === state.selectedTaskId || task.research_session_id === state.selectedSessionId);
-    const title = doc.createElement('span');
-    title.className = 'research-task-card-title';
-    title.textContent = text(task.goal_excerpt, '未命名研究任务');
-    const badge = doc.createElement('span');
-    badge.className = 'research-badge';
-    badge.dataset.status = text(task.status, '');
-    badge.textContent = statusLabel(task.status);
+    const title = doc.createElement('span'); title.className = 'research-task-card-title';
+    const badge = doc.createElement('span'); badge.className = 'research-badge';
     const meta = doc.createElement('span'); meta.className = 'research-task-card-meta';
-    meta.textContent = `${task.research_session_id ? `会话 ${task.research_session_id}` : '未绑定会话'} · 计划 v${text(task.current_plan_version, '—')}`;
     const details = doc.createElement('span'); details.className = 'research-task-card-details';
-    details.textContent = [
-      `阶段：${text(task.current_phase || task.phase || task.stage, '—')}`,
-      sessionProgressText(task), sessionApprovalText(task), `耗时：${sessionDurationText(task)}`,
-      sessionAgentToolText(task),
-      retryInsightText(task),
-    ].filter(Boolean).join(' · ');
     button.append(title, badge, meta, details);
-    button.addEventListener('click', () => { selectTask(task.research_task_id, task.research_session_id); });
+    // Read ids from the (reused) node's dataset so keyed reuse never goes stale.
+    button.addEventListener('click', () => { selectTask(button.dataset.taskId, button.dataset.sessionId); });
     item.appendChild(button);
-    if (task.conversation_id) {
-      const open = doc.createElement('button'); open.type = 'button'; open.className = 'research-open-session'; open.textContent = '打开对应会话';
-      open.dataset.conversationId = String(task.conversation_id); open.setAttribute('aria-label', '打开对应会话');
-      open.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); openConversationFromResearch(task.conversation_id); });
-      item.appendChild(open);
-    }
+    const open = doc.createElement('button'); open.type = 'button'; open.className = 'research-open-session'; open.textContent = '打开对应会话';
+    open.setAttribute('aria-label', '打开对应会话');
+    open.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); openConversationFromResearch(open.dataset.conversationId); });
+    item.appendChild(open);
+    updateTaskCard(item, task);
     return item;
   }
 
-  function renderTaskList() {
+  // children is an HTMLCollection in the browser but a plain array (or a Proxy
+  // stub) in the contract harness; index it explicitly so we never rely on an
+  // @@iterator that some fake-DOM nodes do not provide.
+  function taskCardChildren(list) {
+    const children = list?.children;
+    if (!children || typeof children.length !== 'number' || children.length === 0) return [];
+    const nodes = [];
+    for (let index = 0; index < children.length; index += 1) {
+      const node = children[index] || (typeof children.item === 'function' ? children.item(index) : null);
+      if (node) nodes.push(node);
+    }
+    return nodes;
+  }
+
+  function renderTaskList(options = {}) {
     const list = byId('research-task-list');
     const empty = byId('research-list-empty');
     if (!list) return;
-    clearNode(list);
     const tasks = [...state.tasks].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-    tasks.forEach((task) => list.appendChild(createTaskCard(task)));
-    if (empty) empty.hidden = tasks.length > 0;
-    setText('research-list-status', tasks.length ? `共 ${tasks.length} 个研究会话` : '当前工作区暂无研究会话。');
+    // Keyed diff: index existing cards by taskId, reuse nodes, update only the
+    // changed text/status. No replaceChildren, so the green "已完成" badge and
+    // progress text are updated in place instead of being torn down every frame.
+    const existing = new Map();
+    taskCardChildren(list).forEach((item) => {
+      const card = item.querySelector?.('.research-task-card');
+      const key = card?.dataset?.taskId || card?.dataset?.sessionId;
+      if (key) existing.set(String(key), item);
+    });
+    if (options.onlyTaskId) {
+      const affected = tasks.find((task) => String(task.research_task_id || '') === String(options.onlyTaskId)
+        || String(task.research_session_id || '') === String(options.onlyTaskId));
+      const node = existing.get(String(options.onlyTaskId));
+      if (affected && node) updateTaskCard(node, affected);
+      return;
+    }
+    const seen = new Set();
+    const ordered = tasks.map((task) => {
+      const key = String(task.research_task_id || task.research_session_id || '');
+      const found = key && existing.get(key);
+      let item;
+      if (found) {
+        item = found;
+        seen.add(key);
+        updateTaskCard(item, task);
+      } else {
+        item = createTaskCard(task);
+      }
+      return item;
+    });
+    taskCardChildren(list).forEach((item) => {
+      const card = item.querySelector?.('.research-task-card');
+      const key = card?.dataset?.taskId || card?.dataset?.sessionId;
+      if (key && !seen.has(String(key)) && typeof item.remove === 'function') item.remove();
+    });
+    // appendChild moves existing nodes (no rebuild) and appends new ones in order.
+    ordered.forEach((item) => list.appendChild(item));
+    if (empty) {
+      empty.hidden = tasks.length > 0;
+      if (!tasks.length) empty.textContent = '暂无研究任务';
+    }
+    setText('research-list-status', tasks.length ? `共 ${tasks.length} 个研究会话` : '暂无研究任务');
   }
 
   async function hydrateSession(raw) {
     const base = sessionTaskProjection(raw);
     if (!base) return null;
+    // A failed pre-hydration lookup must remain diagnosable (card data-error +
+    // state.hydrateErrors + console warning) rather than being silently swallowed.
+    const failures = [];
+    const record = (source, error) => {
+      failures.push(source);
+      const message = `[research] hydrateSession ${source} failed`;
+      if (typeof root.console?.warn === 'function') root.console.warn(message, error);
+      else if (typeof console !== 'undefined' && console.warn) console.warn(message, error);
+    };
     let detail = null;
-    try { detail = await requestJson(`/api/research-sessions/${encodeURIComponent(base.research_session_id)}`); } catch (_) { /* list remains usable */ }
+    try { detail = await requestJson(`/api/research-sessions/${encodeURIComponent(base.research_session_id)}`); } catch (error) { record('session-detail', error); }
     let task = detail?.task || detail?.research_task || null;
     const taskId = detail?.research_task_id || base.research_task_id;
     if (!task && taskId) {
-      try { task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`); } catch (_) { /* session-only card remains usable */ }
+      try { task = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`); } catch (error) { record('task-detail', error); }
     }
     let conversation = detail?.conversation || raw?.conversation || null;
     const conversationId = detail?.conversation_id || base.conversation_id;
     if (!conversation && conversationId) {
-      try { conversation = await requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`); } catch (_) { /* title is optional */ }
+      try { conversation = await requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`); } catch (error) { record('conversation-title', error); }
     }
     const approvals = detail?.approvals || task?.approvals || base.approvals || [];
     const latestPlan = detail?.plan || task?.plan || base.plan || null;
-    return sessionTaskProjection({
+    const projected = sessionTaskProjection({
       ...raw, ...base, ...(detail || {}), task: task || base,
       conversation: conversation || undefined, approvals, plan: latestPlan,
       research_task_id: detail?.research_task_id || task?.research_task_id || base.research_task_id,
     });
+    const key = base.research_session_id || base.research_task_id;
+    if (key) {
+      if (failures.length) state.hydrateErrors.set(key, failures);
+      else state.hydrateErrors.delete(key);
+    }
+    // Surface the failure on the card model so updateTaskCard can mark data-error.
+    return projected ? { ...projected, hydrateError: failures.length ? failures.join(',') : null } : null;
   }
 
   async function loadTasks() {
@@ -1111,10 +1290,69 @@
     }
   }
 
+  const DETAIL_SECTION_IDS = ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section', 'research-matrix-section', 'research-acquisition-section'];
+
+  // Loading keeps the previously rendered detail/header/report on screen. Only
+  // a skeleton class is toggled — the container is never hidden or cleared, so
+  // switching tasks no longer produces a white flash.
+  function setDetailLoading(loading) {
+    const doc = state.document;
+    if (!doc || typeof doc.querySelectorAll !== 'function') return;
+    doc.querySelectorAll('.research-detail-column, .research-summary-column').forEach((node) => {
+      if (node && typeof node.classList?.toggle === 'function') node.classList.toggle('is-loading', loading);
+    });
+  }
+
+  // Show a visible "暂无执行记录" note instead of leaving a large blank area
+  // when a task is selected but every detail section is empty. Section hidden
+  // semantics are preserved so timeline/matrix visibility probes stay stable.
+  function renderRecordsEmptyState() {
+    const note = state.document?.querySelector?.('.research-records-empty');
+    if (!note) return;
+    const hasSelection = Boolean(state.selectedTaskId || state.selectedSessionId);
+    const anyOpen = DETAIL_SECTION_IDS.some((id) => { const node = byId(id); return node && !node.hidden; });
+    note.hidden = !hasSelection || anyOpen;
+    if (!note.hidden) note.textContent = '暂无执行记录';
+  }
+
   function setDetailVisibility(visible) {
     const empty = byId('research-detail-empty');
     if (empty) empty.hidden = visible;
-    ['research-plan-section', 'research-session-plan-section', 'research-timeline-section', 'research-selection-section', 'research-matrix-section', 'research-acquisition-section'].forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
+    DETAIL_SECTION_IDS.forEach((id) => { const node = byId(id); if (node && !visible) node.hidden = true; });
+  }
+
+  // 任务 J：静默刷新发现选中任务已在别处被删除（不在最新 state.tasks 中）时调用。
+  // 复用现有清理函数收尾：关流、停轮询、清空详情/报告/矩阵/引用/产物状态并给出空态；
+  // 只切 hidden 与清空 state，不 replaceChildren 整个视图，避免整块白屏与闪烁。
+  function clearStaleSelection(reason) {
+    closeStream();
+    cancelReportPoll();
+    stopAcquisitionPoll();
+    state.selectedTaskId = null;
+    state.selectedSessionId = null;
+    state.selectedTask = null;
+    state.report = null;
+    state.matrix = null;
+    state.reportViews = new Map();
+    state.reportVersions = [];
+    state.activeCitationNo = null;
+    state.reportFormat = 'markdown';
+    state.events = new Map();
+    state.terminal = null;
+    state.processingTree = null;
+    state.processingTreeTaskId = null;
+    state.lastSeq = 0;
+    state.streamEnded = true;
+    renderTaskHeader(null);
+    renderMatrix(null);
+    renderReportArtifacts([]);
+    renderReportCitations([]);
+    renderReportFormatTabs();
+    setDetailVisibility(false);
+    const empty = byId('research-detail-empty');
+    if (empty) { empty.textContent = reason || '所选研究任务已被删除，请从左侧重新选择。'; empty.hidden = false; }
+    setText('research-report-state', '任务完成后显示报告。');
+    renderRecordsEmptyState();
   }
 
   function taskActionButton(action) {
@@ -1246,7 +1484,11 @@
     const status = byId('research-detail-status');
     if (status) { status.dataset.status = text(task?.status, ''); status.textContent = statusLabel(task?.status); }
     setText('research-detail-title', task?.goal_excerpt || task?.topic || '选择一个研究会话');
-    setText('research-detail-meta', task ? `${task.research_session_id ? `会话 ${task.research_session_id}` : `任务 ${text(task.research_task_id)}`} · ${task.conversation_id ? `对话 ${task.conversation_id} · ` : ''}阶段 ${text(task.current_phase || task.phase || task.stage, '—')} · ${sessionProgressText(task)} · ${sessionApprovalText(task)} · 耗时 ${sessionDurationText(task)}${retryInsightText(task) ? ` · ${retryInsightText(task)}` : ''}` : '刷新后会先恢复会话详情，再连接实时事件。');
+    const detailIdFull = task ? `${task.research_session_id ? `会话 ${task.research_session_id}` : `任务 ${text(task.research_task_id)}`} · ${task.conversation_id ? `对话 ${task.conversation_id} · ` : ''}` : '';
+    const detailIdShort = task ? `${task.research_session_id ? `会话 ${formatShortHash(task.research_session_id)}` : `任务 ${formatShortHash(text(task.research_task_id))}`} · ${task.conversation_id ? `对话 ${formatShortHash(task.conversation_id)} · ` : ''}` : '';
+    const detailRest = task ? `阶段 ${text(task.current_phase || task.phase || task.stage, '—')} · ${sessionProgressText(task)} · ${sessionApprovalText(task)} · 耗时 ${sessionDurationText(task)}${retryInsightText(task) ? ` · ${retryInsightText(task)}` : ''}` : '刷新后会先恢复会话详情，再连接实时事件。';
+    setText('research-detail-meta', detailIdShort + detailRest);
+    withTooltip(byId('research-detail-meta'), detailIdFull + detailRest);
     renderTaskActionControls(task, { preserveState: preserveActions });
   }
 
@@ -1384,7 +1626,7 @@
     const section = button?.closest('.research-session-plan');
     const actions = byId('research-session-plan-actions');
     if (!section || !actions || actions.querySelector('.research-session-refresh')) return;
-    const refresh = state.document.createElement('button'); refresh.type = 'button'; refresh.className = 'secondary-button research-session-refresh'; refresh.textContent = '刷新计划/重新加载会话';
+    const refresh = state.document.createElement('button'); refresh.type = 'button'; refresh.className = 'secondary-button btn-outline research-session-refresh'; refresh.textContent = '刷新计划/重新加载会话';
     refresh.addEventListener('click', async () => {
       refresh.disabled = true; refresh.setAttribute('aria-busy', 'true'); refresh.textContent = '正在刷新…';
       try {
@@ -1459,7 +1701,7 @@
         const actions = state.document.createElement('div'); actions.className = 'research-session-approval-actions';
         const command = approval.kind === 'plan' ? 'approve_plan' : approval.kind === 'capability_override' ? 'approve_capability' : 'approve_resource_extension';
         const approve = state.document.createElement('button'); approve.type = 'button'; approve.className = 'send-button research-session-command'; approve.textContent = SESSION_COMMAND_LABELS[command];
-        const decline = state.document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button research-session-command'; decline.textContent = '拒绝';
+        const decline = state.document.createElement('button'); decline.type = 'button'; decline.className = 'secondary-button btn-outline research-session-command'; decline.textContent = '拒绝';
         approve.addEventListener('click', () => submitSessionCommand(sessionId, command, approval.subject_version || subjectVersion, sessionCommandScope(command, approval, plan), approve, async (result) => { status.textContent = command === 'approve_plan' ? '已批准' : '已完成'; card.dataset.status = 'approved'; await mergeSessionCommandResult(result, sessionId); }));
         decline.addEventListener('click', () => submitSessionCommand(sessionId, 'decline_request', approval.subject_version || subjectVersion, sessionCommandScope('decline_request', approval, plan), decline, () => { status.textContent = '已拒绝'; card.dataset.status = 'rejected'; }));
         actions.append(approve, decline); card.append(title, status, meta, actions);
@@ -1482,9 +1724,9 @@
     renderSessionApprovals(approvals, sessionId, version, plan || {});
     const actions = byId('research-session-plan-actions'); clearNode(actions);
     if (sessionId && plan && version > 0) {
-      const revise = state.document.createElement('button'); revise.type = 'button'; revise.className = 'secondary-button research-session-command'; revise.textContent = SESSION_COMMAND_LABELS.revise_plan;
+      const revise = state.document.createElement('button'); revise.type = 'button'; revise.className = 'secondary-button btn-outline research-session-command'; revise.textContent = SESSION_COMMAND_LABELS.revise_plan;
       revise.addEventListener('click', () => submitSessionCommand(sessionId, 'revise_plan', version, sessionCommandScope('revise_plan', null, plan), revise));
-      const cancel = state.document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button danger-button research-session-command'; cancel.textContent = SESSION_COMMAND_LABELS.cancel_research;
+      const cancel = state.document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-button btn-outline danger-button research-session-command'; cancel.textContent = SESSION_COMMAND_LABELS.cancel_research;
       cancel.addEventListener('click', () => submitSessionCommand(sessionId, 'cancel_research', version, {}, cancel));
       actions.append(revise, cancel);
     }
@@ -1682,10 +1924,13 @@
       const meta = state.document.createElement('p'); meta.className = 'research-evidence-meta';
       const page = Number(upgrade.page); const pageEnd = Number(upgrade.page_end);
       const pageText = Number.isInteger(page) && page > 0 ? ` · 原文第 ${pageEnd > page ? `${page}–${pageEnd}` : page} 页` : '';
-      meta.textContent = `文档：${text(upgrade.document_id, '未知')}${pageText}${Array.isArray(upgrade.chunk_ids) && upgrade.chunk_ids.length ? ` · ${upgrade.chunk_ids.length} 个切片` : ''}`;
+      const upgradeDoc = text(upgrade.document_id, '未知');
+      const upgradeTail = `${pageText}${Array.isArray(upgrade.chunk_ids) && upgrade.chunk_ids.length ? ` · ${upgrade.chunk_ids.length} 个切片` : ''}`;
+      meta.textContent = `文档：${formatShortHash(upgradeDoc)}${upgradeTail}`;
+      withTooltip(meta, `文档：${upgradeDoc}${upgradeTail}`);
       const actions = state.document.createElement('div'); actions.className = 'research-acquisition-item-actions';
       if (upgrade.document_id && (upgrade.status === 'upgraded' || upgrade.status === 'revalidation_required')) {
-        const locator = state.document.createElement('button'); locator.type = 'button'; locator.className = 'secondary-button research-evidence-locator'; locator.textContent = '打开原文切片';
+        const locator = state.document.createElement('button'); locator.type = 'button'; locator.className = 'secondary-button btn-outline research-evidence-locator'; locator.textContent = '打开原文切片';
         locator.dataset.documentId = String(upgrade.document_id); locator.dataset.chunkIds = Array.isArray(upgrade.chunk_ids) ? upgrade.chunk_ids.map(String).join(' ') : '';
         locator.addEventListener('click', () => {
           if (typeof root.jumpToKnowledgeBase === 'function') root.jumpToKnowledgeBase(String(upgrade.document_id));
@@ -1754,13 +1999,16 @@
         title.appendChild(paperIdHint(text(item.catalog_paper_id, '未知 ID')));
         const badge = state.document.createElement('span'); badge.className = 'research-acquisition-badge'; badge.dataset.status = String(item.status || ''); badge.textContent = acquisitionStatusLabel(item.status);
         head.append(title, badge);
-        const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta'; meta.textContent = item.document_id ? `知识库文档：${item.document_id}` : `导入条目：${text(item.import_item_id || item.item_id, '等待创建')}`;
+        const meta = state.document.createElement('p'); meta.className = 'research-acquisition-item-meta';
+        const acquisitionFull = item.document_id ? `知识库文档：${item.document_id}` : `导入条目：${text(item.import_item_id || item.item_id, '等待创建')}`;
+        meta.textContent = item.document_id ? `知识库文档：${formatShortHash(item.document_id)}` : acquisitionFull;
+        withTooltip(meta, acquisitionFull);
         const actions = state.document.createElement('div'); actions.className = 'research-acquisition-item-actions';
         if (item.status === 'waiting_login') {
           const wait = state.document.createElement('span'); wait.className = 'research-acquisition-item-meta'; wait.textContent = '请在既有浏览器会话完成登录，页面不会自动登录。'; actions.appendChild(wait);
         }
         if (item.status === 'failed' && (item.import_item_id || item.item_id)) {
-          const retry = state.document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button'; retry.textContent = state.acquisition.retrying.has(String(item.import_item_id || item.item_id)) ? '重试中…' : '重试';
+          const retry = state.document.createElement('button'); retry.type = 'button'; retry.className = 'secondary-button btn-outline'; retry.textContent = state.acquisition.retrying.has(String(item.import_item_id || item.item_id)) ? '重试中…' : '重试';
           retry.disabled = state.acquisition.retrying.has(String(item.import_item_id || item.item_id));
           retry.addEventListener('click', () => retryAcquisitionItem(item, retry)); actions.appendChild(retry);
         }
@@ -2403,7 +2651,7 @@
       if (taskId) {
         const actionItem = state.document.createElement('li'); actionItem.className = 'research-issue-item'; actionItem.dataset.action = 'report-version';
         const actions = state.document.createElement('div'); actions.className = 'research-issue-actions';
-        const button = state.document.createElement('button'); button.type = 'button'; button.className = 'secondary-button';
+        const button = state.document.createElement('button'); button.type = 'button'; button.className = 'secondary-button btn-outline';
         const version = safePositiveInteger(state.acquisition.reportActionVersion || state.report?.report_version);
         button.textContent = state.acquisition.reportActionInFlight
           ? (state.acquisition.reportActionStatus === 'reading' ? '读取报告…' : '提交报告…')
@@ -2444,7 +2692,7 @@
       }
       availableActions.forEach((action) => {
         if (action === 'upload') return;
-        const actionButton = state.document.createElement('button'); actionButton.type = 'button'; actionButton.className = 'secondary-button'; actionButton.textContent = ISSUE_ACTION_LABELS[action] || action;
+        const actionButton = state.document.createElement('button'); actionButton.type = 'button'; actionButton.className = 'secondary-button btn-outline'; actionButton.textContent = ISSUE_ACTION_LABELS[action] || action;
         actionButton.addEventListener('click', () => performIssueAction(issue, action, actionButton)); actions.appendChild(actionButton);
       });
       if (availableActions.has('upload')) {
@@ -2454,8 +2702,8 @@
         const confirmText = state.document.createElement('span'); confirmText.textContent = '我确认上传文件属于该候选论文';
         confirmLabel.append(confirmInput, confirmText);
         const chooser = state.document.createElement('input'); chooser.type = 'file'; chooser.accept = 'application/pdf,.pdf'; chooser.hidden = true;
-        const chooseButton = state.document.createElement('button'); chooseButton.type = 'button'; chooseButton.className = 'secondary-button'; chooseButton.textContent = '选择 PDF';
-        const uploadButton = state.document.createElement('button'); uploadButton.type = 'button'; uploadButton.className = 'secondary-button'; uploadButton.textContent = '上传'; uploadButton.disabled = true;
+        const chooseButton = state.document.createElement('button'); chooseButton.type = 'button'; chooseButton.className = 'secondary-button btn-outline'; chooseButton.textContent = '选择 PDF';
+        const uploadButton = state.document.createElement('button'); uploadButton.type = 'button'; uploadButton.className = 'secondary-button btn-outline'; uploadButton.textContent = '上传'; uploadButton.disabled = true;
         const syncUploadState = () => { uploadButton.disabled = !(selectedFile && confirmInput.checked); };
         chooseButton.addEventListener('click', () => chooser.click());
         chooser.addEventListener('change', () => { selectedFile = chooser.files?.[0] || null; chooseButton.textContent = selectedFile ? `已选：${selectedFile.name.slice(0, 80)}` : '选择 PDF'; syncUploadState(); });
@@ -2754,9 +3002,9 @@
     const head = state.document.createElement('div'); head.className = 'research-report-citation-detail-head'; const title = state.document.createElement('strong'); title.textContent = `引用 [${no}] · ${paperLabel(citation.paper_id)}`; const close = state.document.createElement('button'); close.type = 'button'; close.className = 'icon-button'; close.textContent = '×'; close.setAttribute('aria-label', '收起引用详情'); close.addEventListener('click', () => { host.hidden = true; state.activeCitationNo = null; }); head.append(title, close); host.appendChild(head);
     evidences.forEach((evidence) => {
       const locator = locatorForEvidence(evidence); const fields = state.document.createElement('dl');
-      [['证据', evidence.evidence_id], ['等级', evidenceLabel(evidence.evidence_level)], ['立场', ({ supports: '支持', contradicts: '反驳', contextual: '背景' })[evidence.stance] || evidence.stance], ['定位', locatorText(locator)], ['切片', Array.isArray(locator.chunk_ids) ? locator.chunk_ids.join('、') : '—']].forEach(([label, value]) => { const dt = state.document.createElement('dt'); dt.textContent = label; const dd = state.document.createElement('dd'); dd.textContent = value == null || value === '' ? '—' : String(value); fields.append(dt, dd); });
+      [['证据', evidence.evidence_id], ['等级', evidenceLabel(evidence.evidence_level)], ['立场', ({ supports: '支持', contradicts: '反驳', contextual: '背景' })[evidence.stance] || evidence.stance], ['定位', locatorText(locator)], ['切片', Array.isArray(locator.chunk_ids) ? locator.chunk_ids.join('、') : '—']].forEach(([label, value]) => { const dt = state.document.createElement('dt'); dt.textContent = label; const dd = state.document.createElement('dd'); dd.textContent = value == null || value === '' ? '—' : String(value); dd.className = 'truncate'; withTooltip(dd, dd.textContent); fields.append(dt, dd); });
       host.appendChild(fields);
-      if (locator.document_id && Array.isArray(locator.chunk_ids) && locator.chunk_ids.length) { const actions = state.document.createElement('div'); actions.className = 'research-report-citation-detail-actions'; const open = state.document.createElement('button'); open.type = 'button'; open.className = 'secondary-button'; open.textContent = '打开原文切片'; open.addEventListener('click', () => openEvidenceLocator(locator)); actions.appendChild(open); host.appendChild(actions); }
+      if (locator.document_id && Array.isArray(locator.chunk_ids) && locator.chunk_ids.length) { const actions = state.document.createElement('div'); actions.className = 'research-report-citation-detail-actions'; const open = state.document.createElement('button'); open.type = 'button'; open.className = 'secondary-button btn-outline'; open.textContent = '打开原文切片'; open.addEventListener('click', () => openEvidenceLocator(locator)); actions.appendChild(open); host.appendChild(actions); }
     });
   }
 
@@ -3211,12 +3459,17 @@
       if (payload.status === 'deleted') renderTaskHeader({ ...state.selectedTask, status: 'failed' });
       if (state.selectedTaskId) loadReport(state.selectedTaskId);
     }
+    // Only the currently selected task's detail is repainted. The task list is
+    // updated incrementally (keyed card reuse), never rebuilt wholesale, so the
+    // green "已完成" badge and progress text do not flicker on every SSE frame.
     renderPlan(state.selectedTask?.plan);
     renderTimeline();
     renderReportFeedback();
     renderSelection();
     renderSummary();
-    renderTaskList();
+    const affectedId = state.selectedTaskId || state.selectedSessionId;
+    if (affectedId) renderTaskList({ onlyTaskId: affectedId });
+    renderRecordsEmptyState();
   }
 
   function handleSseEvent(type, message, generation) {
@@ -3275,6 +3528,9 @@
     // Its late success or failure must not replace this selection's list state.
     state.taskListRequestGeneration += 1;
     state.taskGeneration += 1;
+    // Capture the selection generation: any late response from an older task
+    // (or a newer selection started meanwhile) must be discarded, not painted.
+    const generation = state.taskGeneration;
     state.reportVersionRequest += 1;
     state.pendingReportVersion = null;
     cancelReportPoll();
@@ -3301,10 +3557,11 @@
     state.streamEnded = false;
     state.approvalInFlight = false;
     state.statusNotice = '';
+    // Keep the previously rendered detail / header / report on screen until the
+    // new task's data arrives. Only the list selection state is refreshed (keyed
+    // diff, no rebuild) and a skeleton class is toggled — no hiding, no clearing.
     renderTaskList();
-    setDetailVisibility(false);
-    renderTaskHeader(null);
-    setText('research-summary-text', '正在恢复研究会话详情…');
+    setDetailLoading(true);
     try {
       let task;
       let sessionDetail = knownSession?.research_session_id === sessionId ? knownSession : null;
@@ -3322,7 +3579,7 @@
         sessionDetail = sessionDetail || await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
         sessionProjection = sessionTaskProjection(sessionDetail);
         activeTaskId = sessionProjection?.research_task_id || null;
-        if (state.selectedSessionId !== sessionId) return;
+        if (generation !== state.taskGeneration || state.selectedSessionId !== sessionId) return;
         if (activeTaskId) {
           state.selectedTaskId = activeTaskId;
           upsertSessionTask(sessionProjection, sessionId);
@@ -3331,6 +3588,7 @@
           task = { ...sessionProjection, ...(taskDetail || {}) };
         } else task = sessionProjection;
       }
+      if (generation !== state.taskGeneration) return;
       if (state.selectedTaskId !== activeTaskId && state.selectedSessionId !== sessionId) return;
       if (!task) throw new Error('研究会话不存在');
       const listed = state.tasks.find((item) => item.research_task_id === activeTaskId || item.research_session_id === sessionId) || {};
@@ -3344,6 +3602,7 @@
           const session = task.research_session?.research_session_id === resolvedSessionId ? task.research_session
             : sessionDetail?.research_session_id === resolvedSessionId ? sessionDetail
               : await requestJson(`/api/research-sessions/${encodeURIComponent(resolvedSessionId)}`);
+          if (generation !== state.taskGeneration) { return; }
           if (state.selectedTaskId !== activeTaskId && state.selectedSessionId !== resolvedSessionId) { return; }
           state.selectedSessionId = resolvedSessionId;
           const canonical = sessionTaskProjection({ ...session, task: state.selectedTask });
@@ -3357,19 +3616,32 @@
       }
       upsertSessionTask(state.selectedTask, resolvedSessionId);
       setDetailVisibility(true);
+      // New data has been painted: drop the loading skeleton immediately.
+      setDetailLoading(false);
+      renderRecordsEmptyState();
       renderBenchmarkSummary();
       if (activeTaskId) {
         await Promise.all([loadMatrix(activeTaskId), loadReport(activeTaskId)]);
+        if (generation !== state.taskGeneration) return;
         if (state.selectedTaskId !== activeTaskId) return;
         connectStream();
       } else {
         setText('research-report-state', '任务批准并完成后显示报告。');
       }
     } catch (error) {
-      setText('research-detail-empty', userError(error, '任务详情加载失败。'));
-      setDetailVisibility(false);
+      if (generation !== state.taskGeneration) return;
+      // Surface the error without hiding the (previously rendered) detail or
+      // clearing the report — no white flash on a failed load either.
+      const empty = byId('research-detail-empty');
+      if (empty) { empty.textContent = userError(error, '任务详情加载失败。'); empty.hidden = false; }
       setText('research-summary-text', userError(error));
     } finally {
+      // 任务 J：A→B 快速切换时，A 的迟到响应会走到这里。只在它仍是当前 selection
+      // 时才收尾渲染，否则会提前移除 B 的 is-loading 骨架并基于混合态算空态。
+      if (generation === state.taskGeneration) {
+        setDetailLoading(false);
+        renderRecordsEmptyState();
+      }
       if (state.selectTaskInFlight === target) state.selectTaskInFlight = null;
     }
   }
@@ -3378,10 +3650,13 @@
     const selectionGeneration = state.taskGeneration;
     await conversationFromUrl();
     if (selectionGeneration !== state.taskGeneration) return state.tasks;
+    // Silent refresh: loadTasks() only reconciles the keyed task list (nodes are
+    // reused, badges updated in place). No report / matrix / artifacts /
+    // citations / detail state is reset, and the container is never cleared, so
+    // the manual refresh button no longer wipes the interface.
     const tasks = await loadTasks();
     // A notification or explicit selection can finish while the list response
-    // is in flight. That newer selection owns the detail and report state; a
-    // refresh that began earlier must not clear it using its stale list page.
+    // is in flight. That newer selection owns the detail and report state.
     if (selectionGeneration !== state.taskGeneration) return state.tasks;
     const currentSessionId = currentConversationSessionId();
     const selected = currentSessionId && tasks.find((task) => task.research_session_id === currentSessionId)
@@ -3394,25 +3669,32 @@
     // selectTask would hit its stale-selection guard and silently abort (loadReport
     // / connectStream never run), and a re-select here would open a duplicate SSE
     // pipe after approval.
-    if (state.selectTaskInFlight) return;
-    if (currentSessionId && !tasks.some((task) => task.research_session_id === currentSessionId)) await selectTask(null, currentSessionId);
-    else if (selected) await selectTask(selected.research_task_id, selected.research_session_id);
-    else {
-      state.taskGeneration += 1;
-      state.reportVersionRequest += 1;
-      state.reportLoadRequest += 1;
-      state.pendingReportVersion = null;
-      cancelReportPoll();
-      closeStream(); stopAcquisitionPoll(); state.selectedTaskId = null; state.selectedSessionId = null; state.selectedTask = null; state.events = new Map(); state.selectedPapers = new Set(); state.selectedPaperCount = null; state.selectionDetails = new Map(); state.selectionSnapshotTaskId = null; state.reportSelections = []; state.lastSeq = 0; state.approvalInFlight = false; state.statusNotice = '';
-      state.acquisition.preview = []; state.acquisition.status = null; state.acquisition.links = []; state.acquisition.items = []; state.acquisition.events = []; state.acquisition.evidence = []; state.acquisition.issues = []; state.acquisition.reportActionMessage = ''; state.acquisition.reportActionTaskIds = []; state.acquisition.reportActionStatus = ''; state.acquisition.reportActionVersion = null; state.acquisition.reportActionInFlight = false; state.acquisition.reportActionRequestKey = null; state.acquisition.reportActionRequestTaskId = null; state.acquisition.reportActionRetryMode = null; state.acquisition.selectionVersion = null; state.acquisition.selectedIds = new Set(); state.acquisition.searchId = null; state.acquisition.idempotencyKey = null;
-      renderTaskHeader(null); setDetailVisibility(false); renderSummary();
-      state.report = null; state.matrix = null; state.terminal = null; state.reportViews = new Map(); state.reportVersions = []; renderMatrix(null); renderReportFormatTabs();
-      const report = byId('research-report-markdown'); if (report) { report.hidden = true; report.replaceChildren(); }
-      setText('research-report-state', '任务完成后显示报告。');
-      setText('research-report-limitations', '');
-      renderReportArtifacts([]); renderReportCitations([]); renderReportFeedback();
-      renderAcquisition();
+    if (state.selectTaskInFlight) return state.tasks;
+    // Once a task is selected, a refresh is fully silent — never re-select,
+    // never touch the report / artifacts / citations or the visible detail.
+    if (state.selectedTaskId || state.selectedSessionId) {
+      // 任务 J：静默返回前校验选中项是否仍在最新 state.tasks。任务在别处被删除后，
+      // 列表卡片会消失，但详情 / 报告 / 矩阵 / SSE 仍残留旧任务；此时复用清理函数
+      // 收尾并给出空态（只切 hidden，不整块白屏、不重新引入闪烁）。
+      const stillSelected = state.tasks.some((task) =>
+        (state.selectedTaskId && task.research_task_id === state.selectedTaskId)
+        || (state.selectedSessionId && task.research_session_id === state.selectedSessionId));
+      if (!stillSelected) clearStaleSelection();
+      renderRecordsEmptyState();
+      return state.tasks;
     }
+    // First entry with no selection yet (deeplink / navigation): establish the
+    // initial selection, including the owner-scoped session that the paged list
+    // may omit. This is NOT a re-selection and there is no prior report to lose.
+    if (currentSessionId && !tasks.some((task) => task.research_session_id === currentSessionId)) {
+      await selectTask(null, currentSessionId);
+    } else if (selected) {
+      await selectTask(selected.research_task_id, selected.research_session_id);
+    } else {
+      // Empty list: show the empty state, never clear the interface.
+      renderRecordsEmptyState();
+    }
+    return state.tasks;
   }
 
   async function createTask(event) {
@@ -3459,6 +3741,9 @@
       };
       const projected = sessionTaskProjection(session);
       if (!projected) throw new Error('研究会话响应缺少会话 ID');
+      // Creation succeeded: switch back to the "研究任务" tab so the new
+      // task's list/detail is visible immediately.
+      activateResearchTab('tasks');
       state.sessions = [projected, ...state.sessions.filter((item) => item.research_session_id !== projected.research_session_id)];
       state.tasks = state.sessions;
       renderTaskList();
@@ -3509,17 +3794,19 @@
       event.preventDefault(); event.stopImmediatePropagation();
       const question = (byId('question')?.value || '').trim();
       if (question && byId('research-goal')) byId('research-goal').value = question;
-      showView(); refreshWorkspace(); byId('research-goal')?.focus();
+      // Chat "research" mode jumps straight to the create tab with the question
+      // pre-filled; navigation clicks keep the default "研究任务" tab.
+      showView(); refreshWorkspace(); activateResearchTab('create'); byId('research-goal')?.focus();
     }, true);
     update();
   }
 
   function bindNavigation() {
     const nav = state.document.querySelector('[data-view="research"]');
-    nav?.addEventListener('click', (event) => { event.preventDefault(); event.stopImmediatePropagation(); showView(); refreshWorkspace(); }, true);
+    nav?.addEventListener('click', (event) => { event.preventDefault(); event.stopImmediatePropagation(); showView(); activateResearchTab('tasks'); refreshWorkspace(); }, true);
     nav?.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault(); event.stopImmediatePropagation(); showView(); refreshWorkspace();
+      event.preventDefault(); event.stopImmediatePropagation(); showView(); activateResearchTab('tasks'); refreshWorkspace();
     }, true);
     byId('research-refresh-button')?.addEventListener('click', refreshWorkspace);
     byId('research-create-form')?.addEventListener('submit', createTask);
@@ -3584,7 +3871,7 @@
     if (state.booted) return;
     state.document = documentRef; state.booted = true; state.conversationId = parseConversationId();
     if (!byId('research-view')) return;
-    bindModeGuard(); bindNavigation(); bindNotifications();
+    bindResearchTabs(); bindModeGuard(); bindNavigation(); bindNotifications();
     conversationFromUrl();
     loadTasks();
     if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); return refreshWorkspace(); }, 0);
@@ -3612,6 +3899,9 @@
     api.uploadIssue = uploadIssue;
     api.openNotification = openNotification;
     api.loadReport = loadReport;
+    // Tab switching / keyed list rendering probes for the stability harness.
+    api.activateResearchTab = activateResearchTab;
+    api.renderTaskList = renderTaskList;
   }
   return api;
 }));

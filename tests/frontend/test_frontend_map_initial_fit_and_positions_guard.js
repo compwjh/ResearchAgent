@@ -158,6 +158,7 @@ function makeSandbox(overrides = {}) {
     scheduleViewSave() {},
     selectNode() {},
     closeExpansionPanel() {},
+    closeGroupsPopover() {}, // 补齐 HEAD 基线既有的沙箱夹具缺口（resetMapSelectionState 一直调用它）
     renderMapList() {},
     renderGroups() {},
     renderNodeDetail() {},

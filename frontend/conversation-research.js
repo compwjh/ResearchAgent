@@ -5,6 +5,21 @@
   else root.ConversationResearch = api;
 }(typeof globalThis !== 'undefined' ? globalThis : this, function conversationResearchFactory() {
   const MAX_SOURCES = 5;
+
+  // 任务 C：ID / hash / 版本号只显示短码，全文交给原生 title 悬浮查看。
+  function formatShortHash(value, n = 8) {
+    const text = value == null ? '' : String(value);
+    return text.length > n ? `${text.slice(0, n)}…` : text;
+  }
+
+  function withTooltip(el, fullText) {
+    if (!el) return el;
+    const text = fullText == null ? '' : String(fullText);
+    el.title = text;
+    if (typeof el.setAttribute === 'function') el.setAttribute('aria-label', text);
+    return el;
+  }
+
   const SOURCE_ROUTE = /^\/api\/kb\/documents\/[^/?#]+\/source(?:\?[^#]*)?$/;
 
   function normalizeSources(value) {
@@ -106,17 +121,29 @@
     detail.hidden = true;
     detail.setAttribute('aria-label', `来源 ${index + 1} 详情`);
     const title = documentRef.createElement('h4');
-    title.className = 'conversation-source-detail-title';
-    title.textContent = source.file_name || source.document_id || source.paper_id || `来源 ${index + 1}`;
+    const sourceTitle = String(source.file_name || source.document_id || source.paper_id || `来源 ${index + 1}`);
+    title.className = 'conversation-source-detail-title clamp-3';
+    title.textContent = sourceTitle;
+    withTooltip(title, sourceTitle);
     detail.appendChild(title);
     const fields = documentRef.createElement('dl');
     fields.className = 'conversation-source-detail-fields';
-    appendDetail(documentRef, fields, '文档', source.document_id || source.paper_id);
-    appendDetail(documentRef, fields, '文件', source.file_name);
+    const docValue = source.document_id || source.paper_id;
+    const docRow = appendDetail(documentRef, fields, '文档', formatShortHash(docValue));
+    docRow.className += ' hash-inline';
+    withTooltip(docRow, docValue == null ? '' : String(docValue));
+    const fileValue = source.file_name;
+    const fileRow = appendDetail(documentRef, fields, '文件', formatShortHash(fileValue, 24));
+    withTooltip(fileRow, fileValue == null ? '' : String(fileValue));
     appendDetail(documentRef, fields, '位置', displayPage(source));
-    appendDetail(documentRef, fields, '切片', source.chunk_id || source.chunk_index);
+    const chunkValue = source.chunk_id || source.chunk_index;
+    const chunkRow = appendDetail(documentRef, fields, '切片', formatShortHash(chunkValue));
+    chunkRow.className += ' hash-inline';
+    withTooltip(chunkRow, chunkValue == null ? '' : String(chunkValue));
     appendDetail(documentRef, fields, '得分', source.score == null ? null : source.score);
-    appendDetail(documentRef, fields, '正文', source.text);
+    const textRow = appendDetail(documentRef, fields, '正文', source.text);
+    textRow.className += ' clamp-3';
+    withTooltip(textRow, source.text == null ? '' : String(source.text));
     appendSourceLink(documentRef, fields, source);
     appendChunkLocateLink(documentRef, fields, source, onLocateChunk);
     detail.appendChild(fields);

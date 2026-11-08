@@ -470,6 +470,40 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #memory-view #memory-document-conflict pre { max-height: 240px; margin: 0; overflow: auto; padding: 9px; border: 1px solid #e8caca; border-radius: 6px; background: #fff; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 'DM Mono', monospace; }
 @media (max-width: 860px) { #memory-view .memory-page-header { align-items: stretch; flex-direction: column; }.conversation-actions { margin-left: 0; } }
 
+/* 任务 D：项目记忆列表——所有 active 项目一次性列出，点击复用下方单文档编辑器。
+   选择器全部限定 #memory-view；长文本复用任务 C 的 .truncate/.clamp-3，按钮复用 .btn-outline。 */
+#memory-view .memory-project-documents { display: grid; gap: 12px; margin-bottom: 18px; padding: 18px; border: 1px solid #dcd8ff; border-radius: 12px; background: linear-gradient(140deg, #fbfaff, #fff); box-shadow: 0 12px 30px #6d5dfc10; }
+#memory-view .memory-project-documents-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+#memory-view .memory-project-documents-head h2 { margin: 0; font-size: 18px; }
+#memory-view .memory-project-documents-help { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+/* 刷新按钮用独立语义类补 padding（不带 secondary-button 前缀以免增加冻结 token 计数；
+   选择器不以 .btn-outline 结尾，避免干扰任务 C 对 .btn-outline 基类的源码切片契约）。 */
+#memory-view .memory-project-documents-refresh { flex: 0 0 auto; padding: 8px 12px; }
+#memory-view .memory-project-documents-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+#memory-view .memory-project-doc { min-width: 0; }
+#memory-view .memory-project-doc-open { display: grid; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; }
+#memory-view .memory-project-doc-open:hover,
+#memory-view .memory-project-doc-open:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: 0; }
+#memory-view .memory-project-doc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+#memory-view .memory-project-doc-name { font-size: 13px; font-weight: 700; min-width: 0; }
+#memory-view .memory-project-doc-file { flex: 0 1 auto; max-width: 55%; color: var(--muted); font: 10px/1.4 'DM Mono', monospace; }
+#memory-view .memory-project-doc-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font: 10px/1.4 'DM Mono', monospace; }
+#memory-view .memory-project-doc-updated { min-width: 0; }
+#memory-view .memory-project-doc-revision { color: var(--muted); }
+#memory-view .memory-project-doc-length { white-space: nowrap; }
+#memory-view .memory-project-doc-excerpt { margin: 0; color: var(--ink); font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+#memory-view .memory-project-doc-excerpt:empty::before { content: '（空文档）'; color: var(--muted); }
+#memory-view .memory-project-documents-empty { margin: 0; color: var(--muted); font: 11px/1.5 'DM Mono', monospace; }
+#memory-view .memory-project-documents-status[data-state="error"] { color: #b13a3a; }
+/* 任务 J / 后端任务 G：失败项（available=false / error）照常展示但用同一错误态强调；
+   data-state 由 app.js 渲染时 setAttribute，选择器限定 #memory-view 不污染全局。 */
+#memory-view .memory-project-doc[data-state="error"] .memory-project-doc-open { border-color: #d8a5a5; background: #fff7f7; }
+#memory-view .memory-project-doc[data-state="error"] .memory-project-doc-excerpt { color: #b13a3a; font-weight: 600; }
+@media (max-width: 860px) {
+  #memory-view .memory-project-documents-head { align-items: stretch; flex-direction: column; }
+  #memory-view .memory-project-documents-list { grid-template-columns: 1fr; }
+}
+
 /* ===== 模型库视图（spec-007） ===== */
 @keyframes modelFadeIn {
   from { opacity: 0; transform: translateY(8px); }
@@ -3822,6 +3856,63 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #research-view #research-cancel-button.is-conflict { border-color: #e5c48c; background: #fff7ed; color: #94621c; }
 #research-view .research-recovery-notice { margin: 0; padding: 8px 10px; border: 1px solid #e5c48c; border-radius: 7px; background: #fffaf0; color: #94621c; font-size: 11px; line-height: 1.55; }
 
+/* ===== 研究视图主 tab（研究任务 / 创建研究会话）=====
+ * 与 index.html 内联 <style id="research-tasks-inline-style"> 两处同步；
+ * 复用 .kb-tabs/.kb-tab 视觉规范，但作用域严格限定 #research-view，避免污染 #kb-view。 */
+#research-view .research-main-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fafafd;
+}
+#research-view .research-main-tab {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 8px 13px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+#research-view .research-main-tab:hover,
+#research-view .research-main-tab:focus-visible {
+  border-color: var(--accent-soft);
+  background: #fff;
+  color: var(--accent);
+  outline: 0;
+}
+#research-view .research-main-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 8px #6d5dfc26;
+}
+/* .research-create-panel 自带 display:grid，会盖过 UA 的 [hidden]{display:none}，故显式强制隐藏。 */
+#research-view .research-tabpanel[hidden] { display: none !important; }
+#research-view .research-tabpanel { width: 100%; min-width: 0; }
+/* 切换任务/加载时保留旧详情，只给容器骨架态，不隐藏容器、不清空报告。 */
+#research-view .research-detail-column.is-loading,
+#research-view .research-summary-column.is-loading { opacity: .62; }
+#research-view .research-detail-column.is-loading::after {
+  content: '正在加载研究详情…';
+  display: block;
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+/* hydrateSession 预水合失败的可诊断标记（卡片 data-error），不再静默吞错。 */
+#research-view .research-task-item[data-error] { border-left: 3px solid #b42318; }
+#research-view .research-task-item[data-error]::after {
+  content: attr(data-error);
+  color: #b42318;
+  font-size: 10px;
+}
+/* 选中任务但各详情 section 均无数据时的可见空态提示。 */
+#research-view .research-records-empty { color: var(--muted); text-align: center; }
+
 #research-view .research-create-panel {
   display: grid;
   gap: 12px;
@@ -4198,3 +4289,38 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
     overflow-x: auto;
   }
 }
+
+/* ===== 任务 C：全站按钮可用态 + 长文本简版/悬浮 =====
+   以「追加类」方式给真实可用按钮加 .btn-outline；不改 .secondary-button 基类，
+   各视图既有 #id 作用域覆盖（登录队列橙色态、取消任务红态、:disabled 灰态）保持不变。
+   规则放在基类之后：同为 (0,1,0) 特异性时后者胜出。 */
+.btn-outline {
+  border: 1px solid #d8d2ff;
+  border-radius: 8px;
+  background: #fff;
+  color: #4a4560;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background .16s ease, border-color .16s ease;
+}
+.btn-outline:hover {
+  border-color: var(--accent);
+  background: #f0edff;
+}
+.btn-outline:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.btn-outline:disabled {
+  opacity: .62;
+  border-color: var(--line);
+  background: #f5f5f7;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* ID / hash / 版本号短码 + 长文本简版：简版显示，原生 title 悬浮看全文。 */
+.truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hash-inline { font-family: 'DM Mono', monospace; font-size: .92em; letter-spacing: .01em; }
+.clamp-3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }

@@ -681,6 +681,74 @@ def _memory_document_unavailable(error: BaseException) -> HTTPException:
     )
 
 
+_MEMORY_DOCUMENT_EXCERPT_CHARS = 240
+_MEMORY_DOCUMENT_PROJECT_ERROR = "MEMORY_DOCUMENT_UNAVAILABLE"
+
+
+@router.get("/memory-documents/projects")
+def list_memory_document_projects():
+    """列出全部 active 项目的记忆文档（一次性返回，不分页、不要求选择项目）。
+
+    - 数据源是 ``projects`` 表中 status='active' 且未删除的记录；已删除/归档
+      项目不展示，``projects/`` 目录里没有项目记录的孤儿 md 也不展示。
+    - 每个项目复用 ``MarkdownMemoryStore.read_document`` 得到 document/content/
+      revision（spec-038 冻结的 OCC 契约不变），摘要只做截断、不改写正文。
+    - 单个项目读取失败（非法 UTF-8 / 权限 / 历史 NULL 时间）只降级该条：仍出现在
+      列表里并带 ``available=false`` 与稳定 ``error`` 码，其余 active 项目照常
+      200 全量列出，不让一个坏文件把整表拖成 503。
+    - 不改 GET/PUT /api/memory-documents 契约，也不放宽 _memory_document_context
+      的 active 校验。
+    """
+    try:
+        repo = _repo()
+        store = MarkdownMemoryStore(repository=repo)
+        documents = []
+        for project in repo.list_active_projects(OWNER_ID):
+            updated_at = None
+            try:
+                # 历史行可能没有 updated_at：显式判空，不抛 AttributeError。
+                if project.updated_at is not None:
+                    updated_at = project.updated_at.isoformat()
+                document = store.read_document(scope="project", project_id=project.project_id)
+                content = document["content"]
+                documents.append({
+                    "project_id": project.project_id,
+                    "project_name": project.name,
+                    "document": document["document"],
+                    "content_excerpt": content[:_MEMORY_DOCUMENT_EXCERPT_CHARS],
+                    "content_length": len(content),
+                    "revision": document["revision"],
+                    "updated_at": updated_at,
+                })
+            except HTTPException:
+                raise
+            except Exception:
+                # 单项目降级：只给稳定错误码，不把原始异常文本塞进响应
+                # （回归清单 #14）；其余 active 项目继续列出。
+                logger.warning(
+                    "project memory document unreadable: %s", project.project_id, exc_info=True
+                )
+                documents.append({
+                    "project_id": project.project_id,
+                    "project_name": project.name,
+                    "document": "",
+                    "content_excerpt": "",
+                    "content_length": 0,
+                    "revision": "",
+                    "updated_at": updated_at,
+                    "available": False,
+                    "error": _MEMORY_DOCUMENT_PROJECT_ERROR,
+                })
+        return documents
+    except HTTPException:
+        raise
+    except (MemoryDocumentPathError, MemoryDocumentUnavailableError, ValueError) as error:
+        raise _memory_document_unavailable(error) from error
+    except Exception as error:
+        logger.exception("project memory document listing failed")
+        raise _memory_document_unavailable(error) from error
+
+
 @router.get("/memory-documents")
 def get_memory_document(scope: str | None = None, project_id: str | None = None):
     _, store = _memory_document_context(scope, project_id)

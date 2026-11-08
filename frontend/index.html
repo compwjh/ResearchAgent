@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 /assets/styles.css?v=62 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=70">
+    <link rel="stylesheet" href="/assets/styles.css?v=71">
     <!-- Spec044: 本地 vendor KaTeX 0.16.45（无 CDN / 无运行时网络请求） -->
     <link rel="stylesheet" href="/assets/vendor/katex/katex.min.css?v=1">
-  <link rel="stylesheet" href="/assets/literature-maps.css?v=31">
+  <link rel="stylesheet" href="/assets/literature-maps.css?v=33">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -67,6 +67,18 @@
       #research-view .research-checkbox input { width: auto; }
       @media (max-width: 1080px) { #research-view .research-grid { grid-template-columns: minmax(200px, .8fr) minmax(320px, 1.2fr); } #research-view .research-summary-column { grid-column: 1 / -1; } }
       @media (max-width: 760px) { #research-view .research-workspace { min-height: calc(100vh - 60px); padding: 22px 16px 28px; } #research-view .research-page-header { align-items: flex-start; flex-direction: column; } #research-view .research-grid { grid-template-columns: 1fr; } #research-view .research-summary-column { grid-column: auto; } #research-view .research-column > details[open] > summary { position: sticky; top: 0; z-index: 1; background: #fff; } #research-view .research-form-grid { grid-template-columns: 1fr; } #research-view .research-timeline { max-height: none; } }
+      /* 主 tab（研究任务 / 创建研究会话）：与 styles.css 保持同步，作用域限定 #research-view。 */
+      #research-view .research-main-tabs { display: flex; align-items: center; gap: 4px; width: fit-content; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: #fafafd; }
+      #research-view .research-main-tab { border: 1px solid transparent; border-radius: 7px; padding: 8px 13px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; }
+      #research-view .research-main-tab:hover, #research-view .research-main-tab:focus-visible { border-color: var(--accent-soft); background: #fff; color: var(--accent); outline: 0; }
+      #research-view .research-main-tab[aria-selected="true"] { background: var(--accent); color: #fff; box-shadow: 0 2px 8px #6d5dfc26; }
+      #research-view .research-tabpanel[hidden] { display: none !important; }
+      #research-view .research-tabpanel { width: 100%; min-width: 0; }
+      #research-view .research-detail-column.is-loading, #research-view .research-summary-column.is-loading { opacity: .62; }
+      #research-view .research-detail-column.is-loading::after { content: '正在加载研究详情…'; display: block; padding: 10px 0; color: var(--muted); font-size: 11px; }
+      #research-view .research-task-item[data-error] { border-left: 3px solid #b42318; }
+      #research-view .research-task-item[data-error]::after { content: attr(data-error); color: #b42318; font-size: 10px; }
+      #research-view .research-records-empty { color: var(--muted); text-align: center; }
     </style>
 </head>
 <body>
@@ -201,15 +213,38 @@
             <p class="subtitle" id="research-current-conversation">从当前会话创建并观察可恢复的研究任务。</p>
           </div>
           <div class="research-page-actions">
-            <button class="secondary-button" id="research-refresh-button" type="button">刷新任务</button>
-            <button class="secondary-button research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
-            <button class="secondary-button research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
-            <button class="secondary-button research-task-action" id="research-task-recover-button" type="button" hidden aria-hidden="true">检查并恢复</button>
+            <button class="secondary-button btn-outline" id="research-refresh-button" type="button">刷新任务</button>
+            <button class="secondary-button btn-outline research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
+            <button class="secondary-button btn-outline research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
+            <button class="secondary-button btn-outline research-task-action" id="research-task-recover-button" type="button" hidden aria-hidden="true">检查并恢复</button>
             <button class="send-button research-task-action" id="research-task-approve-button" type="button" hidden aria-hidden="true">批准计划</button>
-            <button class="secondary-button danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
+            <button class="secondary-button btn-outline danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
           </div>
         </header>
 
+        <div class="research-main-tabs kb-tabs" id="research-main-tabs" role="tablist" aria-label="深度研究主导航">
+          <button class="kb-tab research-main-tab" id="research-tab-tasks" data-research-tab="tasks" type="button" role="tab" aria-controls="research-tabpanel-tasks" aria-selected="true" tabindex="0">研究任务</button>
+          <button class="kb-tab research-main-tab" id="research-tab-create" data-research-tab="create" type="button" role="tab" aria-controls="research-tabpanel-create" aria-selected="false" tabindex="-1">创建研究会话</button>
+        </div>
+
+        <section class="research-tabpanel research-create-panel" id="research-tabpanel-create" role="tabpanel" aria-labelledby="research-tab-create" hidden>
+          <h2 id="research-create-title">创建深度研究会话</h2>
+          <p class="research-status" id="research-create-status" role="status" aria-live="polite">填写研究目标后，系统会通过统一 Session/Intake/Plan/Approval 流程创建并打开会话。</p>
+          <form class="research-create-form" id="research-create-form">
+            <label for="research-goal">研究目标<textarea id="research-goal" name="goal" maxlength="4000" required placeholder="描述需要系统研究的问题、范围和期望结论"></textarea></label>
+            <div class="research-form-grid">
+              <label for="research-year-from">起始年份<input id="research-year-from" name="year_from" type="number" min="1900" max="2200" required placeholder="2020" inputmode="numeric"></label>
+              <label for="research-year-to">结束年份<input id="research-year-to" name="year_to" type="number" min="1900" max="2200" required placeholder="2024" inputmode="numeric"></label>
+              <label for="research-quality">质量档位<select id="research-quality" name="quality_profile"><option value="speed">快速</option><option value="balanced" selected>均衡</option><option value="quality">高质量</option></select></label>
+              <label for="research-target-count">目标论文数<input id="research-target-count" name="target_paper_count" type="number" min="1" max="20" value="12" inputmode="numeric"></label>
+              <label for="research-language">报告语言<select id="research-language" name="language"><option value="zh" selected>中文</option><option value="en">English</option></select></label>
+            </div>
+            <label class="research-checkbox" for="research-review-plan"><input id="research-review-plan" name="review_plan_first" type="checkbox"> 先审核计划，再继续执行</label>
+            <div class="research-form-actions"><button class="send-button" id="research-create-button" type="submit">创建研究会话</button></div>
+          </form>
+        </section>
+
+        <div class="research-tabpanel" id="research-tabpanel-tasks" role="tabpanel" aria-labelledby="research-tab-tasks">
         <div class="research-grid">
           <aside class="research-column research-task-column" aria-label="研究任务列表">
             <details open>
@@ -217,7 +252,7 @@
               <div class="research-column-body">
                 <p class="research-status" id="research-list-status" role="status" aria-live="polite">正在加载…</p>
                 <div class="research-task-list" id="research-task-list" role="list"></div>
-                <p class="research-empty" id="research-list-empty" hidden>当前没有研究任务。</p>
+                <p class="research-empty" id="research-list-empty" hidden>暂无研究任务</p>
               </div>
             </details>
           </aside>
@@ -231,6 +266,7 @@
                 <p class="research-recovery-notice" id="research-recovery-notice" role="status" aria-live="polite" hidden></p>
               </div>
               <p class="research-empty" id="research-detail-empty">从左侧选择任务，或从当前会话创建任务。</p>
+              <p class="research-empty research-records-empty" hidden>暂无执行记录</p>
               <div class="research-detail-section" id="research-plan-section" hidden>
                 <h3>计划与研究范围</h3>
                 <p class="research-plan-label" id="research-plan-meta"></p>
@@ -285,7 +321,7 @@
                 <div class="research-acquisition-actions">
                   <span class="research-acquisition-selection-count" id="research-acquisition-selection-count">已选 0 篇</span>
                   <button class="send-button" id="research-acquisition-confirm" type="button" disabled>确认并开始导入</button>
-                  <button class="secondary-button" id="research-acquisition-refresh" type="button" disabled>刷新进度</button>
+                  <button class="secondary-button btn-outline" id="research-acquisition-refresh" type="button" disabled>刷新进度</button>
                 </div>
                 <ul class="research-acquisition-candidates" id="research-acquisition-candidates" aria-label="全文获取候选"></ul>
                 <div class="research-acquisition-progress" id="research-acquisition-progress" hidden>
@@ -335,7 +371,7 @@
                   <p class="research-report-progress" id="research-report-progress"></p>
                   <dl class="research-report-quality-metrics" id="research-report-quality-metrics"></dl>
                   <p class="research-report-reasons" id="research-report-reasons"></p>
-                  <button class="secondary-button research-report-retry" id="research-report-retry" type="button" hidden>重试生成新版本</button>
+                  <button class="secondary-button btn-outline research-report-retry" id="research-report-retry" type="button" hidden>重试生成新版本</button>
                 </section>
                 <div class="research-report-view-controls" id="research-report-view-controls" hidden>
                   <label for="research-report-version-select">版本<select id="research-report-version-select" aria-label="报告版本"></select></label>
@@ -357,23 +393,7 @@
             </details>
           </aside>
         </div>
-
-        <section class="research-create-panel" aria-labelledby="research-create-title">
-          <h2 id="research-create-title">创建深度研究会话</h2>
-          <p class="research-status" id="research-create-status" role="status" aria-live="polite">填写研究目标后，系统会通过统一 Session/Intake/Plan/Approval 流程创建并打开会话。</p>
-          <form class="research-create-form" id="research-create-form">
-            <label for="research-goal">研究目标<textarea id="research-goal" name="goal" maxlength="4000" required placeholder="描述需要系统研究的问题、范围和期望结论"></textarea></label>
-            <div class="research-form-grid">
-              <label for="research-year-from">起始年份<input id="research-year-from" name="year_from" type="number" min="1900" max="2200" required placeholder="2020" inputmode="numeric"></label>
-              <label for="research-year-to">结束年份<input id="research-year-to" name="year_to" type="number" min="1900" max="2200" required placeholder="2024" inputmode="numeric"></label>
-              <label for="research-quality">质量档位<select id="research-quality" name="quality_profile"><option value="speed">快速</option><option value="balanced" selected>均衡</option><option value="quality">高质量</option></select></label>
-              <label for="research-target-count">目标论文数<input id="research-target-count" name="target_paper_count" type="number" min="1" max="20" value="12" inputmode="numeric"></label>
-              <label for="research-language">报告语言<select id="research-language" name="language"><option value="zh" selected>中文</option><option value="en">English</option></select></label>
-            </div>
-            <label class="research-checkbox" for="research-review-plan"><input id="research-review-plan" name="review_plan_first" type="checkbox"> 先审核计划，再继续执行</label>
-            <div class="research-form-actions"><button class="send-button" id="research-create-button" type="submit">创建研究会话</button></div>
-          </form>
-        </section>
+        </div>
       </section>
     </section>
 
@@ -424,10 +444,24 @@
           <p class="system-rule-updated" id="system-rule-updated"></p>
           <p class="system-rule-status-message" id="system-rule-status" role="status" aria-live="polite"></p>
           <div class="system-rule-actions">
-            <button class="secondary-button" id="system-rule-edit-button" type="button">编辑</button>
-            <button class="secondary-button" id="system-rule-toggle-button" type="button">启用</button>
-            <button class="secondary-button danger-button" id="system-rule-clear-button" type="button">清空</button>
+            <button class="secondary-button btn-outline" id="system-rule-edit-button" type="button">编辑</button>
+            <button class="secondary-button btn-outline" id="system-rule-toggle-button" type="button">启用</button>
+            <button class="secondary-button btn-outline danger-button" id="system-rule-clear-button" type="button">清空</button>
           </div>
+        </section>
+        <!-- 任务 D：项目记忆列表——所有 active 项目一次性列出，进入视图默认可见；点击某条复用下方单文档编辑器。 -->
+        <section class="memory-project-documents" id="memory-project-documents" aria-labelledby="memory-project-documents-title">
+          <header class="memory-project-documents-head">
+            <div>
+              <p class="eyebrow">PROJECT MEMORY</p>
+              <h2 id="memory-project-documents-title">项目记忆</h2>
+              <p class="memory-project-documents-help">全部 active 项目的记忆文档；已删除项目与无项目记录的孤儿文件不展示。点击任一项目可在下方编辑器打开。</p>
+            </div>
+            <button class="btn-outline memory-project-documents-refresh" id="memory-project-documents-refresh" type="button">刷新项目记忆</button>
+          </header>
+          <p class="conversation-status memory-project-documents-status" id="memory-project-documents-status" role="status" aria-live="polite"></p>
+          <ul class="memory-project-documents-list" id="memory-project-documents-list"></ul>
+          <p class="memory-project-documents-empty" id="memory-project-documents-empty" hidden>暂无项目记忆</p>
         </section>
         <p class="conversation-status" id="memory-status" role="status" aria-live="polite"></p>
         <section class="memory-document-panel" aria-label="记忆文档编辑器">
@@ -453,7 +487,7 @@
             <strong>服务器已有新版本</strong>
             <p>当前编辑草稿已保留。先读取最新版本并保留草稿，再对照合并后保存。</p>
             <pre id="memory-document-conflict-copy"></pre>
-            <button class="secondary-button" id="memory-document-conflict-refresh-button" type="button">读取最新版本并保留草稿</button>
+            <button class="secondary-button btn-outline" id="memory-document-conflict-refresh-button" type="button">读取最新版本并保留草稿</button>
           </section>
         </section>
   </section>
@@ -467,7 +501,7 @@
       <p class="system-rule-count" id="system-rule-count" aria-live="polite">0 / 12000</p>
       <label class="dialog-checkbox" for="system-rule-enabled-input"><input id="system-rule-enabled-input" type="checkbox"> 保存后启用</label>
       <p class="system-rule-status-message" id="system-rule-dialog-status" role="status" aria-live="polite"></p>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="system-rule-save-button" value="default">保存</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">取消</button><button class="send-button" id="system-rule-save-button" value="default">保存</button></div>
     </form>
   </dialog>
   <dialog class="project-dialog system-rule-dialog" id="system-rule-clear-dialog" aria-labelledby="system-rule-clear-title">
@@ -475,7 +509,7 @@
       <div class="settings-title"><div><span class="conversation-kicker">SYSTEM RULE</span><h2 id="system-rule-clear-title">清空系统规则</h2></div><button class="icon-button" value="cancel" aria-label="取消清空">×</button></div>
       <p>清空后内容会被删除并停用，无法恢复。确定继续吗？</p>
       <p class="system-rule-status-message" id="system-rule-clear-status" role="status" aria-live="polite"></p>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button danger-button" id="system-rule-clear-submit" value="default">确认清空</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">取消</button><button class="send-button danger-button" id="system-rule-clear-submit" value="default">确认清空</button></div>
     </form>
   </dialog>
 
@@ -579,7 +613,7 @@
               <div class="kb-chunk-content" id="kb-chunk-content" role="list" aria-label="切片列表" tabindex="0">
                 <p class="kb-inspection-empty" id="kb-chunk-empty">选择文档和版本后显示切片。</p>
               </div>
-              <button class="kb-chunk-load-more secondary-button" id="kb-chunk-load-more" type="button" hidden>加载更多切片</button>
+              <button class="kb-chunk-load-more secondary-button btn-outline" id="kb-chunk-load-more" type="button" hidden>加载更多切片</button>
             </section>
           </div>
         </section>
@@ -613,8 +647,8 @@
             <div class="paper-conference-actions">
               <label for="paper-conference-search">搜索会议</label>
               <input id="paper-conference-search" type="search" autocomplete="off" placeholder="输入会议名称或简称" aria-controls="paper-conference-search-results">
-              <button class="secondary-button" id="paper-conference-search-button" type="button">搜索</button>
-              <button class="secondary-button" id="paper-conference-manage-button" type="button" aria-haspopup="dialog">管理会议</button>
+              <button class="secondary-button btn-outline" id="paper-conference-search-button" type="button">搜索</button>
+              <button class="secondary-button btn-outline" id="paper-conference-manage-button" type="button" aria-haspopup="dialog">管理会议</button>
             </div>
             <ul class="paper-conference-search-results" id="paper-conference-search-results" role="listbox" aria-label="会议搜索结果"></ul>
             <p class="paper-status" id="paper-conference-status" role="status" aria-live="polite"></p>
@@ -663,9 +697,9 @@
           <p class="paper-empty" id="paper-results-empty">输入研究方向并开始检索。</p>
           <ol class="paper-results" id="paper-results" aria-live="polite" aria-busy="false"></ol>
           <nav class="paper-pagination" id="paper-pagination" aria-label="论文结果分页" hidden>
-            <button class="secondary-button" id="paper-prev-page" type="button" disabled>上一页</button>
+            <button class="secondary-button btn-outline" id="paper-prev-page" type="button" disabled>上一页</button>
             <span class="paper-page-status" id="paper-page-status" aria-live="polite">第 1 / 1 页</span>
-            <button class="secondary-button" id="paper-next-page" type="button" disabled>下一页</button>
+            <button class="secondary-button btn-outline" id="paper-next-page" type="button" disabled>下一页</button>
           </nav>
           <p class="paper-error" id="paper-search-error" role="alert" hidden></p>
         </section>
@@ -732,7 +766,7 @@
       <p class="st-detail-tools" id="st-detail-tools"></p>
       <p class="st-detail-label">正文</p>
       <pre class="st-detail-body" id="st-detail-body"></pre>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">关闭</button></div>
     </form>
   </dialog>
 
@@ -745,7 +779,7 @@
       <p class="st-detail-desc" id="st-code-location"></p>
       <p class="st-detail-label">源码</p>
       <pre class="st-detail-body" id="st-code-body"></pre>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">关闭</button></div>
     </form>
   </dialog>
 
@@ -757,7 +791,7 @@
       </div>
       <p class="paper-status" id="paper-conference-dialog-status" role="status" aria-live="polite"></p>
       <ul class="paper-managed-conferences" id="paper-managed-conferences"></ul>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">关闭</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">关闭</button></div>
     </form>
   </dialog>
   <dialog class="settings-dialog" id="settings-dialog">
@@ -767,14 +801,14 @@
       <label>文章下载地址 <textarea id="download-urls" rows="3" placeholder="每行一个 HTTP(S) 地址，可留空使用候选地址"></textarea></label>
       <label>本地下载目录 <input id="download-dir" type="text" placeholder="data/articles"></label>
       <p class="settings-status" id="settings-status"></p>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="save-settings" value="default">保存设置</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">取消</button><button class="send-button" id="save-settings" value="default">保存设置</button></div>
     </form>
   </dialog>
   <dialog class="project-dialog" id="project-dialog" aria-labelledby="project-dialog-title">
     <form class="settings-form" id="project-dialog-form" method="dialog">
       <div class="settings-title"><div><span class="conversation-kicker">PROJECTS</span><h2 id="project-dialog-title">新建项目</h2></div><button class="icon-button" value="cancel" aria-label="关闭新建项目">×</button></div>
       <label for="project-dialog-name">项目名称<input id="project-dialog-name" maxlength="120" required placeholder="例如：记忆测试"></label>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" value="default">创建</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">取消</button><button class="send-button" value="default">创建</button></div>
     </form>
   </dialog>
   <dialog class="project-dialog" id="conversation-action-dialog" aria-labelledby="conversation-action-dialog-title">
@@ -785,14 +819,14 @@
       <label id="conversation-action-project-field" for="conversation-action-project">目标项目<select id="conversation-action-project"></select></label>
       <label id="conversation-action-history-field" class="dialog-checkbox"><input id="conversation-action-history" type="checkbox"> 让绑定前的历史消息也参与项目记忆</label>
       <p class="conversation-status" id="conversation-action-status" role="status" aria-live="polite"></p>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button" id="conversation-action-submit" value="default">确定</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">取消</button><button class="send-button" id="conversation-action-submit" value="default">确定</button></div>
     </form>
   </dialog>
   <dialog class="project-dialog" id="conversation-confirm-dialog" aria-labelledby="conversation-confirm-title">
     <form class="settings-form" id="conversation-confirm-form" method="dialog">
       <div class="settings-title"><div><span class="conversation-kicker">CONFIRM</span><h2 id="conversation-confirm-title">确认操作</h2></div><button class="icon-button" value="cancel" aria-label="取消操作">×</button></div>
       <p id="conversation-confirm-message"></p>
-      <div class="settings-actions"><button class="secondary-button" value="cancel">取消</button><button class="send-button danger-button" id="conversation-confirm-submit" value="default">确认</button></div>
+      <div class="settings-actions"><button class="secondary-button btn-outline" value="cancel">取消</button><button class="send-button danger-button" id="conversation-confirm-submit" value="default">确认</button></div>
     </form>
   </dialog>
   <script src="/assets/vendor/purify.min.js?v=13"></script>
@@ -800,14 +834,14 @@
   <script src="/assets/vendor/katex/katex.min.js?v=1"></script>
   <script src="/assets/kb-inspection.js?v=24"></script>
   <!-- Compatibility marker for the prior Session UI asset contract: /assets/research-session-ui.js?v=1 -->
-  <script src="/assets/research-session-ui.js?v=2"></script>
-  <script src="/assets/conversation-research.js?v=2"></script>
+  <script src="/assets/research-session-ui.js?v=3"></script>
+  <script src="/assets/conversation-research.js?v=3"></script>
   <script src="/assets/processing-tree.js?v=2"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 /assets/research-tasks.js?v=10 -->
-  <script src="/assets/research-tasks.js?v=21"></script>
-    <script src="/assets/literature-maps.js?v=45"></script>
+  <script src="/assets/research-tasks.js?v=22"></script>
+    <script src="/assets/literature-maps.js?v=46"></script>
   <!-- Legacy asset-version markers: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/app.js?v=53 /assets/app.js?v=55 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 /assets/styles.css?v=55 href="/assets/styles.css?v=53" href="/assets/styles.css?v=62" src="/assets/app.js?v=53" src="/assets/app.js?v=62" -->
-  <script src="/assets/app.js?v=72"></script>
+  <script src="/assets/app.js?v=73"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 -->
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
   <!-- Spec037 compatibility markers: /assets/research-tasks.js?v=11 /assets/app.js?v=54 href="/assets/styles.css?v=53" src="/assets/app.js?v=54" -->

@@ -79,12 +79,25 @@
     if (typeof raw !== 'string') return raw;
     try { return JSON.parse(raw); } catch (_) { return null; }
   }
+  function formatElapsed(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return '—';
+    const seconds = ms / 1000;
+    const label = seconds.toFixed(seconds >= 10 ? 0 : 1);
+    // A sub-100ms difference would round to "0.0"; that is not a usable
+    // duration (seeded demo rows had created_at === completed_at), so keep
+    // the em-dash placeholder instead of a misleading zero-second reading.
+    if (Number(label) === 0) return '—';
+    return `${label} 秒`;
+  }
   function durationText(item) {
+    // Prefer the backend's authoritative duration_ms, then fall back to the
+    // started_at/completed_at window, then created_at/updated_at. A missing,
+    // zero, or negative value is not a valid elapsed time.
     const duration = Number(item?.duration_ms);
-    if (Number.isFinite(duration) && duration >= 0) return `${(duration / 1000).toFixed(duration >= 10000 ? 0 : 1)} 秒`;
+    if (Number.isFinite(duration) && duration > 0) return formatElapsed(duration);
     const start = Date.parse(item?.started_at || item?.created_at || '');
     const end = Date.parse(item?.completed_at || item?.updated_at || '');
-    if (Number.isFinite(start) && Number.isFinite(end) && end >= start) return `${((end - start) / 1000).toFixed((end - start) >= 10000 ? 0 : 1)} 秒`;
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) return formatElapsed(end - start);
     return '—';
   }
   function progressText(item) {

@@ -70,6 +70,8 @@
 
   // FE-1a 地图级标签：卡片最多渲染的标签数，超出显示 +N。
   const MAP_CARD_TAG_LIMIT = 3;
+  // 任务 D：标签筛选条收起态最多展示的 chip 数，超出折叠到「+N 更多」下拉多选浮层。
+  const TAG_FILTER_CHIP_LIMIT = 3;
 
   const state = {
     active: false,
@@ -96,10 +98,12 @@
     selectedNode: null,
     listQuery: '',
     listStatus: 'all',
-    // FE-1a 地图级标签：全量标签列表（GET /tags）与列表上方的单选筛选态（纯前端视图态）。
+    // FE-1a 地图级标签：全量标签列表（GET /tags）与列表上方的多选筛选态（Set，纯前端视图态）。
+    // 任务 D：listTagId 标量改为 listTagIds（Set），支持多选 + OR 过滤、再点取消。
     tags: [],
-    listTagId: null,
+    listTagIds: new Set(),
     tagMenuOpenFor: null,
+    tagFilterMenuOpen: false,
     job: null,
     eventCursor: 0,
     pollTimer: null,
@@ -206,9 +210,24 @@
     return node;
   }
 
+  // 任务 C：ID / hash / 版本号只显示短码，全文交给原生 title 悬浮查看。
+  function formatShortHash(value, n = 8) {
+    const text = value == null ? '' : String(value);
+    return text.length > n ? `${text.slice(0, n)}…` : text;
+  }
+
+  function withTooltip(el, fullText) {
+    if (!el) return el;
+    const text = fullText == null ? '' : String(fullText);
+    el.title = text;
+    if (typeof el.setAttribute === 'function') el.setAttribute('aria-label', text);
+    return el;
+  }
+
   function renderAnalysisMarkdown(source) {
     const text = String(source || '');
-    const content = createElement('div', 'literature-map-analysis-summary md-body');
+    const content = createElement('div', 'literature-map-analysis-summary md-body clamp-3');
+    withTooltip(content, text);
     if (typeof window.renderMarkdown !== 'function') {
       content.textContent = text;
       return content;
@@ -753,7 +772,7 @@
     applyButton.type = 'button';
     applyButton.disabled = !state.map?.map_id;
     applyButton.addEventListener('click', () => applyGroupColor(groupId, applyButton));
-    const cancelButton = createElement('button', 'secondary-button literature-map-color-cancel', '取消预览');
+    const cancelButton = createElement('button', 'secondary-button btn-outline literature-map-color-cancel', '取消预览');
     cancelButton.type = 'button';
     cancelButton.addEventListener('click', () => cancelColorDraft(groupId));
     actions.append(applyButton, cancelButton);
@@ -947,36 +966,36 @@
     heading.append(createElement('h1', '', '自动主题探索'));
     heading.append(createElement('p', 'literature-map-subtitle', '输入主题，保存一张可继续探索的论文关系图。'));
     const headerActions = createElement('div', 'literature-map-header-actions literature-map-job-actions');
-    const refreshButton = createElement('button', 'secondary-button', '刷新状态');
+    const refreshButton = createElement('button', 'secondary-button btn-outline', '刷新状态');
     refreshButton.type = 'button';
     refreshButton.id = 'literature-map-refresh-button';
     refreshButton.title = '重新读取地图和作业状态';
     headerActions.append(refreshButton);
-    const newButton = createElement('button', 'secondary-button', '新建地图');
+    const newButton = createElement('button', 'secondary-button btn-outline', '新建地图');
     newButton.type = 'button';
     newButton.id = 'literature-map-new-button';
     headerActions.append(newButton);
-    const continueButton = createElement('button', 'secondary-button', '继续搜索');
+    const continueButton = createElement('button', 'secondary-button btn-outline', '继续搜索');
     continueButton.type = 'button';
     continueButton.id = 'literature-map-continue-search';
     continueButton.hidden = true;
     headerActions.append(continueButton);
-    const refreshPreviewButton = createElement('button', 'secondary-button', '刷新预览');
+    const refreshPreviewButton = createElement('button', 'secondary-button btn-outline', '刷新预览');
     refreshPreviewButton.type = 'button';
     refreshPreviewButton.id = 'literature-map-refresh-preview';
     refreshPreviewButton.hidden = true;
     headerActions.append(refreshPreviewButton);
-    const openSavedPreviewButton = createElement('button', 'secondary-button', '打开上次预览');
+    const openSavedPreviewButton = createElement('button', 'secondary-button btn-outline', '打开上次预览');
     openSavedPreviewButton.type = 'button';
     openSavedPreviewButton.id = 'literature-map-open-saved-preview';
     openSavedPreviewButton.hidden = true;
     headerActions.append(openSavedPreviewButton);
-    const stopJobButton = createElement('button', 'secondary-button', '停止任务');
+    const stopJobButton = createElement('button', 'secondary-button btn-outline', '停止任务');
     stopJobButton.type = 'button';
     stopJobButton.id = 'literature-map-stop-job';
     stopJobButton.hidden = true;
     headerActions.append(stopJobButton);
-    const retryJobButton = createElement('button', 'secondary-button', '重试失败单元');
+    const retryJobButton = createElement('button', 'secondary-button btn-outline', '重试失败单元');
     retryJobButton.type = 'button';
     retryJobButton.id = 'literature-map-retry-job';
     retryJobButton.hidden = true;
@@ -1049,7 +1068,7 @@
     groupColorInput.type = 'color';
     groupColorInput.value = '#8d80e6';
     groupColorInput.setAttribute('aria-label', '分组颜色');
-    const groupCreateButton = createElement('button', 'secondary-button', '创建分组');
+    const groupCreateButton = createElement('button', 'secondary-button btn-outline', '创建分组');
     groupCreateButton.type = 'submit';
     groupCreateButton.id = 'literature-map-group-create';
     groupForm.append(groupNameInput, groupColorInput, groupCreateButton);
@@ -1124,7 +1143,7 @@
     projectField.append(projectInput, projectNotice);
     filterGrid.append(sourceField, conferenceField, projectField);
     const formActions = createElement('div', 'literature-map-form-actions');
-    const cancelButton = createElement('button', 'secondary-button', '取消');
+    const cancelButton = createElement('button', 'secondary-button btn-outline', '取消');
     cancelButton.type = 'button';
     cancelButton.id = 'literature-map-create-cancel';
     const submitButton = createElement('button', 'send-button', '开始建图');
@@ -1144,7 +1163,7 @@
     currentMeta.id = 'literature-map-current-meta';
     canvasTitle.append(currentTitle, currentMeta);
     const tools = createElement('div', 'literature-map-tools');
-    const mobileListButton = createElement('button', 'secondary-button literature-map-mobile-list-open', '地图列表');
+    const mobileListButton = createElement('button', 'secondary-button btn-outline literature-map-mobile-list-open', '地图列表');
     mobileListButton.type = 'button';
     mobileListButton.id = 'literature-map-mobile-list-open';
     mobileListButton.title = '打开地图列表和筛选';
@@ -1158,12 +1177,12 @@
       button.setAttribute('aria-label', title);
       tools.append(button);
     });
-    const exportJsonButton = createElement('button', 'secondary-button literature-map-export-button', 'JSON');
+    const exportJsonButton = createElement('button', 'secondary-button btn-outline literature-map-export-button', 'JSON');
     exportJsonButton.type = 'button';
     exportJsonButton.id = 'literature-map-export-json';
     exportJsonButton.title = '导出当前地图 JSON';
     exportJsonButton.setAttribute('aria-label', '导出 JSON');
-    const exportPngButton = createElement('button', 'secondary-button literature-map-export-button', 'PNG');
+    const exportPngButton = createElement('button', 'secondary-button btn-outline literature-map-export-button', 'PNG');
     exportPngButton.type = 'button';
     exportPngButton.id = 'literature-map-export-png';
     exportPngButton.title = '导出当前图谱 PNG';
@@ -1200,7 +1219,7 @@
     labelModeSelect.value = state.labelMode;
     labelModeLabel.append(labelModeSelect);
     layerTools.append(labelModeLabel);
-    const multiSelectToggle = createElement('button', 'secondary-button literature-map-multi-select-toggle', '多选模式');
+    const multiSelectToggle = createElement('button', 'secondary-button btn-outline literature-map-multi-select-toggle', '多选模式');
     multiSelectToggle.type = 'button';
     multiSelectToggle.id = 'literature-map-multi-select-toggle';
     multiSelectToggle.disabled = true;
@@ -1257,7 +1276,7 @@
     groupsPopover.hidden = true;
     const groupsPopoverHead = createElement('div', 'literature-map-groups-popover-head');
     groupsPopoverHead.append(createElement('h3', 'literature-map-groups-popover-title', '分组'));
-    const groupsClearHighlight = createElement('button', 'secondary-button literature-map-groups-clear-highlight', '清除高亮');
+    const groupsClearHighlight = createElement('button', 'secondary-button btn-outline literature-map-groups-clear-highlight', '清除高亮');
     groupsClearHighlight.type = 'button';
     groupsClearHighlight.hidden = true;
     groupsPopoverHead.append(groupsClearHighlight);
@@ -1369,7 +1388,7 @@
     applyNodeStyleButton.type = 'button';
     applyNodeStyleButton.disabled = true;
     applyNodeStyleButton.addEventListener('click', () => saveNodeStyle(applyNodeStyleButton));
-    const cancelNodeStyleButton = createElement('button', 'secondary-button literature-map-node-style-cancel', '取消预览');
+    const cancelNodeStyleButton = createElement('button', 'secondary-button btn-outline literature-map-node-style-cancel', '取消预览');
     cancelNodeStyleButton.type = 'button';
     cancelNodeStyleButton.disabled = true;
     cancelNodeStyleButton.addEventListener('click', () => cancelNodeStyleDraft());
@@ -1660,7 +1679,8 @@
       const matchesStatus = state.listStatus === 'all'
         || map?.status === state.listStatus
         || (state.listStatus === 'ready' && isPartialUsable);
-      const matchesTag = !state.listTagId || (map?.tags || []).some((tag) => tag?.tag_id === state.listTagId);
+      // 任务 D：多选 OR——空集合不过滤；否则命中任一已选标签即通过。
+      const matchesTag = !state.listTagIds.size || (map?.tags || []).some((tag) => state.listTagIds.has(tag?.tag_id));
       return matchesQuery && matchesStatus && matchesTag;
     });
   }
@@ -1883,8 +1903,8 @@
       item.append(trigger);
       item.addEventListener('click', () => {
         // 切换地图清除标签筛选（纯前端视图态，不写库/不进导出/不触发视图保存 409）。
-        if (state.listTagId) {
-          state.listTagId = null;
+        if (state.listTagIds.size) {
+          state.listTagIds.clear();
           renderTagFilterBar();
         }
         selectMap(map.map_id);
@@ -1894,8 +1914,8 @@
         if (event.target !== item) return;
         if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
           event.preventDefault();
-          if (state.listTagId) {
-            state.listTagId = null;
+          if (state.listTagIds.size) {
+            state.listTagIds.clear();
             renderTagFilterBar();
           }
           selectMap(map.map_id);
@@ -1954,26 +1974,187 @@
     const heading = createElement('span', 'literature-map-tag-filter-heading', '标签');
     refs.tagFilterBar.append(heading);
     const list = createElement('div', 'literature-map-tag-filter-list');
-    state.tags.forEach((tag) => {
-      const active = state.listTagId === tag.tag_id;
+    // 任务 D：收起态只展示前 TAG_FILTER_CHIP_LIMIT 个 chip，已选项优先展示
+    // （避免选中了靠后的标签却在收起态看不见），其余靠「+N 更多」下拉浮层访问。
+    const selectedFirst = [
+      ...state.tags.filter((tag) => state.listTagIds.has(tag.tag_id)),
+      ...state.tags.filter((tag) => !state.listTagIds.has(tag.tag_id)),
+    ];
+    const visible = selectedFirst.slice(0, TAG_FILTER_CHIP_LIMIT);
+    visible.forEach((tag) => {
+      const active = state.listTagIds.has(tag.tag_id);
       const chip = createElement('button', 'literature-map-tag-filter');
       chip.type = 'button';
       chip.dataset.tagId = tag.tag_id;
       chip.setAttribute('aria-pressed', String(active));
+      chip.setAttribute('aria-label', `按标签筛选：${tag.name}`);
       const dot = createElement('span', 'literature-map-tag-dot');
       dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
       const label = createElement('span', 'literature-map-tag-name', tag.name);
+      label.title = tag.name;
       chip.append(dot, label);
       chip.addEventListener('click', () => toggleTagFilter(tag.tag_id));
       list.append(chip);
     });
     refs.tagFilterBar.append(list);
+    // 标签过多：一个「+N 更多」按钮打开多选下拉浮层（复用卡片菜单浮层样式）。
+    if (state.tags.length > TAG_FILTER_CHIP_LIMIT) {
+      const extra = state.tags.length - TAG_FILTER_CHIP_LIMIT;
+      const more = createElement('button', 'btn-outline literature-map-tag-filter-more', `+${extra} 更多`);
+      more.type = 'button';
+      more.setAttribute('aria-haspopup', 'true');
+      more.setAttribute('aria-expanded', 'false');
+      more.setAttribute('aria-label', `更多标签筛选，共 ${state.tags.length} 个标签`);
+      more.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (refs.tagFilterMenu) closeTagFilterMenu(true);
+        else openTagFilterMenu(more);
+      });
+      refs.tagFilterBar.append(more);
+    }
+    // 收起态显示已选计数（多选可见性）。
+    if (state.listTagIds.size) {
+      const count = createElement('span', 'literature-map-tag-filter-count', `已选 ${state.listTagIds.size}`);
+      refs.tagFilterBar.append(count);
+    }
+  }
+
+  // 任务 D：多选筛选写入 Set。redrawBar=false 供下拉浮层内 checkbox 使用——
+  // 此时不能重绘筛选条（会替换「更多」anchor 令浮层悬空），只刷新列表与浮层内计数。
+  function setTagFilter(tagId, on, redrawBar = true) {
+    if (on) state.listTagIds.add(tagId);
+    else state.listTagIds.delete(tagId);
+    if (redrawBar) renderTagFilterBar();
+    else updateTagFilterMenuCount();
+    renderMapList();
   }
 
   function toggleTagFilter(tagId) {
-    state.listTagId = state.listTagId === tagId ? null : tagId;
+    // 再点取消：命中已选则移出，否则加入（保留原「再点取消」语义，改为多选）。
+    setTagFilter(tagId, !state.listTagIds.has(tagId));
+  }
+
+  // ---- 标签筛选下拉多选浮层（任务 D）----------------------------------------
+  // 与卡片「⋯」设置菜单（refs.tagMenu / 两级 _view）完全独立的单例浮层：
+  // 复用 .literature-map-card-menu 浮层样式、.literature-map-card-menu-options
+  // checkbox 多选面板样式与 positionTagMenu() 定位，Esc / 点击外部关闭。
+  function openTagFilterMenu(anchor) {
+    if (!anchor) return;
+    // 与卡片设置菜单互斥，避免两个 z-index:1090 浮层叠加。
+    closeTagMenu(false);
+    if (refs.tagFilterMenu) {
+      // 幂等清理：已有浮层时只摘监听与 DOM，不重绘筛选条（否则会替换 anchor）。
+      detachTagFilterMenuDismiss();
+      if (refs.tagFilterMenu.isConnected) refs.tagFilterMenu.remove();
+      refs.tagFilterMenu = null;
+      state.tagFilterMenuOpen = false;
+    }
+    const menu = createElement('div', 'literature-map-card-menu literature-map-tag-filter-menu');
+    menu.setAttribute('role', 'group');
+    menu.setAttribute('aria-label', '按标签筛选（可多选）');
+    menu._anchor = anchor;
+    refs.root.append(menu);
+    refs.tagFilterMenu = menu;
+    state.tagFilterMenuOpen = true;
+    renderTagFilterMenu();
+    positionTagMenu(menu, anchor);
+    anchor.setAttribute('aria-expanded', 'true');
+    attachTagFilterMenuDismiss();
+    const firstFocusable = menu.querySelector('input, button');
+    if (firstFocusable && firstFocusable.focus) firstFocusable.focus();
+  }
+
+  function closeTagFilterMenu(restoreFocus = true) {
+    if (!refs.tagFilterMenu) return;
+    detachTagFilterMenuDismiss();
+    const menu = refs.tagFilterMenu;
+    const anchor = menu._anchor || null;
+    if (menu.isConnected) menu.remove();
+    refs.tagFilterMenu = null;
+    state.tagFilterMenuOpen = false;
+    if (anchor) anchor.setAttribute('aria-expanded', 'false');
+    // 关闭后刷新收起态：选中项优先 + 已选计数（refs.tagFilterMenu 已置空，不会递归）。
     renderTagFilterBar();
-    renderMapList();
+    if (restoreFocus) {
+      const more = refs.tagFilterBar?.querySelector('.literature-map-tag-filter-more');
+      if (more && more.focus) more.focus();
+    }
+  }
+
+  function renderTagFilterMenu() {
+    const menu = refs.tagFilterMenu;
+    if (!menu) return;
+    const panel = createElement('div', 'literature-map-card-menu-panel literature-map-tag-filter-menu-panel');
+    const head = createElement('div', 'literature-map-tag-filter-menu-head');
+    head.append(createElement('span', 'literature-map-card-menu-title', '按标签筛选（可多选）'));
+    const count = createElement('span', 'literature-map-tag-filter-menu-count');
+    count.dataset.role = 'tag-filter-menu-count';
+    head.append(count);
+    panel.append(head);
+    const options = createElement('div', 'literature-map-card-menu-options literature-map-tag-filter-menu-options');
+    state.tags.forEach((tag) => {
+      const optionRow = createElement('label', 'literature-map-card-menu-option literature-map-tag-filter-menu-option');
+      const checkbox = createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = state.listTagIds.has(tag.tag_id);
+      checkbox.dataset.tagId = tag.tag_id;
+      checkbox.setAttribute('aria-label', `筛选标签：${tag.name}`);
+      checkbox.addEventListener('change', () => setTagFilter(tag.tag_id, checkbox.checked, false));
+      const dot = createElement('span', 'literature-map-tag-dot');
+      dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
+      const name = createElement('span', 'literature-map-tag-name', tag.name);
+      name.title = tag.name;
+      optionRow.append(checkbox, dot, name);
+      options.append(optionRow);
+    });
+    panel.append(options);
+    const actions = createElement('div', 'literature-map-tag-filter-menu-actions');
+    const clear = createElement('button', 'btn-outline', '清空');
+    clear.type = 'button';
+    clear.addEventListener('click', () => {
+      state.listTagIds.clear();
+      renderMapList();
+      renderTagFilterMenu();
+    });
+    const done = createElement('button', 'btn-outline', '完成');
+    done.type = 'button';
+    done.addEventListener('click', () => closeTagFilterMenu(true));
+    actions.append(clear, done);
+    panel.append(actions);
+    menu.replaceChildren(panel);
+    updateTagFilterMenuCount();
+  }
+
+  function updateTagFilterMenuCount() {
+    const menu = refs.tagFilterMenu;
+    if (!menu) return;
+    const count = menu.querySelector('[data-role="tag-filter-menu-count"]');
+    if (count) count.textContent = `已选 ${state.listTagIds.size}`;
+  }
+
+  function handleTagFilterMenuPointerDown(event) {
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (refs.tagFilterMenu?.contains(target) || refs.tagFilterMenu?._anchor?.contains(target)) return;
+    closeTagFilterMenu(false);
+  }
+
+  function handleTagFilterMenuKeyDown(event) {
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
+    if (!refs.tagFilterMenu) return;
+    event.stopPropagation();
+    closeTagFilterMenu(true);
+  }
+
+  function attachTagFilterMenuDismiss() {
+    if (!state.active) return;
+    document.addEventListener('pointerdown', handleTagFilterMenuPointerDown, true);
+    document.addEventListener('keydown', handleTagFilterMenuKeyDown, true);
+  }
+
+  function detachTagFilterMenuDismiss() {
+    document.removeEventListener('pointerdown', handleTagFilterMenuPointerDown, true);
+    document.removeEventListener('keydown', handleTagFilterMenuKeyDown, true);
   }
 
   function renderMapCardTags(map) {
@@ -2177,11 +2358,11 @@
       dot.style.setProperty('--tag-color', normalizeHexColor(tag.color) || '#8d80e6');
       const name = createElement('span', 'literature-map-tag-name', tag.name);
       name.title = tag.name;
-      const rename = createElement('button', 'secondary-button literature-map-card-menu-rename', '重命名');
+      const rename = createElement('button', 'secondary-button btn-outline literature-map-card-menu-rename', '重命名');
       rename.type = 'button';
       rename.dataset.tagId = tag.tag_id;
       rename.addEventListener('click', () => renameTag(tag, rename));
-      const remove = createElement('button', 'secondary-button literature-map-card-menu-delete', '删除');
+      const remove = createElement('button', 'secondary-button btn-outline literature-map-card-menu-delete', '删除');
       remove.type = 'button';
       remove.dataset.tagId = tag.tag_id;
       remove.addEventListener('click', () => deleteTag(tag, remove));
@@ -2271,14 +2452,14 @@
     panel.append(createElement('p', 'literature-map-card-menu-confirm-name', mapTitle(map)));
     panel.append(createElement('p', 'literature-map-card-menu-hint', '删除后不可恢复'));
     const actions = createElement('div', 'literature-map-card-menu-confirm-actions');
-    const cancel = createElement('button', 'secondary-button literature-map-card-menu-cancel', '取消');
+    const cancel = createElement('button', 'secondary-button btn-outline literature-map-card-menu-cancel', '取消');
     cancel.type = 'button';
     // 取消分支：只回到一级列表，零请求（不发 PATCH/DELETE）。
     cancel.addEventListener('click', (event) => {
       event.stopPropagation();
       showTagMenuView('settings');
     });
-    const confirm = createElement('button', 'secondary-button literature-map-card-menu-confirm', '删除');
+    const confirm = createElement('button', 'secondary-button btn-outline literature-map-card-menu-confirm', '删除');
     confirm.type = 'button';
     confirm.addEventListener('click', () => {
       void submitMapDelete(mapId, cancel, confirm);
@@ -2357,7 +2538,7 @@
       if (refs.currentTitle) refs.currentTitle.textContent = mapTitle(state.map);
       renderCurrentMeta();
     }
-    // 保留列表筛选与选中态：renderMapList 只重建 DOM，不改 state.listQuery/listStatus/listTagId。
+    // 保留列表筛选与选中态：renderMapList 只重建 DOM，不改 state.listQuery/listStatus/listTagIds。
     renderMapList();
     renderTagFilterBar();
   }
@@ -2383,10 +2564,16 @@
   async function finalizeMapDeletion(mapId) {
     const wasSelected = state.selectedMapId === mapId || state.map?.map_id === mapId;
     state.maps = state.maps.filter((m) => m.map_id !== mapId);
-    // 标签本身仍存在：筛选条保留，只清理被删地图相关的筛选命中。
-    if (state.listTagId && !state.maps.some((m) => (m.tags || []).some((tag) => tag?.tag_id === state.listTagId))) {
-      state.listTagId = null;
-      renderTagFilterBar();
+    // 标签本身仍存在：筛选条保留，只从多选集合里清理「不再被任何地图命中」的标签。
+    if (state.listTagIds.size) {
+      let changed = false;
+      state.listTagIds.forEach((tagId) => {
+        if (!state.maps.some((m) => (m.tags || []).some((tag) => tag?.tag_id === tagId))) {
+          state.listTagIds.delete(tagId);
+          changed = true;
+        }
+      });
+      if (changed) renderTagFilterBar();
     }
     renderMapList();
     const nextMap = filteredMaps()[0] || state.maps[0] || null;
@@ -2539,7 +2726,7 @@
       state.maps.forEach((m) => {
         if (Array.isArray(m.tags)) m.tags = m.tags.filter((t) => t.tag_id !== tag.tag_id);
       });
-      if (state.listTagId === tag.tag_id) state.listTagId = null;
+      state.listTagIds.delete(tag.tag_id);
       renderTagFilterBar();
       renderMapList();
       setStatus('标签已删除。', 'waiting');
@@ -2737,7 +2924,7 @@
       name.title = group.name;
       // 「改色」与色块是高亮**两个不同入口**：色块只做高亮（裁定 5），
       // 改色统一走这个显式按钮（裁定 1：已有分组可在浮层再次编辑颜色）。
-      const colorOpen = createElement('button', 'secondary-button literature-map-group-color-open', '改色');
+      const colorOpen = createElement('button', 'secondary-button btn-outline literature-map-group-color-open', '改色');
       colorOpen.type = 'button';
       colorOpen.dataset.groupId = group.group_id;
       colorOpen.setAttribute('aria-label', `设置分组颜色：${group.name}`);
@@ -2756,13 +2943,13 @@
         // setColorDraft() 只重渲染 graph；浮层行的 palette.hidden 由本次 renderGroups() 重新求值。
         renderGroups();
       });
-      const rename = createElement('button', 'secondary-button literature-map-group-rename', '重命名');
+      const rename = createElement('button', 'secondary-button btn-outline literature-map-group-rename', '重命名');
       rename.type = 'button';
       rename.dataset.groupId = group.group_id;
       rename.addEventListener('click', () => renameGroup(group, rename));
       const palette = createColorPalette(group.group_id);
       palette.hidden = !colorDraftMatches('group', group.group_id);
-      const remove = createElement('button', 'secondary-button literature-map-group-delete', '删除');
+      const remove = createElement('button', 'secondary-button btn-outline literature-map-group-delete', '删除');
       remove.type = 'button';
       remove.dataset.groupId = group.group_id;
       remove.addEventListener('click', () => deleteGroup(group, remove));
@@ -3433,7 +3620,7 @@
     if (!refs.previewPanel) return;
     refs.previewPanel.hidden = false;
     const actions = createElement('div', 'literature-map-preview-actions');
-    const close = createElement('button', 'secondary-button', '关闭预览');
+    const close = createElement('button', 'secondary-button btn-outline', '关闭预览');
     close.type = 'button';
     close.addEventListener('click', () => closePreviewPanel());
     actions.append(close);
@@ -3469,7 +3656,7 @@
       const conflict = createElement('p', 'literature-map-preview-error', '地图版本已变化；未自动覆盖你的操作，请重新读取后再次预览。');
       conflict.setAttribute('role', 'alert');
       refs.previewPanel.append(conflict);
-      const reread = createElement('button', 'secondary-button', '重新读取并预览');
+      const reread = createElement('button', 'secondary-button btn-outline', '重新读取并预览');
       reread.type = 'button';
       reread.addEventListener('click', repreviewAfterConflict);
       refs.previewPanel.append(reread);
@@ -3518,7 +3705,7 @@
         row.append(createElement('span', 'literature-map-preview-candidate-state', '已移除墓碑 · 需显式恢复'));
         const restoreId = candidate.node_id || candidate.existing_node_id;
         if (restoreId) {
-          const restore = createElement('button', 'secondary-button', '显式恢复');
+          const restore = createElement('button', 'secondary-button btn-outline', '显式恢复');
           restore.type = 'button';
           restore.addEventListener('click', () => restoreNode(restoreId, restore));
           row.append(restore);
@@ -3547,7 +3734,7 @@
       apply.addEventListener('click', () => applyPreview(apply));
       actions.append(apply);
     }
-    const close = createElement('button', 'secondary-button', '关闭预览');
+    const close = createElement('button', 'secondary-button btn-outline', '关闭预览');
     close.type = 'button';
     close.addEventListener('click', () => closePreviewPanel());
     actions.append(close);
@@ -4562,7 +4749,7 @@
         const lastStatus = record.last_status
           ? expansionBatchStateLabel(record.last_status)
           : '尚未读取';
-        const button = createElement('button', selected ? 'secondary-button is-selected' : 'secondary-button',
+        const button = createElement('button', selected ? 'secondary-button btn-outline is-selected' : 'secondary-button btn-outline',
           `批次 ${record.batch_job_id} · 上次读取：${lastStatus} · 点击读取最新状态`);
         button.type = 'button';
         button.dataset.expansionBatchJobId = record.batch_job_id;
@@ -4588,7 +4775,7 @@
     }
     if (expansion.needsRevalidate) {
       panel.append(createElement('p', 'literature-map-expansion-state', '地图版本变化后，候选已重新读取；不会自动重核或重发。请检查失效标记后显式重核当前选择。'));
-      const revalidate = createElement('button', 'secondary-button', expansion.revalidating ? '正在重核选择…' : '重核当前选择');
+      const revalidate = createElement('button', 'secondary-button btn-outline', expansion.revalidating ? '正在重核选择…' : '重核当前选择');
       revalidate.type = 'button';
       revalidate.id = 'literature-map-expansion-revalidate';
       revalidate.disabled = expansion.revalidating || expansion.conflictRefreshing || expansionSelections(expansion).length === 0
@@ -4639,7 +4826,7 @@
       const nodeIds = Array.isArray(expansion.batchResult.node_ids) ? expansion.batchResult.node_ids : [];
       if (nodeIds.length) {
         panel.append(createElement('p', 'literature-map-expansion-state', '新增节点已高亮；地图原有位置、分组、颜色、图层和视口保持不变。'));
-        const view = createElement('button', 'secondary-button', '查看新增论文');
+        const view = createElement('button', 'secondary-button btn-outline', '查看新增论文');
         view.type = 'button';
         view.id = 'literature-map-expansion-view-added';
         view.addEventListener('click', () => viewExpansionAddedPapers());
@@ -4680,7 +4867,7 @@
       const metadataRetryIds = items.filter(([, item]) => ['metadata_failed', 'skipped_no_abstract'].includes(String(item?.status || '').toLowerCase())).map(([nodeId]) => nodeId);
       if (metadataRetryIds.length && !expansion.batchUnknown) {
         if (expansionBatchCanRetryMetadata(job)) {
-          const retry = createElement('button', 'secondary-button', expansion.batchRetryLoading ? '正在重试元数据…' : `显式重试元数据 ${metadataRetryIds.length} 项`);
+          const retry = createElement('button', 'secondary-button btn-outline', expansion.batchRetryLoading ? '正在重试元数据…' : `显式重试元数据 ${metadataRetryIds.length} 项`);
           retry.type = 'button';
           retry.id = 'literature-map-expansion-retry-metadata';
           retry.disabled = expansion.batchRetryLoading;
@@ -4692,7 +4879,7 @@
       }
       const failedAnalysisIds = [...new Set(items.filter(([, item]) => String(item?.status || '').toLowerCase() === 'analysis_failed' && item?.analysis_id && item?.retryable !== false).map(([, item]) => String(item.analysis_id)))];
       if (failedAnalysisIds.length && !expansion.batchUnknown) {
-        const retry = createElement('button', 'secondary-button', expansion.batchRetryLoading ? '正在重试分析…' : `重试失败分析 ${failedAnalysisIds.length} 项`);
+        const retry = createElement('button', 'secondary-button btn-outline', expansion.batchRetryLoading ? '正在重试分析…' : `重试失败分析 ${failedAnalysisIds.length} 项`);
         retry.type = 'button';
         retry.id = 'literature-map-expansion-retry-analysis';
         retry.disabled = expansion.batchRetryLoading;
@@ -4703,7 +4890,7 @@
       if (['active', 'paused'].includes(queueState)) {
         panel.append(createElement('p', 'literature-map-expansion-map-queue-note', '地图级暂停或恢复会影响同图其它待分析论文。'));
         const action = queueState === 'paused' ? 'resume' : 'pause';
-        const button = createElement('button', 'secondary-button', action === 'pause' ? '暂停同图摘要队列' : '恢复同图摘要队列');
+        const button = createElement('button', 'secondary-button btn-outline', action === 'pause' ? '暂停同图摘要队列' : '恢复同图摘要队列');
         button.type = 'button';
         button.id = action === 'pause' ? 'literature-map-expansion-pause-map-queue' : 'literature-map-expansion-resume-map-queue';
         button.addEventListener('click', () => mutateExpansionMapQueue(action, button));
@@ -4715,7 +4902,7 @@
         if (!expansion.batchUnknown && !expansion.batchError) {
           panel.append(createElement('p', 'literature-map-expansion-state', '批次仍在后台处理；自动读取已暂停。手动刷新只读取进度，不会重新提交或重跑摘要。'));
         }
-        const refresh = createElement('button', 'secondary-button', '手动刷新批次状态');
+        const refresh = createElement('button', 'secondary-button btn-outline', '手动刷新批次状态');
         refresh.type = 'button';
         refresh.id = 'literature-map-expansion-batch-refresh';
         refresh.disabled = expansion.batchLoading;
@@ -4774,14 +4961,14 @@
       error.setAttribute('role', 'alert');
       tabpanel.append(error);
       if (side.errorAction === 'create' && !side.previewId) {
-        const retry = createElement('button', 'secondary-button', '重新获取此方向');
+        const retry = createElement('button', 'secondary-button btn-outline', '重新获取此方向');
         retry.type = 'button';
         retry.id = 'literature-map-expansion-retry-create';
         retry.disabled = side.creating;
         retry.addEventListener('click', () => createExpansionPreview(side.kind));
         tabpanel.append(retry);
       } else if (side.errorAction === 'read') {
-        const retry = createElement('button', 'secondary-button', '重新读取此方向');
+        const retry = createElement('button', 'secondary-button btn-outline', '重新读取此方向');
         retry.type = 'button';
         retry.id = 'literature-map-expansion-retry-read';
         retry.disabled = side.loading;
@@ -4793,7 +4980,7 @@
     const preview = side.preview;
     if (!preview && !side.creating && !side.loading && !side.error) {
       tabpanel.append(createElement('p', 'literature-map-expansion-state', '此方向预览尚未创建。'));
-      const create = createElement('button', 'secondary-button', '获取此方向');
+      const create = createElement('button', 'secondary-button btn-outline', '获取此方向');
       create.type = 'button';
       create.id = `literature-map-expansion-create-${side.kind}`;
       create.addEventListener('click', () => createExpansionPreview(side.kind));
@@ -4814,7 +5001,7 @@
         const stopped = createElement('p', 'literature-map-expansion-state', '后台仍在处理，自动读取已暂停；可手动刷新状态。');
         stopped.setAttribute('role', 'status');
         tabpanel.append(stopped);
-        const refresh = createElement('button', 'secondary-button', '手动刷新状态');
+        const refresh = createElement('button', 'secondary-button btn-outline', '手动刷新状态');
         refresh.type = 'button';
         refresh.id = 'literature-map-expansion-refresh-status';
         refresh.addEventListener('click', () => refreshExpansionStatus(side.kind));
@@ -4886,7 +5073,7 @@
         if (removed) {
           const restoreId = candidate.node_id || candidate.existing_node_id;
           if (restoreId) {
-            const restore = createElement('button', 'secondary-button', '显式恢复');
+            const restore = createElement('button', 'secondary-button btn-outline', '显式恢复');
             restore.type = 'button';
             restore.addEventListener('click', () => restoreNode(restoreId, restore));
             row.append(restore);
@@ -4904,13 +5091,13 @@
         tabpanel.append(failed);
       }
       if (stateName === 'failed' && loadedCount < EXPANSION_MAX_CANDIDATES && !side.loading) {
-        const retry = createElement('button', 'secondary-button', '重试此失败页');
+        const retry = createElement('button', 'secondary-button btn-outline', '重试此失败页');
         retry.type = 'button';
         retry.id = 'literature-map-expansion-retry-page';
         retry.addEventListener('click', () => loadMoreExpansion(side.kind, true));
         paginationActions.append(retry);
       } else if (!['loading', 'exhausted', 'capped'].includes(stateName) && !pagination.limit_reached && loadedCount < EXPANSION_MAX_CANDIDATES && (pagination.has_more !== false || pagination.next_cursor)) {
-        const more = createElement('button', 'secondary-button', `加载更多 ${EXPANSION_PAGE_SIZE} 篇`);
+        const more = createElement('button', 'secondary-button btn-outline', `加载更多 ${EXPANSION_PAGE_SIZE} 篇`);
         more.type = 'button';
         more.id = 'literature-map-expansion-load-more';
         more.disabled = side.loading;
@@ -4945,7 +5132,7 @@
       : (invalidSelected ? '请取消失效候选后再次确认。' : '一次提交两个方向中已选的候选，并保留现有地图布局。');
     apply.addEventListener('click', () => submitExpansionBatch());
     actions.append(apply);
-    const close = createElement('button', 'secondary-button', '关闭扩展预览');
+    const close = createElement('button', 'secondary-button btn-outline', '关闭扩展预览');
     close.type = 'button';
     close.id = 'literature-map-expansion-close';
     close.addEventListener('click', () => closeExpansionPanel());
@@ -5508,7 +5695,7 @@
     confirm.type = 'button';
     confirm.id = 'literature-map-spacing-preview-confirm';
     confirm.addEventListener('click', () => confirmSpacingPreview(confirm));
-    const cancel = createElement('button', 'secondary-button', '取消');
+    const cancel = createElement('button', 'secondary-button btn-outline', '取消');
     cancel.type = 'button';
     cancel.id = 'literature-map-spacing-preview-cancel';
     cancel.addEventListener('click', cancelSpacingPreview);
@@ -6752,7 +6939,7 @@
     }
     const actions = createElement('div', 'literature-map-analysis-queue-actions');
     if (queue.state === 'active') {
-      const pause = createElement('button', 'secondary-button', '暂停队列');
+      const pause = createElement('button', 'secondary-button btn-outline', '暂停队列');
       pause.type = 'button';
       pause.addEventListener('click', () => mutateAnalysisQueue('pause', pause));
       actions.append(pause);
@@ -6764,7 +6951,7 @@
     }
     const retryable = (queue.failed_items || []).some((item) => item?.retryable !== false);
     if (Number(counts.failed) > 0 && retryable) {
-      const retry = createElement('button', 'secondary-button', '重试失败项');
+      const retry = createElement('button', 'secondary-button btn-outline', '重试失败项');
       retry.type = 'button';
       retry.addEventListener('click', () => mutateAnalysisQueue('retry', retry));
       actions.append(retry);
@@ -7049,7 +7236,8 @@
     if (!result || typeof result !== 'object' || !String(result.summary || '').trim()) return null;
     const section = createElement('section', 'literature-map-analysis-result');
     const heading = createElement('h4', '', record.evidence_level === 'abstract' ? '摘要级分析结果（仅基于摘要）' : '全文分析结果（全文索引片段依据）');
-    const meta = createElement('p', 'literature-map-analysis-result-meta', `依据：${analysisEvidenceLabel(record.evidence_level)} · 版本：${metadataText(record.source_version, '未提供')}`);
+    const meta = createElement('p', 'literature-map-analysis-result-meta truncate', `依据：${analysisEvidenceLabel(record.evidence_level)} · 版本：${metadataText(record.source_version, '未提供')}`);
+    withTooltip(meta, meta.textContent);
     const summary = renderAnalysisMarkdown(result.summary);
     section.append(heading, meta, summary);
     const citations = Array.isArray(result.citations) ? result.citations : [];
@@ -7062,7 +7250,9 @@
         const value = citation && typeof citation === 'object'
           ? (citation.text || citation.quote || citation.chunk_id || citation.document_id || citation.locator || citation.source)
           : citation;
-        evidenceList.append(createElement('li', '', metadataText(value, '受控来源引用')));
+        const li = createElement('li', 'truncate hash-inline', metadataText(value, '受控来源引用'));
+        withTooltip(li, li.textContent);
+        evidenceList.append(li);
       });
       section.append(evidenceList);
     }
@@ -7080,7 +7270,7 @@
   function fulltextRecoveryActions(info, showActionFeedback) {
     const actions = createElement('div', 'literature-map-analysis-source-actions');
     const addButton = (label, handler) => {
-      const button = createElement('button', 'secondary-button', label);
+      const button = createElement('button', 'secondary-button btn-outline', label);
       button.type = 'button';
       button.addEventListener('click', handler);
       actions.append(button);
@@ -7155,13 +7345,16 @@
     const versions = sourceStatus.source_versions && typeof sourceStatus.source_versions === 'object' ? sourceStatus.source_versions : {};
     Object.entries(versions).forEach(([level, version]) => {
       if (!['abstract', 'full'].includes(level)) return;
-      panel.append(createElement('p', 'literature-map-analysis-version', `${analysisEvidenceLabel(level)}来源版本：${metadataText(version, '未提供')}`));
+      const fullVersion = metadataText(version, '未提供');
+      const line = createElement('p', 'literature-map-analysis-version truncate', `${analysisEvidenceLabel(level)}来源版本：${formatShortHash(fullVersion)}`);
+      withTooltip(line, `${analysisEvidenceLabel(level)}来源版本：${fullVersion}`);
+      panel.append(line);
     });
 
     const tabs = createElement('div', 'literature-map-analysis-tabs');
     tabs.setAttribute('role', 'tablist');
     [['abstract', '摘要分析'], ['full', '全文分析']].forEach(([level, label]) => {
-      const tab = createElement('button', 'secondary-button literature-map-analysis-tab', label);
+      const tab = createElement('button', 'secondary-button btn-outline literature-map-analysis-tab', label);
       tab.type = 'button';
       tab.dataset.evidenceLevel = level;
       tab.setAttribute('role', 'tab');
@@ -7214,7 +7407,7 @@
     const fullLabel = analysisBusy
       ? (busyLevel === 'full' ? '全文分析进行中…' : '全文分析等待中…')
       : '基于全文分析';
-    const fullButton = createElement('button', 'secondary-button', fullLabel);
+    const fullButton = createElement('button', 'secondary-button btn-outline', fullLabel);
     fullButton.type = 'button';
     fullButton.disabled = analysisBusy && analysisAvailable('full');
     fullButton.setAttribute('aria-describedby', actionFeedback.id);
@@ -7229,7 +7422,7 @@
     if (activeLevel !== 'full') actions.append(fullButton);
     if (completedActive && analysisAvailable(activeLevel)) {
       const manualLabel = `重新生成${activeLevel === 'full' ? '全文' : '摘要'}（会调用模型）`;
-      const manual = createElement('button', 'secondary-button', analysisBusy ? `${manualLabel}（分析进行中…）` : manualLabel);
+      const manual = createElement('button', 'secondary-button btn-outline', analysisBusy ? `${manualLabel}（分析进行中…）` : manualLabel);
       manual.type = 'button';
       manual.disabled = analysisBusy;
       manual.setAttribute('aria-describedby', actionFeedback.id);
@@ -7245,7 +7438,7 @@
       actions.append(manual);
     }
     const conversationBusy = state.conversationRequest > 0;
-    const conversationButton = createElement('button', 'secondary-button', conversationBusy ? '关于本篇提问（打开中…）' : '关于本篇提问');
+    const conversationButton = createElement('button', 'secondary-button btn-outline', conversationBusy ? '关于本篇提问（打开中…）' : '关于本篇提问');
     conversationButton.type = 'button';
     conversationButton.disabled = conversationBusy;
     conversationButton.setAttribute('aria-describedby', actionFeedback.id);
@@ -7298,7 +7491,10 @@
       const history = createElement('ul', 'literature-map-analysis-history');
       activeRecords.forEach((record) => {
         const item = createElement('li', 'literature-map-analysis-history-item');
-        const historyButton = createElement('button', 'literature-map-analysis-history-button', `v${metadataText(record.version, '—')} · ${analysisEvidenceLabel(record.evidence_level)} · ${analysisStatusLabel(record.status)} · ${metadataText(record.source_version, '无来源版本')}`);
+        const versionLabel = metadataText(record.source_version, '无来源版本');
+        const historyPrefix = `v${metadataText(record.version, '—')} · ${analysisEvidenceLabel(record.evidence_level)} · ${analysisStatusLabel(record.status)} · `;
+        const historyButton = createElement('button', 'literature-map-analysis-history-button truncate', `${historyPrefix}${formatShortHash(versionLabel)}`);
+        withTooltip(historyButton, `${historyPrefix}${versionLabel}`);
         historyButton.type = 'button';
         historyButton.setAttribute('aria-pressed', state.analysisViewedId === record.analysis_id ? 'true' : 'false');
         historyButton.addEventListener('click', () => {
@@ -7315,7 +7511,7 @@
     if (state.analysis?.status === 'queued' || state.analysis?.status === 'running') {
       if (state.analysisPollExhausted) {
         panel.append(createElement('p', 'literature-map-analysis-state', '后台分析仍在运行；已暂停自动查询，任务不会被标记失败。'));
-        const refresh = createElement('button', 'secondary-button', '重新查询');
+        const refresh = createElement('button', 'secondary-button btn-outline', '重新查询');
         refresh.type = 'button';
         refresh.addEventListener('click', () => resumeAnalysisPolling());
         panel.append(refresh);
@@ -7328,7 +7524,7 @@
       error.setAttribute('role', 'alert');
       panel.append(error);
       if (state.analysis.error?.retryable) {
-        const retry = createElement('button', 'secondary-button', '重新分析');
+        const retry = createElement('button', 'secondary-button btn-outline', '重新分析');
         retry.type = 'button';
         retry.addEventListener('click', () => startAnalysis(state.analysis.evidence_level || preferredLevel, { manual: true }));
         panel.append(retry);
@@ -7461,7 +7657,9 @@
     refs.detail.append(abstract);
     // 节点不再单独调色：颜色跟随分组，详情里只保留「切换所属分组」。
     refs.detail.append(renderNodeGroupSelector(node));
-    const provenance = createElement('p', 'literature-map-provenance', `来源依据：${metadataText(node.provenance?.source || node.provenance)}`);
+    const provenanceFull = metadataText(node.provenance?.source || node.provenance);
+    const provenance = createElement('p', 'literature-map-provenance truncate', `来源依据：${formatShortHash(provenanceFull)}`);
+    withTooltip(provenance, `来源依据：${provenanceFull}`);
     refs.detail.append(provenance);
     const importDiagnostics = renderImportDiagnostics(node);
     if (importDiagnostics) {
@@ -7471,7 +7669,7 @@
     const actions = createElement('div', 'literature-map-detail-actions');
     const url = safeHttpUrl(node.source_url);
     if (url) {
-      const link = createElement('a', 'secondary-button', '打开原文');
+      const link = createElement('a', 'secondary-button btn-outline', '打开原文');
       link.href = url;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
@@ -7483,13 +7681,13 @@
     if (indexed) {
       const linked = createElement('p', 'literature-map-document-link', documentId ? `已加入知识库 · 文档 ID：${documentId}` : '已加入知识库');
       refs.detail.append(linked);
-      const knowledgeButton = createElement('button', 'secondary-button', '在知识库中查看');
+      const knowledgeButton = createElement('button', 'secondary-button btn-outline', '在知识库中查看');
       knowledgeButton.type = 'button';
       knowledgeButton.addEventListener('click', () => openKnowledgeBaseDocument(documentId));
       actions.append(knowledgeButton);
     }
     if (removed) {
-      const restoreButton = createElement('button', 'secondary-button', '显式恢复');
+      const restoreButton = createElement('button', 'secondary-button btn-outline', '显式恢复');
       restoreButton.type = 'button';
       restoreButton.addEventListener('click', () => restoreNode(node.node_id, restoreButton));
       actions.append(restoreButton);
@@ -7516,13 +7714,13 @@
         else importNode(node, importButton);
       });
       actions.append(importButton);
-      const removeButton = createElement('button', 'secondary-button', '移出地图');
+      const removeButton = createElement('button', 'secondary-button btn-outline', '移出地图');
       removeButton.type = 'button';
       removeButton.addEventListener('click', () => removeNode(node.node_id, removeButton));
       actions.append(removeButton);
     }
     if (!removed) {
-      const expansionButton = createElement('button', 'secondary-button', '扩展关联论文');
+      const expansionButton = createElement('button', 'secondary-button btn-outline', '扩展关联论文');
       expansionButton.type = 'button';
       expansionButton.addEventListener('click', () => openExpansion(node.node_id));
       actions.append(expansionButton);
@@ -7900,6 +8098,7 @@
       flushPendingViewSave();
       closeExpansionPanel();
       // 离开视图必须解除浮层的 document 级 Esc / 点外部监听，否则会和其它视图抢快捷键。
+      closeTagFilterMenu(false); // 任务 D：标签筛选下拉浮层一并清理。
       closeGroupsPopover();
       closeAllMobilePanels(false);
       closeCreatePanel();

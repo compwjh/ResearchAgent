@@ -74,6 +74,7 @@ function makeHarness() {
     loadModelLibrary: noop,
     restoreMemoryViewState: noop,
     loadSystemRule: noop,
+    loadMemoryProjectDocuments: noop, // 任务 D：showView('memory') 新增的项目记忆列表刷新
     memoryDocumentKey: () => '',
     loadMemoryDocument: noop,
     loadPaperImportBatches: noop,

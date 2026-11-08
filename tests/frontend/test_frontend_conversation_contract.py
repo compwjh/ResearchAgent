@@ -63,7 +63,7 @@ def test_memory_and_processing_feedback_are_scoped() -> None:
 def test_static_asset_versions_are_bumped_together() -> None:
     assert "/assets/app.js?v=31" in INDEX
     assert "/assets/styles.css?v=30" in INDEX
-    assert "/assets/conversation-research.js?v=2" in INDEX
+    assert "/assets/conversation-research.js?v=3" in INDEX
 
 
 def test_rag_sources_are_deferred_and_capped() -> None:

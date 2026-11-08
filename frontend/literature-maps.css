@@ -119,20 +119,20 @@
 #literature-maps-view .literature-map-import-status { min-height: 15px; margin: 0; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; }
 #literature-maps-view .literature-map-analysis { display: grid; gap: 7px; padding-top: 12px; border-top: 1px solid #ece9f7; }
 #literature-maps-view .literature-map-analysis-title { margin: 0; color: var(--ink); font-size: 12px; }
-#literature-maps-view .literature-map-analysis-source, #literature-maps-view .literature-map-analysis-unavailable, #literature-maps-view .literature-map-analysis-version, #literature-maps-view .literature-map-analysis-history-title, #literature-maps-view .literature-map-analysis-state, #literature-maps-view .literature-map-analysis-error { margin: 0; color: var(--muted-strong); font: 9px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-analysis-source, #literature-maps-view .literature-map-analysis-unavailable, #literature-maps-view .literature-map-analysis-version, #literature-maps-view .literature-map-analysis-history-title, #literature-maps-view .literature-map-analysis-state, #literature-maps-view .literature-map-analysis-error { margin: 0; color: var(--muted-strong); font: 9px/1.5 'DM Mono', monospace; min-width: 0; }
 #literature-maps-view .literature-map-analysis-unavailable { color: #94621c; }
 #literature-maps-view .literature-map-analysis-error { color: #a33232; }
 #literature-maps-view .literature-map-analysis-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 #literature-maps-view .literature-map-analysis-actions button, #literature-maps-view .literature-map-analysis > button { padding: 7px 8px; font-size: 10px; }
 #literature-maps-view .literature-map-analysis-history { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: var(--muted-strong); font: 9px/1.5 'DM Mono', monospace; }
 #literature-maps-view .literature-map-analysis-history-item { margin: 0; list-style: none; }
-#literature-maps-view .literature-map-analysis-history-button { width: 100%; padding: 6px 7px; border: 1px solid #e8e4f4; border-radius: 6px; background: #fff; color: var(--muted-strong); font: 9px/1.5 'DM Mono', monospace; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+#literature-maps-view .literature-map-analysis-history-button { width: 100%; padding: 6px 7px; border: 1px solid #e8e4f4; border-radius: 6px; background: #fff; color: var(--muted-strong); font: 9px/1.5 'DM Mono', monospace; text-align: left; min-width: 0; cursor: pointer; }
 #literature-maps-view .literature-map-analysis-history-button:hover, #literature-maps-view .literature-map-analysis-history-button[aria-pressed="true"] { border-color: #cfc8ff; background: var(--accent-soft); color: var(--ink); }
 #literature-maps-view .literature-map-analysis-result { display: grid; gap: 5px; padding: 9px; border: 1px solid #e2dcff; border-radius: 8px; background: #faf9ff; }
 #literature-maps-view .literature-map-analysis-result h4 { margin: 0; font-size: 11px; }
-#literature-maps-view .literature-map-analysis-result-meta, #literature-maps-view .literature-map-analysis-evidence { margin: 0; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-analysis-result-meta, #literature-maps-view .literature-map-analysis-evidence { margin: 0; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; min-width: 0; }
 #literature-maps-view .literature-map-analysis-summary { margin: 0; color: var(--muted-strong); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; white-space: normal; }
-#literature-maps-view .literature-map-analysis-citations { display: grid; gap: 3px; margin: 0; padding-left: 17px; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
+#literature-maps-view .literature-map-analysis-citations { display: grid; gap: 3px; margin: 0; padding-left: 17px; color: var(--muted); font: 9px/1.5 'DM Mono', monospace; min-width: 0; }
 #literature-maps-view .literature-map-analysis-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 #literature-maps-view .literature-map-analysis-tab { padding: 5px 8px; font-size: 9px; }
 #literature-maps-view .literature-map-analysis-tab[aria-selected="true"] { border-color: #cfc8ff; background: var(--accent-soft); color: var(--ink); }
@@ -322,6 +322,9 @@
   #literature-maps-view .literature-map-filter-grid { grid-template-columns: 1fr; }
   #literature-maps-view .literature-map-project-field { grid-column: auto; }
   #literature-maps-view .literature-map-canvas-panel { width: 100%; box-sizing: border-box; min-height: calc(100dvh - 190px); height: calc(100dvh - 190px); }
+  /* 任务 F：375px 窄屏下标题列被工具按钮挤到极窄时，canvas-meta 长文本会折行撑高
+     flex:0 0 auto 的 canvas-head，把预览面板顶出画布。单行截断避免折行、避免撑高面板。 */
+  #literature-maps-view .literature-map-canvas-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #literature-maps-view .literature-map-canvas { flex: 1 1 0; min-height: min(360px, max(180px, calc(100dvh - 520px))); height: auto; }
   #literature-maps-view .literature-map-canvas-panel:has(.literature-map-preview-panel:not([hidden])) .literature-map-canvas { min-height: 0; }
   #literature-maps-view .literature-map-preview-panel { flex: 0 1 34dvh; min-height: min(240px, 30dvh); max-height: 42dvh; margin: 8px; padding: 9px; overflow: auto; overscroll-behavior: contain; }
@@ -496,9 +499,28 @@
 #literature-maps-view .literature-map-tag-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 11px; border-bottom: 1px solid #ece9f7; }
 #literature-maps-view .literature-map-tag-filter-bar[hidden] { display: none !important; }
 #literature-maps-view .literature-map-tag-filter-heading { color: var(--muted-strong); font: 10px 'DM Mono', monospace; font-weight: 700; }
-#literature-maps-view .literature-map-tag-filter-list { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+/* 任务 D：收起态只显示前 3 个 chip，禁止折行（标签多时改由「+N 更多」下拉访问）。 */
+#literature-maps-view .literature-map-tag-filter-list { display: flex; flex-wrap: nowrap; gap: 5px; min-width: 0; overflow: hidden; }
 #literature-maps-view .literature-map-tag-filter { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid #e2dcff; border-radius: 999px; background: #faf9ff; color: var(--ink); font-size: 10px; cursor: pointer; }
 #literature-maps-view .literature-map-tag-filter[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+#literature-maps-view .literature-map-tag-filter-more { flex: 0 0 auto; padding: 2px 8px; font-size: 10px; white-space: nowrap; }
+#literature-maps-view .literature-map-tag-filter-count { flex: 0 0 auto; color: var(--muted-strong); font: 10px 'DM Mono', monospace; font-weight: 700; }
+/* 下拉多选浮层：复用 .literature-map-card-menu 的 fixed / z-index / 白底，另加筛选专用约束。 */
+#literature-maps-view .literature-map-tag-filter-menu { width: 220px; max-width: min(220px, calc(100vw - 32px)); }
+#literature-maps-view .literature-map-tag-filter-menu-panel { display: grid; gap: 6px; min-width: 0; }
+#literature-maps-view .literature-map-tag-filter-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#literature-maps-view .literature-map-tag-filter-menu-count { color: var(--muted-strong); font: 9px 'DM Mono', monospace; white-space: nowrap; }
+#literature-maps-view .literature-map-tag-filter-menu-options { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
+#literature-maps-view .literature-map-tag-filter-menu-option { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; }
+#literature-maps-view .literature-map-tag-filter-menu-option input[type="checkbox"] { flex: 0 0 auto; accent-color: var(--accent); }
+#literature-maps-view .literature-map-tag-filter-menu-option .literature-map-tag-name { flex: 1 1 auto; }
+#literature-maps-view .literature-map-tag-filter-menu-actions { display: flex; justify-content: flex-end; gap: 6px; border-top: 1px solid #ece9f7; padding-top: 6px; }
+/* 下拉按钮只用 .btn-outline（不带 secondary-button 前缀，以免增加冻结的 token 计数），补回基类 padding。
+   选择器按容器内 button 匹配，不以 .btn-outline 结尾，避免干扰任何 .btn-outline 源码切片契约。 */
+#literature-maps-view .literature-map-tag-filter-menu-actions button { padding: 3px 9px; font-size: 10px; min-height: 24px; }
+@media (max-width: 760px) {
+  #literature-maps-view .literature-map-tag-filter-menu { max-width: min(220px, calc(100vw - 24px)); }
+}
 #literature-maps-view .literature-map-tag-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 999px; background: var(--tag-color, #8d80e6); }
 #literature-maps-view .literature-map-tag-name { color: #2c2740; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #literature-maps-view .literature-map-list-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
