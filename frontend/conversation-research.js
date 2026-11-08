@@ -63,7 +63,43 @@
     parent.appendChild(row);
   }
 
-  function createSourceDetail(documentRef, source, index) {
+  // 第二入口：在既有「打开知识库原文」之外，提供页内「定位到召回片段」按钮。
+  // fail-closed：缺 onLocateChunk 回调 / 缺 chunk_id 与 chunk_index 时不渲染任何内容，不留死链。
+  // 全部文本走 textContent，不拼接任何 URL，不触碰 appendSourceLink 的既有 link 行为。
+  function appendChunkLocateLink(documentRef, parent, source, onLocateChunk) {
+    if (typeof onLocateChunk !== 'function') return;
+    const chunkId = source.chunk_id != null ? source.chunk_id : source.chunk_index;
+    if (chunkId == null) return;
+    const row = documentRef.createElement('div');
+    row.className = 'conversation-source-detail-row conversation-source-link-row';
+    const key = documentRef.createElement('dt');
+    key.className = 'conversation-source-detail-label';
+    key.textContent = '片段';
+    const value = documentRef.createElement('dd');
+    value.className = 'conversation-source-detail-value';
+    const button = documentRef.createElement('button');
+    button.type = 'button';
+    button.className = 'conversation-source-locate-button';
+    button.textContent = '定位到召回片段';
+    button.addEventListener('click', (event) => {
+      try {
+        event.preventDefault();
+        event.stopPropagation();
+        onLocateChunk({
+          documentId: source.document_id || source.paper_id || null,
+          chunkId: String(chunkId),
+          source,
+        });
+      } catch (caught) {
+        // 回调异常不冒泡、不中断页面。
+      }
+    });
+    value.appendChild(button);
+    row.append(key, value);
+    parent.appendChild(row);
+  }
+
+  function createSourceDetail(documentRef, source, index, onLocateChunk = null) {
     const detail = documentRef.createElement('article');
     detail.className = 'conversation-source-detail';
     detail.id = `conversation-source-detail-${index + 1}`;
@@ -82,11 +118,12 @@
     appendDetail(documentRef, fields, '得分', source.score == null ? null : source.score);
     appendDetail(documentRef, fields, '正文', source.text);
     appendSourceLink(documentRef, fields, source);
+    appendChunkLocateLink(documentRef, fields, source, onLocateChunk);
     detail.appendChild(fields);
     return detail;
   }
 
-  function createSourceRenderer({ document: documentRef, container }) {
+  function createSourceRenderer({ document: documentRef, container, onLocateChunk = null }) {
     let activeIndex = -1;
     let renderedSources = [];
 
@@ -122,7 +159,7 @@
         button.setAttribute('aria-controls', `conversation-source-detail-${index + 1}`);
         button.setAttribute('aria-label', `展开来源 ${index + 1}`);
         button.textContent = String(index + 1);
-        const detail = createSourceDetail(documentRef, source, index);
+        const detail = createSourceDetail(documentRef, source, index, onLocateChunk);
         button.addEventListener('click', () => {
           const shouldExpand = activeIndex !== index;
           setExpanded(index, shouldExpand);
@@ -139,5 +176,5 @@
     return { render, clear, get sources() { return renderedSources; }, get activeIndex() { return activeIndex; } };
   }
 
-  return { MAX_SOURCES, normalizeSources, safeSourceUrl, createSourceRenderer };
+  return { MAX_SOURCES, normalizeSources, safeSourceUrl, createSourceRenderer, appendChunkLocateLink };
 }));

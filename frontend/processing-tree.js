@@ -55,6 +55,26 @@
     return `${(duration / 1000).toFixed(duration >= 10000 ? 0 : 1)} 秒`;
   }
 
+  // Spec044 task-03: fail-closed parse of a step's evidence detail_json.
+  // detail_json is a string (or null) carrying {"schema_version":"step-evidence-v1","records":[...]}
+  // or the degradation envelope {"truncated":true}. Never throws; every failure degrades to a
+  // non-'ok' state so the leaf button stays disabled / non-clickable.
+  function parseStepEvidence(detailJson) {
+    if (detailJson == null) return { records: [], state: 'empty' };
+    let parsed = detailJson;
+    if (typeof detailJson === 'string') {
+      const trimmed = detailJson.trim();
+      if (!trimmed) return { records: [], state: 'empty' };
+      try { parsed = JSON.parse(trimmed); } catch (_) { return { records: [], state: 'invalid' }; }
+    }
+    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return { records: [], state: 'invalid' };
+    if (parsed.truncated === true) return { records: [], state: 'truncated' };
+    if (parsed.schema_version !== 'step-evidence-v1') return { records: [], state: 'unknown_schema' };
+    const records = Array.isArray(parsed.records) ? parsed.records : [];
+    if (!records.length) return { records: [], state: 'empty' };
+    return { records, state: 'ok' };
+  }
+
   function safeStore(storage) {
     if (storage && typeof storage.getItem === 'function') return storage;
     try { return root?.localStorage || null; } catch (_) { return null; }
@@ -154,8 +174,18 @@
       const expanded = shouldExpand(node, depth, children);
       const head = document.createElement('div'); head.className = 'conversation-processing-node-head';
       const button = document.createElement('button'); button.type = 'button'; button.className = 'conversation-processing-node-toggle';
-      button.setAttribute('aria-expanded', expanded ? 'true' : 'false'); button.setAttribute('aria-label', `${expanded ? '折叠' : '展开'}${node.label}`);
-      if (!descendants.length) button.setAttribute('aria-disabled', 'true');
+      const isLeaf = !descendants.length;
+      const evidence = isLeaf ? parseStepEvidence(node.detail_json) : null;
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      if (isLeaf && (evidence.state === 'ok' || evidence.state === 'truncated')) {
+        button.setAttribute('aria-disabled', 'false');
+        button.setAttribute('aria-label', `${node.label}的依据`);
+      } else if (isLeaf) {
+        button.setAttribute('aria-disabled', 'true');
+        button.setAttribute('aria-label', `${node.label}（无依据明细）`);
+      } else {
+        button.setAttribute('aria-label', `${expanded ? '折叠' : '展开'}${node.label}`);
+      }
       button.dataset.userToggled = state.expanded.has(node._identity) ? 'true' : 'false';
       const title = document.createElement('span'); title.className = 'conversation-processing-node-label'; title.textContent = node.label;
       const type = document.createElement('span'); type.className = 'conversation-processing-node-type'; type.textContent = TYPE_LABELS[node.node_type] || TYPE_LABELS.operation;
@@ -164,11 +194,23 @@
       const detail = document.createElement('span'); detail.className = 'conversation-processing-node-summary'; detail.textContent = [node.summary, durationText(node)].filter(Boolean).join(' · ');
       const body = document.createElement('div'); body.className = 'conversation-processing-node-children'; body.hidden = !expanded || !ancestorExpanded;
       button.addEventListener('click', () => {
-        if (!descendants.length) return;
-        const next = button.getAttribute('aria-expanded') !== 'true'; button.setAttribute('aria-expanded', next ? 'true' : 'false');
-        button.setAttribute('aria-label', `${next ? '折叠' : '展开'}${node.label}`); button.dataset.userToggled = 'true'; state.expanded.set(node._identity, next); persist(); render(); onChange?.('toggle', node);
+        if (descendants.length) {
+          const next = button.getAttribute('aria-expanded') !== 'true'; button.setAttribute('aria-expanded', next ? 'true' : 'false');
+          button.setAttribute('aria-label', `${next ? '折叠' : '展开'}${node.label}`); button.dataset.userToggled = 'true'; state.expanded.set(node._identity, next); persist(); render(); onChange?.('toggle', node);
+          return;
+        }
+        // Leaf node: only surface evidence when a resolvable detail exists. The actual floating
+        // panel is built by app.js via openFloatingMenu; this module never touches the DOM overlay.
+        if (evidence.state === 'ok' || evidence.state === 'truncated') {
+          onChange?.('evidence', { step: node, trigger: button, records: evidence.records, state: evidence.state });
+        }
       });
       item.append(head, detail);
+      if (isLeaf && evidence.state !== 'ok' && evidence.state !== 'truncated' && node.status !== 'running') {
+        const emptyHint = document.createElement('span'); emptyHint.className = 'step-evidence-empty';
+        emptyHint.textContent = '该消息生成时未记录召回明细';
+        item.appendChild(emptyHint);
+      }
       if (descendants.length) {
         item.appendChild(body);
         descendants.forEach((child) => { const childNode = makeNode(child, children, parentById, depth + 1, ancestorExpanded && expanded, nextPath); if (childNode) body.appendChild(childNode); });
@@ -212,5 +254,5 @@
     render();
     return { upsert, upsertMany, setSyncing, finalize, render, isRunning, snapshot, state };
   }
-  return { createProcessingTree, normalizeStep, durationText, NODE_TYPES };
+  return { createProcessingTree, normalizeStep, durationText, NODE_TYPES, parseStepEvidence };
 }));

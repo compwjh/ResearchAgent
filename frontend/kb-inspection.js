@@ -320,6 +320,7 @@
       chunkVisibleCount: 0,
       activeSelection: null,
       selectionToken: 0,
+      pendingFocusChunkId: null,
       paneScroll: { source: 0, chunks: 0 },
     };
 
@@ -676,6 +677,37 @@
           showError({ code, message: pdfErrorMessage(code) });
         }
       })();
+    }
+
+    // 公开入口：按 chunkId 定位到切片面板并高亮联动。
+    // 复用既有 scrollAndFocus(node,'chunks') 切面板/滚动/聚焦 语义，再走既有 selectFromChunk 完成高亮与 source 联动。
+    // 不重写 clearHighlights / setActiveState / scrollAndFocus。
+    function focusChunk(chunkId, chunkIndex) {
+      if (typeof chunkId !== 'string' || chunkId === '') return false;
+      // 回退键：仅当 chunkIndex 是合法非负整数（number 或数字字符串）时才有效，绝不编造。
+      const indexNumber = Number(chunkIndex);
+      const hasIndex = typeof chunkIndex === 'number' || (typeof chunkIndex === 'string' && chunkIndex.trim() !== '');
+      const indexValid = hasIndex && Number.isInteger(indexNumber) && indexNumber >= 0;
+      const nodes = chunkNodes();
+      if (nodes.length === 0) {
+        // 检查器尚未加载该文档：把完整请求（含回退键）记住，等 renderChunks 渲染完成后重试。
+        state.pendingFocusChunkId = { chunkId, chunkIndex: indexValid ? indexNumber : null };
+        return false;
+       }
+      // 两级真实匹配：先精确实例 id（兼容 v1:0 调用方），未命中再按真实 chunk_index 回退。
+      let target = nodes.find((node) => String(node.getAttribute('data-chunk-id')) === String(chunkId));
+      if (!target && indexValid) {
+        target = nodes.find((node) => String(node.getAttribute('data-chunk-index')) === String(indexNumber));
+      }
+      if (!target) return false;
+      try {
+        scrollAndFocus(target, 'chunks');
+        selectFromChunk(target);
+        return true;
+      } catch (caught) {
+        // selectFromChunk 异常时静默失败，避免 SSE/页面中断冒泡到调用方。
+        return false;
+      }
     }
 
     function bindSourceInteraction(node) {
@@ -1138,6 +1170,19 @@
       });
       state.chunkVisibleCount = 0;
       renderChunkBatch();
+      // 消费待定位请求：若 chunkNodes() 曾为空（文档未加载）时有人请求定位某切片，
+      // 这里渲染完成后重试一次；命中与否由 focusChunk 自行判定，不引入第二套高亮链路。
+      if (state.pendingFocusChunkId != null) {
+        const pending = state.pendingFocusChunkId;
+        const pendingChunkId = typeof pending === 'object' && pending !== null
+          ? pending.chunkId
+          : pending;
+        const pendingChunkIndex = (typeof pending === 'object' && pending !== null)
+          ? pending.chunkIndex
+          : undefined;
+        state.pendingFocusChunkId = null;
+        focusChunk(pendingChunkId, pendingChunkIndex);
+       }
     }
 
     async function loadInspection() {
@@ -1272,6 +1317,7 @@
       cancel: cancelPending,
       loadDocuments,
       loadInspection,
+      focusChunk,
       state,
     };
   }

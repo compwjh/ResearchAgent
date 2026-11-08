@@ -11,7 +11,7 @@ STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 
 
 def test_shared_tree_is_loaded_and_research_tab_reuses_it() -> None:
-    assert 'src="/assets/processing-tree.js?v=1"' in INDEX
+    assert 'src="/assets/processing-tree.js?v=2"' in INDEX
     assert "ProcessingTree" in APP
     assert "ProcessingTree.createProcessingTree" in RESEARCH
     assert 'id="research-processing-tree"' in INDEX

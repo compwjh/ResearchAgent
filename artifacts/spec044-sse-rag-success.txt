@@ -1,0 +1,198 @@
+data: {"type": "meta", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 1, "timestamp": "2026-11-07T20:03:44.324238Z", "project_id": null, "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481", "user_message_id": "72c41a1eec51446eaee0094de1c4c580", "assistant_message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "model": "qwen3.8:27b", "mode": "normal", "reasoning_effort": "off", "capabilities_source": "cache"}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 2, "timestamp": "2026-11-07T20:03:44.973364Z", "step_id": "6cb31352b1c34a86a6fb90300b084902", "kind": "memory_recall", "label": "记忆召回", "status": "running", "summary": null}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 3, "timestamp": "2026-11-07T20:03:45.359812Z", "step_id": "6cb31352b1c34a86a6fb90300b084902", "kind": "memory_recall", "label": "记忆召回", "status": "completed", "summary": "召回 0 条会话摘要、L2 FTS5 命中 5 条"}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 4, "timestamp": "2026-11-07T20:03:45.378000Z", "step_id": "b5785f3076284b60ac4a54e149c4b7a9", "kind": "system_rule", "label": "已应用系统规则", "status": "completed", "summary": "已应用系统规则"}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 5, "timestamp": "2026-11-07T20:03:46.073108Z", "step_id": "b455e22644174bbfad2cd6f58e83095c", "kind": "rag_retrieval", "label": "知识库检索", "status": "running", "summary": null}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 6, "timestamp": "2026-11-07T20:03:59.270968Z", "step_id": "b455e22644174bbfad2cd6f58e83095c", "kind": "rag_retrieval", "label": "知识库检索", "status": "completed", "summary": "召回 5 条知识库证据"}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 7, "timestamp": "2026-11-07T20:03:59.351049Z", "step_id": "a86929c6a5954fcfb64b734c1aa09630", "kind": "generation", "label": "回答生成", "status": "running", "summary": null}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 8, "timestamp": "2026-11-07T20:04:39.755393Z", "content": "当前"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 9, "timestamp": "2026-11-07T20:04:39.791032Z", "content": "提供的"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 10, "timestamp": "2026-11-07T20:04:39.864156Z", "content": "知识库"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 11, "timestamp": "2026-11-07T20:04:39.932063Z", "content": "证据"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 12, "timestamp": "2026-11-07T20:04:40.005926Z", "content": "（"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 13, "timestamp": "2026-11-07T20:04:40.074120Z", "content": "["}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 14, "timestamp": "2026-11-07T20:04:40.148399Z", "content": "1"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 15, "timestamp": "2026-11-07T20:04:40.225790Z", "content": "]-"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 16, "timestamp": "2026-11-07T20:04:40.295919Z", "content": "["}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 17, "timestamp": "2026-11-07T20:04:40.371175Z", "content": "5"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 18, "timestamp": "2026-11-07T20:04:40.449472Z", "content": "]"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 19, "timestamp": "2026-11-07T20:04:40.520082Z", "content": "）"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 20, "timestamp": "2026-11-07T20:04:40.590427Z", "content": "仅"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 21, "timestamp": "2026-11-07T20:04:40.662831Z", "content": "涉及"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 22, "timestamp": "2026-11-07T20:04:40.735934Z", "content": " **"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 23, "timestamp": "2026-11-07T20:04:40.810080Z", "content": "Graph"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 24, "timestamp": "2026-11-07T20:04:40.882219Z", "content": " Attention"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 25, "timestamp": "2026-11-07T20:04:40.955346Z", "content": " Networks"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 26, "timestamp": "2026-11-07T20:04:41.025046Z", "content": " ("}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 27, "timestamp": "2026-11-07T20:04:41.100975Z", "content": "G"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 28, "timestamp": "2026-11-07T20:04:41.172494Z", "content": "AT"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 29, "timestamp": "2026-11-07T20:04:41.246596Z", "content": ")**"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 30, "timestamp": "2026-11-07T20:04:41.322969Z", "content": " "}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 31, "timestamp": "2026-11-07T20:04:41.391661Z", "content": "论文"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 32, "timestamp": "2026-11-07T20:04:41.470997Z", "content": "，"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 33, "timestamp": "2026-11-07T20:04:41.543582Z", "content": "内容"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 34, "timestamp": "2026-11-07T20:04:41.617711Z", "content": "聚焦"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 35, "timestamp": "2026-11-07T20:04:41.701942Z", "content": "于"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 36, "timestamp": "2026-11-07T20:04:41.764747Z", "content": "图"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 37, "timestamp": "2026-11-07T20:04:41.841447Z", "content": "神经网络"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 38, "timestamp": "2026-11-07T20:04:41.916496Z", "content": "在"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 39, "timestamp": "2026-11-07T20:04:41.995166Z", "content": "节点"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 40, "timestamp": "2026-11-07T20:04:42.063293Z", "content": "分类"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 41, "timestamp": "2026-11-07T20:04:42.143117Z", "content": "任务"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 42, "timestamp": "2026-11-07T20:04:42.214770Z", "content": "（"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 43, "timestamp": "2026-11-07T20:04:42.287899Z", "content": "如"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 44, "timestamp": "2026-11-07T20:04:42.363201Z", "content": " Cor"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 45, "timestamp": "2026-11-07T20:04:42.436200Z", "content": "a"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 46, "timestamp": "2026-11-07T20:04:42.515612Z", "content": "、"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 47, "timestamp": "2026-11-07T20:04:42.586042Z", "content": "Cit"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 48, "timestamp": "2026-11-07T20:04:42.662424Z", "content": "ese"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 49, "timestamp": "2026-11-07T20:04:42.735661Z", "content": "er"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 50, "timestamp": "2026-11-07T20:04:42.806817Z", "content": "、"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 51, "timestamp": "2026-11-07T20:04:42.882378Z", "content": "Pub"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 52, "timestamp": "2026-11-07T20:04:42.955249Z", "content": "med"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 53, "timestamp": "2026-11-07T20:04:43.032538Z", "content": "、"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 54, "timestamp": "2026-11-07T20:04:43.106534Z", "content": "P"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 55, "timestamp": "2026-11-07T20:04:43.179576Z", "content": "PI"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 56, "timestamp": "2026-11-07T20:04:43.251684Z", "content": "）"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 57, "timestamp": "2026-11-07T20:04:43.325395Z", "content": "中的"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 58, "timestamp": "2026-11-07T20:04:43.400923Z", "content": "注意力"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 59, "timestamp": "2026-11-07T20:04:43.476373Z", "content": "机制"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 60, "timestamp": "2026-11-07T20:04:43.555717Z", "content": "、"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 61, "timestamp": "2026-11-07T20:04:43.629831Z", "content": "多头"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 62, "timestamp": "2026-11-07T20:04:43.704005Z", "content": "注意力"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 63, "timestamp": "2026-11-07T20:04:43.780111Z", "content": "、"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 64, "timestamp": "2026-11-07T20:04:43.851562Z", "content": "归纳"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 65, "timestamp": "2026-11-07T20:04:43.927465Z", "content": "式"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 66, "timestamp": "2026-11-07T20:04:44.012447Z", "content": "学习"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 67, "timestamp": "2026-11-07T20:04:44.075915Z", "content": "及"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 68, "timestamp": "2026-11-07T20:04:44.149099Z", "content": "实验"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 69, "timestamp": "2026-11-07T20:04:44.225874Z", "content": "结果"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 70, "timestamp": "2026-11-07T20:04:44.299954Z", "content": "，"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 71, "timestamp": "2026-11-07T20:04:44.372820Z", "content": "**"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 72, "timestamp": "2026-11-07T20:04:44.449167Z", "content": "并未"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 73, "timestamp": "2026-11-07T20:04:44.527861Z", "content": "包含"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 74, "timestamp": "2026-11-07T20:04:44.591346Z", "content": "任何"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 75, "timestamp": "2026-11-07T20:04:44.668782Z", "content": "关于"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 76, "timestamp": "2026-11-07T20:04:44.738291Z", "content": "“"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 77, "timestamp": "2026-11-07T20:04:44.815315Z", "content": "比特币"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 78, "timestamp": "2026-11-07T20:04:44.886268Z", "content": "聚类"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 79, "timestamp": "2026-11-07T20:04:44.960985Z", "content": "验证"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 80, "timestamp": "2026-11-07T20:04:45.034890Z", "content": "方法"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 81, "timestamp": "2026-11-07T20:04:45.105365Z", "content": "”"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 82, "timestamp": "2026-11-07T20:04:45.183952Z", "content": "的信息"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 83, "timestamp": "2026-11-07T20:04:45.258083Z", "content": "**。"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 84, "timestamp": "2026-11-07T20:04:45.334550Z", "content": "\n\n"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 85, "timestamp": "2026-11-07T20:04:45.408733Z", "content": "因此"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 86, "timestamp": "2026-11-07T20:04:45.479745Z", "content": "，"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 87, "timestamp": "2026-11-07T20:04:45.554329Z", "content": "**"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 88, "timestamp": "2026-11-07T20:04:45.630701Z", "content": "无法"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 89, "timestamp": "2026-11-07T20:04:45.714097Z", "content": "依据"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 90, "timestamp": "2026-11-07T20:04:45.777143Z", "content": "现有"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 91, "timestamp": "2026-11-07T20:04:45.884379Z", "content": "证据"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 92, "timestamp": "2026-11-07T20:04:45.933294Z", "content": "**"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 93, "timestamp": "2026-11-07T20:04:46.013594Z", "content": "回答"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 94, "timestamp": "2026-11-07T20:04:46.085698Z", "content": "该"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 95, "timestamp": "2026-11-07T20:04:46.162243Z", "content": "问题"}
+
+data: {"type": "token", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 96, "timestamp": "2026-11-07T20:04:46.242171Z", "content": "。"}
+
+data: {"type": "progress", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 97, "timestamp": "2026-11-07T20:04:46.328205Z", "step_id": "a86929c6a5954fcfb64b734c1aa09630", "kind": "generation", "label": "回答生成", "status": "completed", "summary": "回答已生成"}
+
+data: {"type": "sources", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 98, "timestamp": "2026-11-07T20:04:46.331107Z", "sources": [{"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 8, "page_end": 8, "start_line": null, "end_line": null, "chunk_index": 38, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "086d957a-1352-51b5-9161-c3bcbba497b7", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.016393, "text": "Published as a conference paper at ICLR 2018 Table 2: Summary of results in terms of classiﬁcation accuracies, for Cora, Citeseer and Pubmed.\nGCN-64∗corresponds to the best GCN result computing 64 hidden features (using ReLU or ELU).\nTransductive Method Cora Citeseer Pubmed\nMLP 55.1% 46.5% 71.4% ManiReg (Belkin et al., 2006) 59.5% 60.1% 70.7% SemiEmb (Weston et al., 2012) 59.0% 59.6% 71.7% LP (Zhu et al., 2003) 68.0% 45.3% 63.0% DeepWalk (Perozzi et al., 2014) 67.2% 43.2% 65.3% ICA (Lu & Getoor, 2003) 75.1% 69.1% 73.9% Planetoid (Yang et al., 2016) 75.7% 64.7% 77.2% Chebyshev (Defferrard et al., 2016) 81.2% 69.8% 74.4% GCN (Kipf & Welling, 2017) 81.5% 70.3% 79.0% MoNet (Monti et al., 2016) 81.7 ± 0.5% — 78.8 ± 0.3%"}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 6, "page_end": 6, "start_line": null, "end_line": null, "chunk_index": 28, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "0167abfe-15cb-50fa-a3d9-7c122353e0b6", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.016129, "text": "of Yang et al. (2016). In all of these datasets, nodes correspond to documents and edges to (undirected) citations. Node features correspond to elements of a bag-of-words representation of a document.Each node has a class label. We allow for only 20 nodes per class to be used for training—however, honoring the transductive setup, the training algorithm has access to all of the nodes’ feature vectors. The predictive power of the trained models is evaluated on 1000 test nodes, and we use 500 additional nodes for validation purposes (the same ones as used by Kipf & Welling (2017)). The Cora dataset contains 2708 nodes, 5429 edges, 7 classes and 1433 features per node. The Citeseer dataset contains 3327 nodes, 4732 edges, 6 classes and 3703 features per node. The Pubmed dataset contains 19717 nodes, 44338 edges, 3 classes and 500 features per node."}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 5, "page_end": 5, "start_line": null, "end_line": null, "chunk_index": 22, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "f99ec3ca-fd70-5587-a6e1-a05a8b40c740", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.015873, "text": "• The recently published inductive method of Hamilton et al. (2017) samples a ﬁxed-size neighborhood of each node, in order to keep its computational footprint consistent; this does not allow it access to the entirety of the neighborhood while performing inference.\nMoreover, this technique achieved some of its strongest results when an LSTM (Hochreiter & Schmidhuber, 1997)-based neighborhood aggregator is used. This assumes the existence of a consistent sequential node ordering across neighborhoods, and the authors have rectiﬁed it by consistently feeding randomly-ordered sequences to the LSTM. Our technique does not suffer from either of these issues—it works with the entirety of the neighborhood (at the expense of a variable computational footprint, which is still on-par with methods like the GCN), and does not assume any ordering within it.\n• As mentioned in Section 1, GAT can be reformulated as a particular instance of MoNet (Monti et al., 2016)."}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 8, "page_end": 8, "start_line": null, "end_line": null, "chunk_index": 40, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "aa352a46-8ebd-56e1-95a5-2912086ad184", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.015625, "text": "MLP 0.422 GraphSAGE-GCN (Hamilton et al., 2017) 0.500 GraphSAGE-mean (Hamilton et al., 2017) 0.598 GraphSAGE-LSTM (Hamilton et al., 2017) 0.612 GraphSAGE-pool (Hamilton et al., 2017) 0.600 GraphSAGE∗ 0.768 Const-GAT (ours) 0.934 ± 0.006 GAT (ours) 0.973 ± 0.002 the other techniques. Speciﬁcally, as our setup is supervised, we compare against the supervised GraphSAGE approaches. To evaluate the beneﬁts of aggregating across the entire neighborhood, we further provide (as GraphSAGE∗) the best result we were able to achieve with GraphSAGE by just modifying its architecture (this was with a three-layer GraphSAGE-LSTM with [512, 512, 726] features computed in each layer and 128 features used for aggregating neighborhoods). Finally, we report the 10-run result of our constant attention GAT model (as Const-GAT), to fairly evaluate the beneﬁts of the attention mechanism against a GCN-like aggregation scheme (with the same architecture)."}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 7, "page_end": 7, "start_line": null, "end_line": null, "chunk_index": 36, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "6716e3cc-1cef-574b-aeeb-82a106b134ef", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.015385, "text": "with a near GCN-equivalent model), we also provide the results when a constant attention mechanism, a(x, y) = 1, is used, with the same architecture—this will assign the same weight to every neighbor.Both models are initialized using Glorot initialization (Glorot & Bengio, 2010) and trained to minimize cross-entropy on the training nodes using the Adam SGD optimizer (Kingma & Ba, 2014) with an initial learning rate of 0.01 for Pubmed, and 0.005 for all other datasets. In both cases we use an early stopping strategy on both the cross-entropy loss and accuracy (transductive) or micro-F1 (inductive) score on the validation nodes, with a patience of 100 epochs1.\n3.4\nRESULTS The results of our comparative evaluation experiments are summarized in Tables 2 and 3."}], "citations": [{"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 8, "page_end": 8, "start_line": null, "end_line": null, "chunk_index": 38, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "086d957a-1352-51b5-9161-c3bcbba497b7", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.016393, "text": "Published as a conference paper at ICLR 2018 Table 2: Summary of results in terms of classiﬁcation accuracies, for Cora, Citeseer and Pubmed.\nGCN-64∗corresponds to the best GCN result computing 64 hidden features (using ReLU or ELU).\nTransductive Method Cora Citeseer Pubmed\nMLP 55.1% 46.5% 71.4% ManiReg (Belkin et al., 2006) 59.5% 60.1% 70.7% SemiEmb (Weston et al., 2012) 59.0% 59.6% 71.7% LP (Zhu et al., 2003) 68.0% 45.3% 63.0% DeepWalk (Perozzi et al., 2014) 67.2% 43.2% 65.3% ICA (Lu & Getoor, 2003) 75.1% 69.1% 73.9% Planetoid (Yang et al., 2016) 75.7% 64.7% 77.2% Chebyshev (Defferrard et al., 2016) 81.2% 69.8% 74.4% GCN (Kipf & Welling, 2017) 81.5% 70.3% 79.0% MoNet (Monti et al., 2016) 81.7 ± 0.5% — 78.8 ± 0.3%"}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 6, "page_end": 6, "start_line": null, "end_line": null, "chunk_index": 28, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "0167abfe-15cb-50fa-a3d9-7c122353e0b6", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.016129, "text": "of Yang et al. (2016). In all of these datasets, nodes correspond to documents and edges to (undirected) citations. Node features correspond to elements of a bag-of-words representation of a document.Each node has a class label. We allow for only 20 nodes per class to be used for training—however, honoring the transductive setup, the training algorithm has access to all of the nodes’ feature vectors. The predictive power of the trained models is evaluated on 1000 test nodes, and we use 500 additional nodes for validation purposes (the same ones as used by Kipf & Welling (2017)). The Cora dataset contains 2708 nodes, 5429 edges, 7 classes and 1433 features per node. The Citeseer dataset contains 3327 nodes, 4732 edges, 6 classes and 3703 features per node. The Pubmed dataset contains 19717 nodes, 44338 edges, 3 classes and 500 features per node."}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 5, "page_end": 5, "start_line": null, "end_line": null, "chunk_index": 22, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "f99ec3ca-fd70-5587-a6e1-a05a8b40c740", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.015873, "text": "• The recently published inductive method of Hamilton et al. (2017) samples a ﬁxed-size neighborhood of each node, in order to keep its computational footprint consistent; this does not allow it access to the entirety of the neighborhood while performing inference.\nMoreover, this technique achieved some of its strongest results when an LSTM (Hochreiter & Schmidhuber, 1997)-based neighborhood aggregator is used. This assumes the existence of a consistent sequential node ordering across neighborhoods, and the authors have rectiﬁed it by consistently feeding randomly-ordered sequences to the LSTM. Our technique does not suffer from either of these issues—it works with the entirety of the neighborhood (at the expense of a variable computational footprint, which is still on-par with methods like the GCN), and does not assume any ordering within it.\n• As mentioned in Section 1, GAT can be reformulated as a particular instance of MoNet (Monti et al., 2016)."}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 8, "page_end": 8, "start_line": null, "end_line": null, "chunk_index": 40, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "aa352a46-8ebd-56e1-95a5-2912086ad184", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.015625, "text": "MLP 0.422 GraphSAGE-GCN (Hamilton et al., 2017) 0.500 GraphSAGE-mean (Hamilton et al., 2017) 0.598 GraphSAGE-LSTM (Hamilton et al., 2017) 0.612 GraphSAGE-pool (Hamilton et al., 2017) 0.600 GraphSAGE∗ 0.768 Const-GAT (ours) 0.934 ± 0.006 GAT (ours) 0.973 ± 0.002 the other techniques. Speciﬁcally, as our setup is supervised, we compare against the supervised GraphSAGE approaches. To evaluate the beneﬁts of aggregating across the entire neighborhood, we further provide (as GraphSAGE∗) the best result we were able to achieve with GraphSAGE by just modifying its architecture (this was with a three-layer GraphSAGE-LSTM with [512, 512, 726] features computed in each layer and 128 features used for aggregating neighborhoods). Finally, we report the 10-run result of our constant attention GAT model (as Const-GAT), to fairly evaluate the beneﬁts of the attention mechanism against a GCN-like aggregation scheme (with the same architecture)."}, {"file_name": "2017-Conference-Graph-Attention-Networks.pdf", "page": 7, "page_end": 7, "start_line": null, "end_line": null, "chunk_index": 36, "paper_id": "55afc3b8f01445429462fe78ed0d4c98", "document_id": "55afc3b8f01445429462fe78ed0d4c98", "chunk_id": "6716e3cc-1cef-574b-aeeb-82a106b134ef", "source_url": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source", "score": 0.015385, "text": "with a near GCN-equivalent model), we also provide the results when a constant attention mechanism, a(x, y) = 1, is used, with the same architecture—this will assign the same weight to every neighbor.Both models are initialized using Glorot initialization (Glorot & Bengio, 2010) and trained to minimize cross-entropy on the training nodes using the Adam SGD optimizer (Kingma & Ba, 2014) with an initial learning rate of 0.01 for Pubmed, and 0.005 for all other datasets. In both cases we use an early stopping strategy on both the cross-entropy loss and accuracy (transductive) or micro-F1 (inductive) score on the validation nodes, with a patience of 100 epochs1.\n3.4\nRESULTS The results of our comparative evaluation experiments are summarized in Tables 2 and 3."}]}
+
+data: {"type": "done", "message_id": "e66eeaa343c64a1aaf7bae5bfdba61d4", "event_seq": 99, "timestamp": "2026-11-07T20:04:46.345531Z", "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481", "status": "completed", "duration_ms": 62316.58275006339, "reasoning_duration_ms": null, "answer_duration_ms": 62316.58275006339}
+

@@ -1,0 +1,6 @@
+data: {"type": "meta", "message_id": "9ef99683a7aa4fc285b3a592243ba49a", "event_seq": 1, "timestamp": "2026-11-07T18:56:16.908801Z", "project_id": null, "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481", "user_message_id": "099b3ec06cd04d0ea518ce2d06da17df", "assistant_message_id": "9ef99683a7aa4fc285b3a592243ba49a", "model": "qwen3.8:27b", "mode": "normal"}
+
+data: {"type": "error", "message_id": "9ef99683a7aa4fc285b3a592243ba49a", "event_seq": 2, "timestamp": "2026-11-07T18:56:16.910006Z", "code": "REASONING_EFFORT_UNSUPPORTED", "message": "当前模型不支持该推理档位", "retryable": false}
+
+data: {"type": "done", "message_id": "9ef99683a7aa4fc285b3a592243ba49a", "event_seq": 3, "timestamp": "2026-11-07T18:56:16.912196Z", "conversation_id": "cc9f02f3d8184943bee35b4a23aa9481", "status": "failed"}
+

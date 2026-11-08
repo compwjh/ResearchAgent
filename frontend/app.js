@@ -1602,6 +1602,16 @@ function createConversationProcessing(assistantMessage) {
     document,
     container: list,
     storageKey: assistantMessage.dataset.messageId || assistantMessage.dataset.parentMessageId || 'conversation',
+    // Spec044 task-03: processing-tree 不直接渲染浮层，叶子有明细时回调这里，由既有浮层基础打开。
+    onChange: (event, payload) => {
+      if (event === 'evidence') {
+        const panel = renderStepEvidencePanel(payload.step, payload.records, payload.state);
+        openFloatingMenu(payload.trigger, panel);
+        // openFloatingMenu 会先设 role="menu"，证据浮层覆盖为 dialog 语义。
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-label', `${payload.step.label}的依据`);
+      }
+    },
   }) : null;
   if (tree) processing._processingTree = tree;
   toggle.addEventListener('click', () => {
@@ -1619,6 +1629,125 @@ function createConversationProcessing(assistantMessage) {
   else bubble.appendChild(processing);
   return processing;
 }
+
+// Spec044 task-03: 步骤依据（证据）浮层。全部动态文本走 textContent，禁止 innerHTML。
+// 状态中文映射（复用 processing-tree STATUS_LABELS 思路）。
+const STEP_EVIDENCE_STATUS_LABELS = {
+  running: '进行中', completed: '已完成', failed: '失败', partial: '部分完成',
+  cancelled: '已取消', canceled: '已取消', skipped: '已跳过', interrupted: '已中断',
+};
+const STEP_EVIDENCE_KIND_LABELS = {
+  summary: '摘要', fts_hit: '全文检索命中', rag_hit: '向量检索命中', rule: '规则', generation: '生成',
+};
+const STEP_EVIDENCE_SOURCE_KIND_WHITELIST = new Set(['conversation', 'memory_view', 'kb_chunk', 'system_rule', 'external_trace']);
+
+// 来源只读文本：未知 source_kind 只显示只读信息，不渲染可点链接；已知类型预留「来源动作」位置（见 step-evidence-source）。
+// task-04 扩展钩子：将在此接入 jumpToKnowledgeBase，本次不渲染任何假跳转按钮。
+function renderStepEvidenceSourceText(record) {
+  if (!record || typeof record !== 'object') return '';
+  const sourceKind = record.source_kind;
+  const id = record.chunk_id || record.document_id || record.ref_id || record.conversation_id || record.target || '';
+  const known = STEP_EVIDENCE_SOURCE_KIND_WHITELIST.has(sourceKind);
+  if (!known) {
+    return id ? `来源：${sourceKind || '未知'} · ${id}` : `来源：${sourceKind || '未知'}`;
+  }
+  return id ? `来源：${sourceKind} · ${id}` : `来源：${sourceKind}`;
+}
+
+// Spec044 task-04：按 source_kind 渲染真实可解析的来源动作；未知类型或必填字段缺失时
+// 返回 null（只显示 renderStepEvidenceSourceText 的只读文本，绝不假跳转、绝不造 ID）。
+function renderStepEvidenceSourceActions(record) {
+  if (!record || typeof record !== 'object') return null;
+  const sourceKind = record.source_kind;
+  const actions = [];
+  if (sourceKind === 'conversation') {
+    const conversationId = typeof record.conversation_id === 'string' ? record.conversation_id : '';
+    if (conversationId) actions.push({ label: '查看会话', run: () => openConversationFromWorkspace(conversationId) });
+  } else if (sourceKind === 'memory_view' || sourceKind === 'system_rule') {
+    // 切到记忆视图并聚焦既有规则卡（systemRuleCard 在模块加载时定位，可能为空）。
+    actions.push({
+      label: sourceKind === 'system_rule' ? '查看规则' : '查看记忆',
+      run: () => {
+        showView('memory');
+        if (systemRuleCard && typeof systemRuleCard.scrollIntoView === 'function') systemRuleCard.scrollIntoView({ block: 'center' });
+      },
+    });
+  } else if (sourceKind === 'kb_chunk') {
+    const documentId = typeof record.document_id === 'string' ? record.document_id : '';
+    const chunkId = typeof record.chunk_id === 'string' ? record.chunk_id : '';
+    const rawChunkIndex = record.chunk_index;
+    const parsedChunkIndex = rawChunkIndex === undefined ? null : Number(rawChunkIndex);
+    const chunkIndex = (Number.isInteger(parsedChunkIndex) && parsedChunkIndex >= 0) ? parsedChunkIndex : null;
+    if (documentId && chunkId) actions.push({ label: '定位知识库片段', run: () => locateKnowledgeChunk({ documentId, chunkId, chunkIndex, source: record }) });
+  }
+  // external_trace / 未知类型 / 缺字段：不渲染按钮，只显只读来源文本（fail-closed）。
+  if (!actions.length) return null;
+  const fragment = document.createDocumentFragment();
+  actions.forEach((action) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'step-evidence-source-action';
+    button.textContent = action.label;
+    button.addEventListener('click', () => { try { action.run(); } catch (_) { /* 任意异常都不中断页面 */ } });
+    fragment.appendChild(button);
+  });
+  return fragment;
+}
+
+// 返回证据浮层面板（HTMLElement）。state ∈ ok|truncated|empty|invalid|unknown_schema；本次仅 ok/truncated 会触发打开。
+function renderStepEvidencePanel(step, records, state) {
+  const panel = document.createElement('div');
+  panel.className = 'step-evidence-panel';
+  const header = document.createElement('div'); header.className = 'step-evidence-header';
+  const title = document.createElement('span'); title.className = 'step-evidence-title'; title.textContent = step?.label || '处理步骤';
+  const statusLabel = STEP_EVIDENCE_STATUS_LABELS[step?.status] || STEP_EVIDENCE_STATUS_LABELS.running;
+  const countText = state === 'truncated' ? '明细过长已截断' : `${Array.isArray(records) ? records.length : 0} 条记录`;
+  const count = document.createElement('span'); count.className = 'step-evidence-count'; count.textContent = `${statusLabel} · ${countText}`;
+  const close = document.createElement('button'); close.type = 'button'; close.className = 'step-evidence-close'; close.textContent = '×';
+  close.setAttribute('aria-label', '关闭依据'); close.addEventListener('click', () => closeFloatingMenu(true));
+  header.append(title, count, close);
+  panel.appendChild(header);
+  if (state === 'truncated') {
+    const truncated = document.createElement('p'); truncated.className = 'step-evidence-truncated'; truncated.textContent = '明细过长已截断';
+    panel.appendChild(truncated);
+    return panel;
+  }
+  const safeRecords = Array.isArray(records) ? records : [];
+  if (!safeRecords.length) {
+    const empty = document.createElement('p'); empty.className = 'step-evidence-empty'; empty.textContent = '该消息生成时未记录召回明细';
+    panel.appendChild(empty);
+    return panel;
+  }
+  const list = document.createElement('div'); list.className = 'step-evidence-list';
+  safeRecords.forEach((record) => {
+    const card = document.createElement('div'); card.className = 'step-evidence-record';
+    const kind = document.createElement('span'); kind.className = 'step-evidence-kind'; kind.textContent = STEP_EVIDENCE_KIND_LABELS[record.kind] || record.kind || '记录';
+    const recordTitle = document.createElement('div'); recordTitle.className = 'step-evidence-record-title'; recordTitle.textContent = record.title || '';
+    const snippet = document.createElement('div'); snippet.className = 'step-evidence-snippet';
+    const rawSnippet = typeof record.snippet === 'string' ? record.snippet : '';
+    snippet.textContent = rawSnippet.length > 120 ? `${rawSnippet.slice(0, 120)}…` : rawSnippet;
+    card.append(kind, recordTitle, snippet);
+    const meta = document.createElement('div'); meta.className = 'step-evidence-meta';
+    const metaParts = [];
+    if (typeof record.score === 'number' && Number.isFinite(record.score)) metaParts.push(`得分 ${record.score}`);
+    if (record.occurred_at) metaParts.push(`时间 ${record.occurred_at}`);
+    if (record.document_id) metaParts.push(`文档 ${record.document_id}`);
+    if (metaParts.length) { meta.textContent = metaParts.join(' · '); card.appendChild(meta); }
+    const sourceText = renderStepEvidenceSourceText(record);
+    if (sourceText) {
+      const source = document.createElement('div'); source.className = 'step-evidence-source'; source.textContent = sourceText;
+      card.appendChild(source);
+    }
+    const sourceActions = renderStepEvidenceSourceActions(record);
+    if (sourceActions) card.appendChild(sourceActions);
+    list.appendChild(card);
+  });
+  panel.appendChild(list);
+  return panel;
+}
+
+// Spec044 task-04 扩展钩子命名空间：后续在此挂载 jumpToKnowledgeBase 等来源动作。
+window.__spec044 = Object.assign(window.__spec044 || {}, { renderStepEvidencePanel });
 
 function setConversationAnswer(element, content) {
   element.innerHTML = renderMarkdown(content);
@@ -2522,7 +2651,7 @@ function enqueueConversationMemoryHydration(rendered, loadGeneration, conversati
 function createConversationSources(assistantMessage) {
   const container = assistantMessage?.querySelector('.conversation-sources');
   const factory = window.ConversationResearch?.createSourceRenderer;
-  return container && factory ? factory({ document, container }) : null;
+  return container && factory ? factory({ document, container, onLocateChunk: (payload) => locateKnowledgeChunk(payload) }) : null;
 }
 
 function showConversationMemoryNotice(bubble, eventData) {
@@ -3923,10 +4052,18 @@ projectDialog?.addEventListener('cancel', () => { dialogState.action = null; dia
 conversationActionDialog?.addEventListener('cancel', () => { dialogState.action = null; dialogState.target = null; });
 conversationConfirmDialog?.addEventListener('cancel', () => { dialogState.action = null; dialogState.target = null; });
 document.addEventListener('pointerdown', (event) => { if (menuState.panel && !menuState.panel.contains(event.target) && event.target !== menuState.trigger) closeFloatingMenu(); });
+document.addEventListener('pointerdown', (event) => {
+  const t = event.target;
+  if (answerMathPopoverEl && t instanceof Element && answerMathPopoverEl !== t && !answerMathPopoverEl.contains(t) && !(t.closest && t.closest('.answer-math'))) {
+    hideAnswerMathPopover(false); // 点击浮层与公式之外：关闭（点击复制按钮/另一公式不关闭）
+  }
+});
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   if (menuState.panel) closeFloatingMenu();
   if (mobileSidebar?.classList.contains('mobile-nav-open')) closeMobileDrawer(true);
+  suppressAnswerMathFocusOpen = true; // 同步窗口内抑制 focusin 重开浮层
+  try { hideAnswerMathPopover(true); } finally { suppressAnswerMathFocusOpen = false; } // Esc 关闭并归还焦点
 });
 if (memoryScopeSelect) memoryScopeSelect.addEventListener('change', () => {
   const isProject = memoryScopeSelect.value === 'project';
@@ -5158,7 +5295,44 @@ function consumePendingKbJump() {
   return applyKbJumpFocus(item, pending);
 }
 
+// ---- Spec044 task-04：唯一「定位到召回片段」入口（所有调用方共用，禁止复制第二套高亮） ----
+// 白名单：只允许 [A-Za-z0-9._:-]，长度 1..128；空白 / ? / # / < / > / / 等一律拒绝（fail-closed）。
+const KB_LOCATE_ID_WHITELIST = /^[A-Za-z0-9._:-]{1,128}$/;
+function isKbLocateIdentifierAllowed(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 128 && KB_LOCATE_ID_WHITELIST.test(value);
+}
+
+// 集中式中文失败提示：所有定位失败分支复用，避免散落的静默失败。
+function notifyChunkLocateFailed(detail) {
+  const message = detail ? `无法定位片段：${detail}` : '无法定位片段';
+  if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn(message);
+}
+
+// 唯一片段定位实现：校验 + 白名单 + 复用 jumpToKnowledgeBase(paperId, { chunkId, chunkIndex }) + 提示。
+// 不新建定时器轮询、不复制高亮逻辑、不改 kb-inspection.js。
+// chunkIndex 只接受真实非负整数（来源 p.chunkIndex 或 p.source.chunk_index），否则为 null，绝不编造。
+function locateKnowledgeChunk(payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const documentId = typeof p.documentId === 'string' ? p.documentId : '';
+  const chunkId = typeof p.chunkId === 'string' ? p.chunkId : '';
+  if (!documentId || !chunkId) { notifyChunkLocateFailed('缺少文档或片段标识'); return false; }
+  if (!isKbLocateIdentifierAllowed(documentId) || !isKbLocateIdentifierAllowed(chunkId)) {
+    notifyChunkLocateFailed('文档或片段标识不合法');
+    return false;
+   }
+  const rawIndex = p.chunkIndex !== undefined ? p.chunkIndex : (p.source && p.source.chunk_index);
+  const indexNumber = Number(rawIndex);
+  const chunkIndex = (Number.isInteger(indexNumber) && indexNumber >= 0) ? indexNumber : null;
+  return jumpToKnowledgeBase(documentId, { chunkId, chunkIndex });
+}
+
 function jumpToKnowledgeBase(paperId) {
+  // task-04：可选第二参数 { chunkId } 向后兼容；既有单参数调用一行不改（用 arguments 读取，保持声明签名不变以满足测试切片约束）。
+  const options = arguments[1] || {};
+  const chunkId = options && typeof options.chunkId === 'string' ? options.chunkId : '';
+  const rawChunkIndex = options ? options.chunkIndex : undefined;
+  const parsedChunkIndex = rawChunkIndex === undefined ? null : Number(rawChunkIndex);
+  const chunkIndex = (Number.isInteger(parsedChunkIndex) && parsedChunkIndex >= 0) ? parsedChunkIndex : null;
   const key = typeof paperId === 'string' || typeof paperId === 'number' ? String(paperId).trim() : '';
   paperState.pendingKbPaperId = key || null;
   showView('kb');
@@ -5185,7 +5359,53 @@ function jumpToKnowledgeBase(paperId) {
     // 渲染链路已消费过 pending：以「当前 DOM 上确实有高亮目标」为准，避免重复报告未命中。
     if (selectKbJumpTarget(key)) return true;
     return reportMiss();
-  }, () => reportMiss());
+  }, () => reportMiss()).then((located) => {
+    // 既有单参数调用（无 chunkId）：行为逐字不变，直接透传定位结果。
+    if (!chunkId) return located;
+     // 有 chunkId：文档定位完成后，激活切片检查器并交给其唯一高亮链路。
+     // 不复制第二套高亮，不新增定时器轮询；切片异步未就绪时由 focusChunk 的 pending 机制兜底。
+    const controller = (typeof window !== 'undefined' && window) ? window.__kbInspectionController : null;
+    const focusChunkFn = controller && typeof controller.focusChunk === 'function' ? controller.focusChunk : null;
+    if (!controller || !focusChunkFn) { notifyChunkLocateFailed('知识库检查器未就绪'); return located; }
+    // 1) 激活「切片检查」tab：activateTab(tab) 会切到该 tab 并触发 loadDocuments()。
+    const inspectionTab = document.getElementById('kb-tab-inspection');
+    if (inspectionTab && typeof controller.activateTab === 'function') {
+      controller.activateTab(inspectionTab);
+      // 2) 等文档列表就绪：loadDocuments() 返回 Promise；就绪后选文档并派发 change 触发既有 loadInspection→renderChunks→消费 pending。
+      return Promise.resolve(controller.loadDocuments ? controller.loadDocuments() : null).then(() => {
+        const select = document.getElementById('kb-inspection-document');
+        let optionFound = false;
+        if (select) {
+          for (let i = 0; i < select.options.length; i++) {
+            if (String(select.options[i].value) === String(key)) { optionFound = true; break; }
+           }
+          if (optionFound) {
+            select.value = key;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            // focusChunk：切片可能尚未渲染，内部会记 pending 并返回 false。
+            const focused = focusChunkFn(chunkId, chunkIndex);
+            if (focused) return located;
+            // pending 已设置 → 排队等 renderChunks 重试，不报失败、不假成功；
+            // pending 未设置 → 切片已渲染但确实找不到，报未找到。
+            if (controller.state && controller.state.pendingFocusChunkId != null) return located;
+            notifyChunkLocateFailed('未找到对应召回片段');
+            return located;
+          }
+          // 选项不存在：不硬设值，交失败提示。
+          notifyChunkLocateFailed('未找到对应召回片段');
+          return located;
+        }
+        notifyChunkLocateFailed('知识库检查器未就绪');
+        return located;
+      }).catch(() => { notifyChunkLocateFailed('定位片段时发生异常'); return located; });
+      // activateTab 不可用：不强行造逻辑，按失败提示处理。
+      notifyChunkLocateFailed('知识库检查器未就绪');
+      return located;
+    }
+    // 无 chunkId 单参数路径已在上方逐字透传；此处仅有 chunkId 且 tab 不可激活 → 失败。
+    notifyChunkLocateFailed('知识库检查器未就绪');
+    return located;
+   }).catch(() => { notifyChunkLocateFailed('定位片段时发生异常'); return false; });
 }
 
 async function loadPaperConferences() {
@@ -6090,16 +6310,345 @@ function escapeHtml(text) {
   }[char]));
 }
 
+// ===== Spec044 task-07：回答正文 LaTeX 公式本地 KaTeX 渲染 + 源码浮层 =====
+// 硬约束：renderMarkdown 必须「返回 HTML 字符串」且函数名不变；三段式（提取占位→marked→sanitize→注入）
+// 在字符串层完成。注入发生在 DOMPurify.sanitize 之后，故 KaTeX 输出的内联 style 不被剥离，
+// 也无需为 data-* 放宽 DOMPurify。原始 LaTeX 源码只存在于 tokens Map，绝不写进 DOM 属性 / innerHTML。
+// style 未被全局放开（FORBID_ATTR 仍禁 style），MathML 白名单未放宽，FORBID_TAGS 未降低。
+
+let answerMathTokens = new Map();        // 最近一次渲染的 token -> { source, displayMode }
+let answerMathPopoverEl = null;          // 当前浮层 DOM（null 表示未打开）
+let answerMathPopoverTrigger = null; // 触发浮层的公式 span
+let suppressAnswerMathFocusOpen = false; // Esc 归还焦点的同步窗口内抑制 focusin 重开浮层
+
+function makeMathPlaceholder(counter) {
+  // 纯字母数字占位符，确保 marked / DOMPurify 不改写；固定前后缀避免与正文碰撞
+  return 'SPEC044MATH' + counter + 'END';
+}
+
+function isAtLineStart(text, i) {
+  return i === 0 || text[i - 1] === '\n';
+}
+
+// 状态机提取 4 类定界公式，跳过 fenced / inline code；未闭合或货币金额保留原文
+function extractAnswerMath(text) {
+  const tokens = new Map();
+  let counter = 0;
+  const parts = [];
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    const ch = text[i];
+    // —— 代码区域：fenced code block（``` / ~~~）与 inline code（`…`）——
+    if (ch === '`' || ch === '~') {
+      const marker = ch;
+      let run = 0;
+      while (i + run < n && text[i + run] === marker) run++;
+      if (run >= 3 && isAtLineStart(text, i)) {
+        // fenced code block：整段（含首尾 fence）原样保留，不提取内部 $
+        let j = text.indexOf('\n', i);
+        if (j === -1) { parts.push(text.slice(i)); i = n; continue; }
+        j++;
+        let closeIdx = -1;
+        while (j < n) {
+          let k = 0;
+          while (j + k < n && text[j + k] === marker) k++;
+          if (k >= run) { closeIdx = j; break; }
+          const nl = text.indexOf('\n', j);
+          if (nl === -1) break;
+          j = nl + 1;
+        }
+        if (closeIdx === -1) { parts.push(text.slice(i)); i = n; continue; }
+        let end = text.indexOf('\n', closeIdx);
+        if (end === -1) end = n; else end++;
+        parts.push(text.slice(i, end));
+        i = end;
+        continue;
+      }
+      if (marker === '`') {
+        // inline code：整段原样保留
+        const close = text.indexOf('`'.repeat(run), i + run);
+        if (close !== -1) {
+          const end = close + run;
+          parts.push(text.slice(i, end));
+          i = end;
+        } else {
+          parts.push(text.slice(i, i + run));
+          i += run;
+        }
+        continue;
+      }
+      // 孤立的 ~ 字符：当普通文本
+      parts.push(ch); i++; continue;
+    }
+    // —— 块级 $$…$$ ——
+    if (ch === '$' && text[i + 1] === '$') {
+      const end = text.indexOf('$$', i + 2);
+      if (end !== -1) {
+        const ph = makeMathPlaceholder(counter++);
+        tokens.set(ph, { source: text.slice(i + 2, end), displayMode: true });
+        parts.push(ph);
+        i = end + 2;
+        continue;
+      }
+      parts.push(ch); i++; continue;
+    }
+    // —— 块级 \[…\] ——
+    if (ch === '\\' && text[i + 1] === '[') {
+      const end = text.indexOf('\\]', i + 2);
+      if (end !== -1) {
+        const ph = makeMathPlaceholder(counter++);
+        tokens.set(ph, { source: text.slice(i + 2, end), displayMode: true });
+        parts.push(ph);
+        i = end + 2;
+        continue;
+      }
+      parts.push(ch); i++; continue;
+    }
+    // —— 行内 \(…\) ——
+    if (ch === '\\' && text[i + 1] === '(') {
+      const end = text.indexOf('\\)', i + 2);
+      if (end !== -1) {
+        const ph = makeMathPlaceholder(counter++);
+        tokens.set(ph, { source: text.slice(i + 2, end), displayMode: false });
+        parts.push(ph);
+        i = end + 2;
+        continue;
+      }
+      parts.push(ch); i++; continue;
+    }
+    // —— 行内 $…$（跳过转义与 $$；货币/未闭合保留原文）——
+    if (ch === '$') {
+      const afterOpen = (i + 1 < n) ? text[i + 1] : '';
+      if (afterOpen === '' || /\s/.test(afterOpen)) { parts.push(ch); i++; continue; }
+      let j = i + 1;
+      let found = -1;
+      while (j < n) {
+        const c = text[j];
+        if (c === '\\') { j += 2; continue; } // 跳过转义字符（含 \$）
+        if (c === '$') { found = j; break; }
+        j++;
+      }
+      if (found !== -1) {
+        const beforeClose = text[found - 1];
+        if (beforeClose !== '' && !/\s/.test(beforeClose)) {
+          const ph = makeMathPlaceholder(counter++);
+          tokens.set(ph, { source: text.slice(i + 1, found), displayMode: false });
+          parts.push(ph);
+          i = found + 1;
+          continue;
+        }
+      }
+      parts.push(ch); i++; continue;
+    }
+    parts.push(ch); i++;
+  }
+  return { processed: parts.join(''), tokens };
+}
+
+// 用 <span> 包裹 KaTeX 输出；data-math-token 仅存占位符 id（非源码），避免 <p> 内嵌块级元素被改写
+function buildAnswerMathSpan(ph, info, innerHtml) {
+  const cls = info.displayMode ? 'answer-math answer-math-block' : 'answer-math answer-math-inline';
+  return '<span class="' + cls + '" data-math-token="' + ph + '" tabindex="0" role="math" aria-label="数学公式">' + innerHtml + '</span>';
+}
+
+// 降级：已转义源码纯文本 + 中文提示（源码本身已被转义，符合「用户文本不参与 HTML 拼接」例外）
+function buildAnswerMathFallback(ph, info, hint) {
+  const cls = info.displayMode ? 'answer-math answer-math-block answer-math-fallback' : 'answer-math answer-math-inline answer-math-fallback';
+  return '<span class="' + cls + '" data-math-token="' + ph + '" tabindex="0" role="math" aria-label="数学公式">' + escapeHtml(info.source) + '<span class="answer-math-hint">' + escapeHtml(hint) + '</span></span>';
+}
+
+// 对 sanitize 之后的 HTML 做字符串层注入（非正则 split/join），每个占位符替换为 KaTeX 输出
+function injectAnswerMath(cleanHtml, tokens) {
+  if (!tokens || tokens.size === 0) return cleanHtml;
+  let html = cleanHtml;
+  try {
+    for (const [ph, info] of tokens) {
+      let replacement;
+      try {
+        if (window.katex && typeof window.katex.renderToString === 'function') {
+          const rendered = window.katex.renderToString(info.source, {
+            displayMode: info.displayMode,
+            throwOnError: false,
+            trust: false,
+            output: 'htmlAndMathml',
+            maxExpand: 1000,
+            maxSize: 10,
+          });
+          if (typeof rendered === 'string' && rendered.indexOf('katex-error') === -1) {
+            replacement = buildAnswerMathSpan(ph, info, rendered);
+          } else {
+            replacement = buildAnswerMathFallback(ph, info, '公式无法渲染，已显示源码');
+          }
+        } else {
+          replacement = buildAnswerMathFallback(ph, info, '公式渲染不可用，已显示源码');
+        }
+      } catch (e) {
+        replacement = buildAnswerMathFallback(ph, info, '公式无法渲染，已显示源码');
+      }
+      html = html.split(ph).join(replacement);
+    }
+  } catch (e) {
+    // 最坏情况：逐个占位符退化为已转义源码纯文本，绝不抛出
+    html = cleanHtml;
+    for (const [ph, info] of tokens) {
+      const rep = buildAnswerMathFallback(ph, info, '公式无法渲染，已显示源码');
+      html = html.split(ph).join(rep);
+    }
+  }
+  return html;
+}
+
+// 浮层 DOM 创建（每次打开重建，避免被流式 innerHTML 重绘干扰）
+function ensureAnswerMathPopover() {
+  const pop = document.createElement('div');
+  pop.className = 'answer-math-source-popover';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', '公式源码');
+  pop.style.position = 'fixed'; // 运行时内联，不依赖 styles.css（后续样式任务接管）
+  pop.style.zIndex = '10000';
+  pop.hidden = true;
+  const code = document.createElement('code');
+  code.className = 'answer-math-source-code';
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'answer-math-copy';
+  copyBtn.textContent = '复制';
+  copyBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const codeEl = pop.querySelector('.answer-math-source-code');
+    copyAnswerMathSource(codeEl ? codeEl.textContent : '');
+  });
+  pop.appendChild(code);
+  pop.appendChild(copyBtn);
+  return pop;
+}
+
+function showAnswerMathPopover(trigger) {
+  if (!trigger || typeof document === 'undefined') return;
+  const token = trigger.getAttribute('data-math-token');
+  const info = token ? answerMathTokens.get(token) : null;
+  if (!info) { console.warn('未找到公式源码 token：', token); return; }
+  // 先移除可能残留的旧浮层（切换公式时）
+  if (answerMathPopoverEl && answerMathPopoverEl.parentNode) {
+    answerMathPopoverEl.parentNode.removeChild(answerMathPopoverEl);
+  }
+  const pop = ensureAnswerMathPopover();
+  const codeEl = pop.querySelector('.answer-math-source-code');
+  if (codeEl) codeEl.textContent = info.source; // 源码仅以 textContent 写入，绝不 innerHTML
+  document.body.appendChild(pop);
+  pop.hidden = false;
+  // 视口内定位（position:fixed），用 Math 夹取避免溢出
+  const rect = trigger.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  const margin = 8;
+  let left = rect.right + 8;
+  if (left + popRect.width > window.innerWidth - margin) left = rect.left - popRect.width - 8;
+  if (left < margin) left = margin;
+  let top = rect.top;
+  if (top + popRect.height > window.innerHeight - margin) top = Math.max(margin, window.innerHeight - popRect.height - margin);
+  if (top < margin) top = margin;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  answerMathPopoverEl = pop;
+  answerMathPopoverTrigger = trigger;
+}
+
+function hideAnswerMathPopover(restore) {
+  if (answerMathPopoverEl) {
+    if (answerMathPopoverEl.parentNode) answerMathPopoverEl.parentNode.removeChild(answerMathPopoverEl);
+    answerMathPopoverEl = null;
+  }
+  const trigger = answerMathPopoverTrigger;
+  answerMathPopoverTrigger = null;
+  if (restore && trigger && trigger.isConnected) { try { trigger.focus(); } catch (_) {} }
+}
+
+function toggleAnswerMathPopover(trigger) {
+  if (answerMathPopoverEl && answerMathPopoverTrigger === trigger) {
+    hideAnswerMathPopover(false); // 重复触发同一公式：关闭
+  } else {
+    hideAnswerMathPopover(false); // 切换/打开前先关
+    showAnswerMathPopover(trigger);
+  }
+}
+
+function copyAnswerMathSource(src) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(src).then(
+      () => showAnswerMathToast('已复制'),
+      (err) => { console.warn('复制失败：', err); showAnswerMathToast('复制失败，请手动复制'); }
+    );
+  } else {
+    console.warn('复制失败：当前环境不支持 Clipboard API');
+    showAnswerMathToast('复制失败，请手动复制');
+  }
+}
+
+function showAnswerMathToast(message) {
+  if (typeof document === 'undefined') return;
+  const el = document.createElement('div');
+  el.textContent = message; // 文本，绝不用 innerHTML
+  el.style.position = 'fixed';
+  el.style.left = '50%';
+  el.style.bottom = '24px';
+  el.style.transform = 'translateX(-50%)';
+  el.style.background = 'rgba(0,0,0,0.82)';
+  el.style.color = '#fff';
+  el.style.padding = '6px 12px';
+  el.style.borderRadius = '6px';
+  el.style.fontSize = '13px';
+  el.style.zIndex = '10001';
+  el.style.pointerEvents = 'none';
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 1600);
+}
+
+// 事件委托：公式元素随每帧 innerHTML 重建，禁止直接绑事件；模块级注册一次
+if (typeof document !== 'undefined') {
+  document.addEventListener('mouseover', (event) => {
+    const t = event.target;
+    if (!(t instanceof Element)) return;
+    const mathEl = t.closest('.answer-math');
+    if (mathEl && mathEl !== answerMathPopoverTrigger) {
+      if (!window.matchMedia || !window.matchMedia('(max-width: 760px)').matches) {
+        showAnswerMathPopover(mathEl); // 桌面 hover 打开
+      }
+    }
+  });
+  document.addEventListener('focusin', (event) => {
+    if (suppressAnswerMathFocusOpen) return; // Esc 归还焦点的同步窗口内抑制重开浮层
+    const t = event.target;
+    if (!(t instanceof Element)) return;
+    const mathEl = t.closest('.answer-math');
+    if (mathEl) showAnswerMathPopover(mathEl); // 键盘 Tab 进入
+  });
+  document.addEventListener('click', (event) => {
+    const t = event.target;
+    if (!(t instanceof Element)) return;
+    if (t.closest('.answer-math-copy')) return; // 复制按钮由自身监听处理
+    const mathEl = t.closest('.answer-math');
+    if (mathEl) {
+      if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) {
+        toggleAnswerMathPopover(mathEl); // 窄屏点按切换
+      }
+    }
+  });
+}
+
 function renderMarkdown(source) {
   const text = String(source || '');
   if (!window.marked || !window.DOMPurify) {
-    return escapeHtml(text).replace(/\n/g, '<br>'); // 降级：库未加载时按纯文本展示
+    return escapeHtml(text).replace(/\n/g, '<br>'); // 降级：库未加载时按纯文本展示（公式也按纯文本显示）
   }
-  const html = window.marked.parse(text, { gfm: true, breaks: true });
-  return window.DOMPurify.sanitize(html, {
+  const { processed, tokens } = extractAnswerMath(text);
+  const html = window.marked.parse(processed, { gfm: true, breaks: true });
+  const clean = window.DOMPurify.sanitize(html, {
     FORBID_TAGS: ['script', 'style', 'iframe', 'img', 'form', 'input', 'object', 'embed'],
     FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover'],
   });
+  answerMathTokens = tokens; // 供源码浮层读取（最近一次渲染覆盖）
+  return injectAnswerMath(clean, tokens);
 }
 
 // 外链新窗口打开并阻断 tabnabbing（注册一次即可）

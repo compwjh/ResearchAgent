@@ -1,0 +1,47 @@
+{
+  "endpoint": "http://127.0.0.1:8000",
+  "source_count": 2,
+  "source_sample": {
+    "document_id": "55afc3b8f01445429462fe78ed0d4c98",
+    "chunk_id": "086d957a-1352-51b5-9161-c3bcbba497b7",
+    "chunk_index": 38,
+    "file_name": "2017-Conference-Graph-Attention-Networks.pdf"
+  },
+  "controller_ready": true,
+  "locate_fn_ready": true,
+  "render": {
+    "pdf_text": "打开知识库原文",
+    "pdf_target": "_blank",
+    "pdf_rel": "noopener noreferrer nofollow",
+    "pdf_href": "/api/kb/documents/55afc3b8f01445429462fe78ed0d4c98/source",
+    "expand_exists": true,
+    "locate_exists": true,
+    "locate_text": "定位到召回片段"
+  },
+  "chunks_rendered": true,
+  "after_click": {
+    "tab_selected": "true",
+    "doc_select_value": "55afc3b8f01445429462fe78ed0d4c98",
+    "doc_option_count": 65,
+    "chunk_nodes": 57,
+    "highlighted_count": 1,
+    "highlighted_chunk_index": "38",
+    "highlighted_chunk_id": "v1:38",
+    "pending_focus": null,
+    "locate_calls": [
+      {
+        "documentId": "55afc3b8f01445429462fe78ed0d4c98",
+        "chunkId": "086d957a-1352-51b5-9161-c3bcbba497b7",
+        "chunkIndex": 38
+      }
+    ],
+    "chat_state": null
+  },
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "page_errors": []
+}

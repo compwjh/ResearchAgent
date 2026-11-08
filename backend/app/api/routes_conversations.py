@@ -1214,6 +1214,44 @@ def _resolve_sticky_skill(
     return SkillDecision(status="matched", skill=active.skill_name, source="sticky"), body
 
 
+def _step_evidence_payload(records):
+    """生成 step-evidence-v1 的 detail_json 字符串（spec-044 证据投影）。
+
+    扁平结构：所有来源字段位于 record 顶层（脱敏深度 ≤3），字段名不得含 "url"
+    子串（repository 脱敏黑名单按键名子串匹配会整键丢弃）。投影侧对条数与长度做
+    上限，避免触发 _PROCESSING_DETAIL_MAX_CHARS=4000 整体降级为 {"truncated":true}。
+    任何投影异常都降级为 None（保持原行为，绝不中断整轮 SSE）。
+    """
+    try:
+        projected: list[dict] = []
+        # 每类最多 5 条已在调用点限制；此处再设总数兜底（与脱敏 list 上限 32 对齐），
+        # 防止异常大的输入把整体推过 4000 字符被整体降级。
+        for record in (records or [])[:32]:
+            flat: dict = {}
+            for key, value in (record or {}).items():
+                if value is None:
+                    continue  # 缺失字段省略，不写 null、不编造
+                # C1：不得落库任何含 url 子串的键（黑名单按子串匹配，会整键丢弃）。
+                if "url" in str(key).lower():
+                    continue
+                if key == "snippet" and isinstance(value, str):
+                    value = value[:120]  # 前端 ≤120 字截断，投影侧先截
+                elif key == "title" and isinstance(value, str):
+                    value = value[:80]
+                if hasattr(value, "isoformat"):
+                    value = value.isoformat()  # datetime/date 等非 JSON 原生类型转字符串
+                if isinstance(value, (str, int, float, bool)):
+                    flat[key] = value
+            if flat:
+                projected.append(flat)
+        return json.dumps(
+            {"schema_version": "step-evidence-v1", "records": projected},
+            ensure_ascii=False,
+        )
+    except Exception:
+        return None
+
+
 def _message_stream(repo: MemoryRepository, conversation, user_message, assistant_message, model: str, mode: str, reasoning_effort: str | None = None, capabilities_source: str = "cache"):
     def generate():
         stream_started = time.monotonic()
@@ -1284,10 +1322,47 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                 recall_hits = []
                 recall_status = "failed"
                 recall_summary = "记忆召回失败，已跳过"
-            recall_done = repo.create_processing_step(assistant_message.message_id, "memory_recall", recall_status, recall_summary, label="记忆召回")
+            # spec-044：把真实召回明细投影进 detail_json（扁平结构）。
+            # recall_status 非 completed 时下方不追加记录 → records=[]（不编造）；
+            # 记忆类 score 一律省略（无分数，绝不编造）。
+            recall_records: list[dict] = []
+            if recall_status == "completed":
+                for s in summaries[:5]:
+                    # 会话摘要：kind=summary，来源为对话（conversation）
+                    recall_records.append({
+                        "kind": "summary",
+                        "source_kind": "conversation",
+                        "snippet": s.summary_text,
+                        "conversation_id": s.conversation_id,
+                        "ref_id": s.conversation_id,
+                        "occurred_at": s.updated_at,
+                    })
+                for h in recall_hits[:5]:
+                    # L2 FTS5 命中：MD 笔记→memory_view，历史消息→conversation
+                    hit_kind = "conversation" if h.get("source_kind") == "message" else "memory_view"
+                    recall_records.append({
+                        "kind": "fts_hit",
+                        "source_kind": hit_kind,
+                        "ref_id": h.get("ref_id"),
+                        "conversation_id": h.get("conversation_id"),
+                        "occurred_at": h.get("created_at"),
+                        "snippet": h.get("content"),
+                        # score 一律省略：记忆类无分数，绝不编造
+                    })
+            recall_detail = _step_evidence_payload(recall_records)
+            recall_done = repo.create_processing_step(assistant_message.message_id, "memory_recall", recall_status, recall_summary, label="记忆召回", detail_json=recall_detail)
             yield frame("progress", step_id=recall_done.step_id, kind=recall_done.kind, label=recall_done.label, status=recall_status, summary=recall_done.summary)
             if user_memory:
-                applied = repo.create_processing_step(assistant_message.message_id, "system_rule", "completed", "已应用系统规则", label="已应用系统规则")
+                # spec-044：系统规则来源（仅当 user_memory 非空时创建）。ref_id 用真实
+                # 来源文件名 "USER.md"，不造 ID；snippet 只截 ≤120 字，不写完整画像。
+                system_rule_records = [{
+                    "kind": "rule",
+                    "source_kind": "system_rule",
+                    "ref_id": "USER.md",
+                    "snippet": user_memory,
+                }]
+                system_rule_detail = _step_evidence_payload(system_rule_records)
+                applied = repo.create_processing_step(assistant_message.message_id, "system_rule", "completed", "已应用系统规则", label="已应用系统规则", detail_json=system_rule_detail)
                 yield frame("progress", step_id=applied.step_id, kind=applied.kind, label=applied.label, status="completed", summary=applied.summary)
             project_instructions = None
             if conversation.project_id:
@@ -1411,7 +1486,23 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                         chunker=retrieval_chunker,
                         document_ids=document_ids,
                     )[:5]
-                    rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索")
+                    # spec-044：把真实 RAG 命中投影进 detail_json（扁平结构）。
+                    # 以 citation_payloads 为准：含 document_id/chunk_id/score；
+                    # 但绝不写 source_url / 任何 url 键（C1：不落库 URL）。
+                    rag_records = []
+                    for c in citation_payloads(rag_hits)[:5]:
+                        rag_records.append({
+                            "kind": "rag_hit",
+                            "source_kind": "kb_chunk",
+                            "title": c.get("file_name"),
+                            "snippet": c.get("text"),
+                            "score": c.get("score"),
+                            "document_id": c.get("document_id"),
+                            "chunk_id": c.get("chunk_id"),
+                            "chunk_index": c.get("chunk_index"),
+                            })
+                    rag_detail = _step_evidence_payload(rag_records)
+                    rag_done = repo.create_processing_step(assistant_message.message_id, "rag_retrieval", "completed", f"召回 {len(rag_hits)} 条知识库证据", label="知识库检索", detail_json=rag_detail)
                     yield frame("progress", step_id=rag_done.step_id, kind=rag_done.kind, label=rag_done.label, status="completed", summary=rag_done.summary)
                 except Exception:
                     rag_hits = []
@@ -1591,7 +1682,15 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     logger.warning("会话链路 Tool 执行异常，以已生成内容收尾：%s", error)
                 content = "".join(parts)
                 repo.update_message(assistant_message.message_id, OWNER_ID, content=content, status="completed")
-                generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成（技能 + 工具）", label="回答生成")
+                # spec-044：生成步骤元信息（真实耗时 + 模型）。source_kind 省略：
+                # 无真实外部观测来源，绝不填 external_trace、绝不编造 target。
+                generation_records = [{
+                    "kind": "generation",
+                    "title": "回答已生成（技能 + 工具）",
+                    "snippet": f"耗时 {int((time.monotonic() - stream_started) * 1000)}ms；模型 {model}",
+                }]
+                generation_detail = _step_evidence_payload(generation_records)
+                generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成（技能 + 工具）", label="回答生成", detail_json=generation_detail)
                 yield frame("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
                 if rag_hits:
                     sources = citation_payloads(rag_hits)[:5]
@@ -1726,7 +1825,15 @@ def _message_stream(repo: MemoryRepository, conversation, user_message, assistan
                     tags=["conversation"],
                     extra_metadata={key: value for key, value in {"reasoning_status": "completed" if selected_effort != "off" else None, "reasoning_duration_ms": reasoning_duration_ms, "answer_duration_ms": max(0.0, (time.monotonic() - stream_started) * 1000.0)}.items() if value is not None},
                 )
-            generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成")
+            # spec-044：生成步骤元信息（真实耗时 + 模型）。source_kind 省略：
+            # 无真实外部观测来源，绝不填 external_trace、绝不编造 target。
+            generation_records = [{
+                "kind": "generation",
+                "title": "回答已生成",
+                "snippet": f"耗时 {int((time.monotonic() - stream_started) * 1000)}ms；模型 {model}",
+            }]
+            generation_detail = _step_evidence_payload(generation_records)
+            generation_done = repo.create_processing_step(assistant_message.message_id, "generation", "completed", "回答已生成", label="回答生成", detail_json=generation_detail)
             yield frame("progress", step_id=generation_done.step_id, kind=generation_done.kind, label=generation_done.label, status="completed", summary=generation_done.summary)
             if rag_hits:
                 # Sources are deliberately emitted only after the final token
