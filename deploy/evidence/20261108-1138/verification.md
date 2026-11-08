@@ -97,4 +97,5 @@ git merge-base --is-ancestor 715a2d7b origin/main             → exit 0（上�
 
 - 远端 `origin/main` HEAD = `ce47ee16`，与本地 `main` 完全一致；远端 spec-044 分支本就不存在（从未 push 该分支），故无需删除远端分支。
 - 本地源分支采用 `git branch -D` 删除：squash 合并不产生 merge 关系，`git branch -d` 会报「not fully merged」；删除前已用 tree 一致性 + 远端已推送 + 上一版 main 可回滚三点确认内容零丢失。
-- 服务未重启（代码与合并前运行版本完全相同），合并后再次探活见第 3 节结果，全部 200。
+- 服务未重启（代码与合并前运行版本完全相同）。**合并后在工作树已切到 `main` 的情况下再次真实探活**：`/`、`/api/health`、`/api/kb/health`、`/api/models`、`/api/conversations` 全部 200；首页真实标签仍为 `app.js?v=72`、`styles.css?v=70`、`processing-tree.js?v=2`、`katex.min.css?v=1`、`katex.min.js?v=1`。
+- 本地源分支已用 `git branch -D` 删除并确认 `git branch --list 'feature/spec-044*'` 为空；远端 `origin/main` 已含全部内容（`ce47ee16`），上一版 `715a2d7b` 保留可回滚。
