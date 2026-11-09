@@ -31,8 +31,8 @@ def test_map_analysis_contract_uses_frozen_evidence_and_navigation_shapes() -> N
     assert "DOMPurify" not in MODULE
     assert ".literature-map-analysis" in STYLES
     assert ".literature-map-analysis-history-item" in STYLES
-    assert "/assets/literature-maps.js?v=46" in INDEX
-    assert "/assets/literature-maps.css?v=33" in INDEX
+    assert "/assets/literature-maps.js?v=47" in INDEX
+    assert "/assets/literature-maps.css?v=34" in INDEX
     assert "/assets/app.js?v=62" in INDEX
 
 

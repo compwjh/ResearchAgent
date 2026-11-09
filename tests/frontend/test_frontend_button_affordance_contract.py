@@ -195,10 +195,10 @@ def test_asset_versions_are_frozen() -> None:
     for marker in (
         'href="/assets/styles.css?v=71"',
         'src="/assets/app.js?v=73"',
-        'src="/assets/research-tasks.js?v=22"',
-        'src="/assets/literature-maps.js?v=46"',
+        'src="/assets/research-tasks.js?v=25"',
+        'src="/assets/literature-maps.js?v=47"',
         'src="/assets/conversation-research.js?v=3"',
-        'href="/assets/literature-maps.css?v=33"',
+        'href="/assets/literature-maps.css?v=34"',
     ):
         assert marker in INDEX, f"{marker} must stay frozen (closing task bumps versions)"
 

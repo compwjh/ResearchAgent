@@ -6,7 +6,7 @@
   - 项目记忆列表：新增 DOM 区块、默认可见、调用 GET /api/memory-documents/projects、
     全量渲染、字段、空态、可诊断错误、showView('memory') 刷新、点击接线、XSS、CSS 作用域。
   - E2E：_fill_and_create 在 fill 前先点「创建研究会话」tab。
-  - 严格边界：不 bump ?v=N、不新增 <script>。
+  - 严格边界：本批次版本号为冻结点；后续改 CSS 必须 bump 并同步本断言、index.html、fixture；不新增 <script>。
 """
 from __future__ import annotations
 
@@ -183,13 +183,14 @@ def test_e2e_clicks_create_tab_before_fill() -> None:
         "fill 之前必须先点击「创建研究会话」tab（默认 hidden 的创建面板）"
 
 
-# ---- 4. 严格边界：不 bump 版本号、不新增 script 标签 ----
+# ---- 4. 严格边界：本批次冻结点（后续改 CSS 须 bump 并同步本断言/index.html/fixture）、不新增 script 标签 ----
 
 def test_static_asset_versions_frozen() -> None:
-    assert 'href="/assets/styles.css?v=71"' in INDEX, "不得 bump styles.css 版本号"
-    assert 'src="/assets/app.js?v=73"' in INDEX, "不得 bump app.js 版本号"
-    assert 'href="/assets/literature-maps.css?v=33"' in INDEX, "不得 bump literature-maps.css 版本号"
-    assert 'src="/assets/literature-maps.js?v=46"' in INDEX, "不得 bump literature-maps.js 版本号"
+    freeze_note = "本批次冻结点；后续改 CSS 必须 bump 并同步本断言、index.html、fixture"
+    assert 'href="/assets/styles.css?v=71"' in INDEX, freeze_note
+    assert 'src="/assets/app.js?v=73"' in INDEX, freeze_note
+    assert 'href="/assets/literature-maps.css?v=34"' in INDEX, freeze_note
+    assert 'src="/assets/literature-maps.js?v=47"' in INDEX, freeze_note
 
 
 def test_no_new_script_tag_for_memory_list() -> None:

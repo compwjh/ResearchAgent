@@ -25,8 +25,8 @@ def test_navigation_view_and_version_contract_are_wired() -> None:
     assert 'data-view="literature-maps"' in INDEX
     assert 'id="literature-maps-view"' in INDEX
     assert 'id="literature-maps-mount"' in INDEX
-    assert '/assets/literature-maps.js?v=46' in INDEX
-    assert '/assets/literature-maps.css?v=33' in INDEX
+    assert '/assets/literature-maps.js?v=47' in INDEX
+    assert '/assets/literature-maps.css?v=34' in INDEX
     app_versions = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     style_versions = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     assert app_versions and int(app_versions[-1]) >= 59
@@ -262,8 +262,11 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         leave_page.goto(f'{FIXTURE.as_uri()}?options-delay', wait_until='load')
         leave_page.get_by_role('button', name='新建地图').click()
         leave_page.locator('#literature-map-topic').fill('离开后不应回写')
+        # A2：等 3 个 catalog 请求都挂上可控 gate，再按「关闭 → 迟到响应」的确定顺序推进。
+        leave_page.wait_for_function("window.__catalogOptionResolvers.length === 3")
         leave_page.evaluate("window.LiteratureMaps.setActive(false)")
-        leave_page.wait_for_timeout(350)
+        leave_page.evaluate("window.__releaseCatalogOptions()")
+        leave_page.wait_for_function("window.__catalogOptionsSettled === 3")
         assert leave_page.locator('#literature-map-create-panel').is_hidden()
         assert leave_page.locator('#literature-map-topic').input_value() == ''
         assert leave_page.locator('#literature-map-source-options .literature-map-option').count() == 0
@@ -273,9 +276,11 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         success_page.goto(f'{FIXTURE.as_uri()}?options-delay', wait_until='load')
         success_page.get_by_role('button', name='新建地图').click()
         success_page.locator('#literature-map-topic').fill('创建后不应回写')
+        success_page.wait_for_function("window.__catalogOptionResolvers.length === 3")
         success_page.get_by_role('button', name='开始建图').click()
         success_page.wait_for_function("window.__createBody?.topic === '创建后不应回写'")
-        success_page.wait_for_timeout(350)
+        success_page.evaluate("window.__releaseCatalogOptions()")
+        success_page.wait_for_function("window.__catalogOptionsSettled === 3")
         assert success_page.locator('#literature-map-create-panel').is_hidden()
         assert success_page.locator('#literature-map-topic').input_value() == ''
         assert success_page.locator('#literature-map-source-options .literature-map-option').count() == 0
@@ -287,6 +292,42 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         truncated_page.wait_for_function("document.querySelector('#literature-map-project-notice')?.textContent.includes('项目列表未加载完')")
         assert '重新打开重试' in truncated_page.locator('#literature-map-project-notice').inner_text()
         truncated_page.close()
+        browser.close()
+
+
+def test_closing_create_panel_reloads_catalog_options_on_reopen() -> None:
+    """A2 回归：关闭建图面板后再次打开必须重新拉取筛选项。
+
+    若 closeCreatePanel() 未复位 createOptionsLoaded，第二次打开会命中
+    loadCreateOptions() 的短路而永远显示上一次的 stale 选项。
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = _open_browser_or_skip(playwright)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+        page.goto(FIXTURE.as_uri(), wait_until='load')
+        page.get_by_role('button', name='新建地图').click()
+        page.wait_for_function(
+            "document.querySelectorAll('#literature-map-source-options .literature-map-option').length > 0"
+        )
+        first_count = page.locator('#literature-map-source-options .literature-map-option').count()
+        assert first_count > 0
+
+        page.locator('#literature-map-create-cancel').click()
+        assert page.locator('#literature-map-source-options .literature-map-option').count() == 0
+
+        page.get_by_role('button', name='新建地图').click()
+        page.wait_for_function(
+            "document.querySelectorAll('#literature-map-source-options .literature-map-option').length > 0"
+        )
+        # 关键：第二次打开必须真的重新请求 /api/papers/sources，而不是靠 stale 选项短路。
+        sources_calls = page.evaluate(
+            "window.__requestLog.filter((entry) => entry.path.startsWith('/api/papers/sources')).length"
+        )
+        assert sources_calls == 2, '关闭面板后再次打开必须重新加载筛选项'
+        assert page.locator('#literature-map-source-options .literature-map-option').count() == first_count
+        page.close()
         browser.close()
 
 

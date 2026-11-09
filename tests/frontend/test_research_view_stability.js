@@ -15,6 +15,18 @@
 const assert = require('node:assert/strict');
 
 // ---- 最小 fake DOM -------------------------------------------------------
+// 真实浏览器把含焦点元素（或其祖先）从 DOM 中移走会立即失焦；fake DOM 必须
+// 复现这一点，否则「全量刷新后焦点仍在卡片内」的契约无法被真正驱动。
+function blurIfFocusMoved(node) {
+  const doc = globalThis.document;
+  if (!doc || !doc.activeElement) return;
+  let current = doc.activeElement;
+  while (current) {
+    if (current === node) { doc.activeElement = doc.body; return; }
+    current = current.parentNode;
+  }
+}
+
 function matchesClass(el, selector) {
   if (!selector || selector[0] !== '.') return false;
   const cls = selector.slice(1);
@@ -47,7 +59,10 @@ function makeEl(tag = 'div') {
     appendChild(child) {
       if (!child) return child;
       const previous = this.children.indexOf(child);
-      if (previous >= 0) this.children.splice(previous, 1);
+      if (previous >= 0) {
+        blurIfFocusMoved(child);
+        this.children.splice(previous, 1);
+      }
       this.children.push(child);
       child.parentNode = this;
       return child;
@@ -57,7 +72,10 @@ function makeEl(tag = 'div') {
     insertBefore(node, ref) {
       const at = ref ? this.children.indexOf(ref) : -1;
       const existing = this.children.indexOf(node);
-      if (existing >= 0) this.children.splice(existing, 1);
+      if (existing >= 0) {
+        blurIfFocusMoved(node);
+        this.children.splice(existing, 1);
+      }
       if (at >= 0) this.children.splice(at, 0, node); else this.children.push(node);
       node.parentNode = this;
       return node;
@@ -74,7 +92,14 @@ function makeEl(tag = 'div') {
     querySelector(sel) { return querySelector(this, sel); },
     querySelectorAll() { return []; },
     closest() { return null; },
-    addEventListener() {}, removeEventListener() {}, focus() {},
+    get nextSibling() {
+      const parent = this.parentNode;
+      if (!parent) return null;
+      const index = parent.children.indexOf(this);
+      return index >= 0 && index + 1 < parent.children.length ? parent.children[index + 1] : null;
+    },
+    addEventListener() {}, removeEventListener() {},
+    focus() { globalThis.document.activeElement = this; },
   };
   return el;
 }
@@ -87,6 +112,7 @@ function el(id) {
 
 const docRoot = makeEl();
 const documentRef = {
+  activeElement: null,
   getElementById: (id) => (ids.has(id) ? ids.get(id) : null),
   createElement: (tag) => makeEl(tag),
   querySelector: (sel) => querySelector(docRoot, sel),
@@ -195,6 +221,21 @@ api.state.tasks = [
 api.renderTaskList();
 assert.equal(list.children.length, 2);
 assert.ok(list.children.includes(firstItem), '新增任务时旧卡片仍应复用');
+
+// ---- 3b. 点击卡片后全量刷新不得把焦点移出卡片（D6） ----------------------
+api.state.tasks = [
+  { ...taskBase, status: 'completed' },
+  { ...taskBase, research_task_id: 'task-2', research_session_id: 'session-2', goal_excerpt: '第二个任务', created_at: '2026-01-03T00:00:00Z' },
+];
+api.renderTaskList();
+const focusedCard = list.children[0].querySelector('.research-task-card');
+assert.ok(focusedCard, '列表首项应有可聚焦的 .research-task-card 按钮');
+focusedCard.focus(); // 模拟用户点击卡片后焦点落在该按钮上
+assert.ok(documentRef.activeElement === focusedCard, 'focus() 应把卡片按钮设为 activeElement');
+api.renderTaskList(); // 无 onlyTaskId 的全量刷新：顺序不变，已就位节点不得被移动
+assert.ok(documentRef.activeElement === focusedCard, '全量 renderTaskList 后焦点必须仍在卡片按钮上');
+assert.equal(list.children.length, 2, '全量刷新不得增删卡片');
+assert.ok(documentRef.activeElement.parentNode === list.children[0], '焦点元素仍须属于首张卡片');
 
 // ---- 4. 空态：列表为空显示「暂无研究任务」 ------------------------------
 api.state.tasks = [];

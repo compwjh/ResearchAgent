@@ -66,6 +66,11 @@ def test_fixture_contract_exposes_svg_interaction_boundaries() -> None:
     assert "renderWallDurations" in source
     assert "maxFrameDurationMs" in source
     assert "longTaskSupported" in source
+    # Layout completion barrier: the fixture must expose a deterministic
+    # signal that all eight RAF-driven layout frames have executed, so the
+    # browser test never has to guess with a fixed sleep.
+    assert "window.__layoutSettled" in source
+    assert "window.__layoutSettledCount" in source
 
 
 def _open_browser_or_skip(playwright):
@@ -79,10 +84,18 @@ def _load_profile(page, profile: str) -> None:
     suffix = "?profile=high" if profile == "high" else ""
     page.goto(f"{FIXTURE.as_uri()}{suffix}", wait_until="load")
     page.wait_for_function("window.__mapReady === true")
-    # Yield to the browser for a bounded interval so the heavier profile can
-    # finish its eight RAFs without relying on a RAF-polled wait predicate that
-    # may starve headless macOS pages. The caller asserts the observed count.
-    page.wait_for_timeout(1000)
+    # __mapReady is set synchronously at the end of the fixture script, before
+    # the first RAF: it proves parsing, not layout convergence. The eight
+    # bounded layout frames are driven by a requestAnimationFrame chain, so
+    # wait on the fixture's explicit completion barrier instead of guessing
+    # the eighth frame with a fixed sleep (which sporadically left it at 7).
+    # Timed polling avoids injecting extra RAFs that could starve the layout
+    # chain on headless macOS pages.
+    page.wait_for_function(
+        "window.__layoutSettledCount === 8 && window.__layoutSettled instanceof Promise",
+        polling=100,
+        timeout=15000,
+    )
 
 
 def _read_graph(page) -> dict:
@@ -114,6 +127,10 @@ def _exercise_interactions(page, profile: str) -> dict:
     assert initial["metrics"]["layoutIterations"] == 8
     assert initial["metrics"]["layoutRafCount"] <= 8
     assert initial["metrics"]["longTaskSupported"] is True
+    # Layout frames are emitted only by the bounded startup layout. Assert a
+    # real, non-zero observation here (before any reset) so this metric is
+    # proven discriminating; the post-reset burst must not re-run layout.
+    assert 0 < initial["metrics"]["maxLayoutFrameDurationMs"] < 50
 
     initial_view = page.evaluate("window.__mapMetrics.snapshot()")
     page.get_by_role("button", name="放大").click()
@@ -180,6 +197,15 @@ def _exercise_interactions(page, profile: str) -> dict:
     after_reset = page.evaluate("window.__mapMetrics.snapshot()")
     assert after_reset["interactionCount"] == 0, after_reset
     assert after_reset["longTaskCount"] == 0, after_reset
+    # The reset must clear every window-scoped duration bucket, otherwise
+    # snapshot()'s Math.max(...) still reports a page-lifetime maximum instead
+    # of the burst actually measured below. renderRafCount is cumulative and
+    # must survive (asserted against initial_view further down).
+    assert after_reset["maxGestureWallMs"] == 0, after_reset
+    assert after_reset["maxRenderWallMs"] == 0, after_reset
+    assert after_reset["maxFrameDurationMs"] == 0, after_reset
+    assert after_reset["maxLayoutFrameDurationMs"] == 0, after_reset
+    assert after_reset["renderRafCount"] == before_reset["renderRafCount"], after_reset
 
     # Exercise a burst of view updates and keep event, frame, and gesture wall
     # time as separate observations.
@@ -190,6 +216,17 @@ def _exercise_interactions(page, profile: str) -> dict:
     page.mouse.up()
     page.wait_for_timeout(150)
     final = page.evaluate("window.__mapMetrics.snapshot()")
+    print(
+        f"[litmap:{profile}] "
+        f"maxGestureWallMs={final['maxGestureWallMs']:.2f} "
+        f"maxRenderWallMs={final['maxRenderWallMs']:.2f} "
+        f"maxInteractionDurationMs={final['maxInteractionDurationMs']:.2f} "
+        f"maxFrameDurationMs={final['maxFrameDurationMs']:.2f} "
+        f"maxLayoutFrameDurationMs={final['maxLayoutFrameDurationMs']:.2f} "
+        f"longTaskCount={final['longTaskCount']} "
+        f"interactionCount={final['interactionCount']} "
+        f"renderRafCount={final['renderRafCount']}"
+    )
     assert final["layoutIterations"] == initial_view["layoutIterations"]
     assert final["maxInteractionDurationMs"] < 50
     assert final["maxFrameDurationMs"] < 50

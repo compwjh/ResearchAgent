@@ -17,6 +17,9 @@ RerankReason = Literal[
 ]
 DEFAULT_BASE_URL = "http://127.0.0.1:11435"
 DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT, MIN_NEGATIVE_TTL = 2.0, 60.0, 30.0
+# spec-014:131「连接/读取超时上限 2 秒/60 秒」是硬上限：配置越界也不得无限等待。
+# 默认值仍为 2.0/60.0（tests/system/test_reranker_config.py 冻结），这里只钳制越界值。
+MAX_CONNECT_TIMEOUT, MAX_READ_TIMEOUT = 2.0, 60.0
 class RerankResult(NamedTuple, Generic[T]):
     hits: List[T]
     used: bool
@@ -122,9 +125,14 @@ def rerank_hits(
     payload = {"query": query, "documents": documents}
     if model:
         payload["model"] = model
+    # spec-014:131 熔断：所有失败（timeout / 连接半死 / 模型输出损坏 / 4xx / 5xx）
+    # 一律写 ≥30s 负缓存。reranker 端口存活但 hang 时，若 timeout 不缓存，每次 KB
+    # 问答都会同步阻塞 60s 且无去重，可打满 FastAPI 线程池（影响面超出 KB 检索）。
+    # 成功路径清掉负缓存，禁用/0/1 候选零网络请求。
     started, reason = now(), None
-    timeout = httpx.Timeout(_positive(read_timeout, DEFAULT_READ_TIMEOUT),
-                            connect=_positive(connect_timeout, DEFAULT_CONNECT_TIMEOUT))
+    read = min(_positive(read_timeout, DEFAULT_READ_TIMEOUT), MAX_READ_TIMEOUT)
+    connect = min(_positive(connect_timeout, DEFAULT_CONNECT_TIMEOUT), MAX_CONNECT_TIMEOUT)
+    timeout = httpx.Timeout(read, connect=connect)
     try:
         kwargs = {"timeout": timeout, "trust_env": False}
         if transport is not None:
@@ -146,9 +154,15 @@ def rerank_hits(
                         _cache.pop(key, None)
                     return RerankResult([original[i] for i in order], True, False, None,
                                         (now() - started) * 1000.0, tuple(scores))
+    except httpx.ConnectTimeout:
+        # SYN 黑洞 / 防火墙 DROP 表现为连接超时，属持续性不可达，必须 30s 熔断。
+        reason = "connection"
     except httpx.TimeoutException:
         reason = "timeout"
     except httpx.ConnectError:
+        reason = "connection"
+    except httpx.HTTPError:
+        # ReadError / RemoteProtocolError 等：与 retrieve._health_probe 归类一致。
         reason = "connection"
     except Exception:
         reason = "unexpected"

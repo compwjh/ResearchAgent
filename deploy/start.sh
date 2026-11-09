@@ -64,11 +64,28 @@ if [ "$RERANKER_ENABLED" = "true" ]; then
       RERANKER_STARTED=true
       echo "使用 Reranker：${RERANKER_BASE_URL}"
     else
-      echo "警告：Reranker 未提供有效的本机运行地址，FastAPI 将降级启动。" >&2
-      [ -x "$RERANKER_STOP" ] && "$RERANKER_STOP" || true
+      # 子脚本成功但没有可用的本机地址时，同样显式关闭后端 Reranker。
+      export RERANKER_ENABLED=false
+      echo "警告：Reranker 未提供有效的本机运行地址，FastAPI 将降级启动（RERANKER_ENABLED=false）。" >&2
+      # 不再用 `|| true` 吞掉清理失败：runtime URL 无效时服务可能已启动，
+      # stop.sh 因命令行双校验不通过会 exit 1，会留下孤立 llama-server。
+      if [ -x "$RERANKER_STOP" ]; then
+        if ! "$RERANKER_STOP"; then
+          echo "警告：Reranker 清理失败，请检查并手动停止专用进程。" >&2
+        fi
+      fi
     fi
   else
-    echo "警告：Reranker 启动失败，FastAPI 将以 RRF 降级模式继续启动。" >&2
+    # 子脚本失败（模型/二进制缺失、探针失败）时显式降级：否则 config.py 默认
+    # enabled=true，会让每次 KB 检索连接默认端口超时并进入 30s 负缓存。
+    export RERANKER_ENABLED=false
+    echo "警告：Reranker 启动失败，FastAPI 将以 RRF 降级模式继续启动（RERANKER_ENABLED=false）。" >&2
+    # 同上一分支：清理失败必须可见（set -e 下用 if 保护，不中断降级启动）。
+    if [ -x "$RERANKER_STOP" ]; then
+      if ! "$RERANKER_STOP"; then
+        echo "警告：Reranker 清理失败，请检查并手动停止专用进程。" >&2
+      fi
+    fi
   fi
 else
   echo "Reranker 已禁用，跳过启动与质量探针。"

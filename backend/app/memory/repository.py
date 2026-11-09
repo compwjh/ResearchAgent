@@ -653,7 +653,7 @@ class MemoryRepository:
         """
         with self.connection() as db:
             rows = db.execute(
-                "SELECT * FROM projects WHERE owner_id=? AND status='active' AND status!='deleted' "
+                "SELECT * FROM projects WHERE owner_id=? AND status='active' "
                 "ORDER BY project_id",
                 (owner_id,),
             ).fetchall()

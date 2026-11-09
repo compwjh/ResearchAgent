@@ -2,7 +2,7 @@
 
 这些用例模拟用户在网站上操作（不显式调用后端 API），覆盖四个 spec 共同支撑的核心流程：
   1. spec031 模型路由 / 计划入口：创建研究会话后进入计划阶段，计划/范围面板渲染。
-  2. spec028 持久化调度与恢复：任务进入运行后时间线/处理树渲染，调度控件（暂停/继续/恢复）可见。
+  2. spec028 持久化调度与恢复：任务进入运行后时间线/处理树渲染；运行期暂停按钮可见、恢复按钮隐藏（仅 interrupted / recovery_required 才显示"检查并恢复"）。
   3. spec029 全文获取：任务进入全文获取阶段后候选列表渲染、确认导入可用。
   4. spec030 证据矩阵与只读报告：完成后证据矩阵填充、报告 Markdown 渲染。
 
@@ -82,17 +82,21 @@ def _wait_task_opened(page: Page, timeout: int = 30000):
         }""",
         before,
     )
-    # 若详情仍未选中，点击新出现的卡片
+    # 若详情仍未选中，点击新出现的卡片。创建成功后研究视图必须仍可见
+    # （不再被切到聊天视图），先等它可见再点卡片，避免卡片不可见。
     status = page.get_attribute("#research-detail-status", "data-status")
     if not status or status in ("", "未选择"):
+        page.wait_for_selector("#research-view:not([hidden])", timeout=timeout)
         if new_sid:
             page.click(
                 f"#research-task-list .research-task-card[data-session-id='{new_sid}']"
             )
+        # Playwright 的 wait_for_function 要求表达式或函数体；顶层 return 的
+        # 裸语句会抛 Illegal return statement。断言条件逐字不变，仅包成函数。
         page.wait_for_function(
-            "const el=document.querySelector('#research-detail-status');"
+            "() => { const el=document.querySelector('#research-detail-status');"
             "const s=el&&el.getAttribute('data-status');"
-            "return s && s!=='' && s!=='未选择';",
+            "return s && s!=='' && s!=='未选择'; }",
             timeout=timeout,
         )
     return new_sid
@@ -201,7 +205,8 @@ def test_research_lifecycle_follow_through(page: Page) -> None:
     except Exception:
         pass
 
-    # spec028：运行期时间线与调度控件（暂停/继续/恢复）可见。
+    # spec028：运行期时间线渲染 + 调度控件按状态机显隐（running 时暂停可见、
+    # 恢复隐藏；恢复按钮仅 interrupted / recovery_required 显示）。
     # 批准后前端切到 Task 视图，#research-detail-status 承载的是 Task 状态
     # (draft/planning → running)，且 Task 加载期会短暂为空。因此以「运行期
     # 时间线面板渲染」作为进入运行的锚点，并给足 planning→running 的时间。
@@ -215,7 +220,11 @@ def test_research_lifecycle_follow_through(page: Page) -> None:
         pytest.skip("任务未在窗口内进入运行期（时间线面板一直未渲染）")
     if _status() == "running":
         expect(page.locator("#research-task-pause-button")).to_be_visible()
-        expect(page.locator("#research-task-recover-button")).to_be_visible()
+    # spec028 产品语义：running 有有效 owner，不提供「检查并恢复」入口；
+    # TASK_ACTION_STATUSES.recover = {interrupted, recovery_required}。
+    # 任务 V / M4：recover 在非 interrupted / recovery_required 状态下都应隐藏，
+    # 断言移到 if 分支外始终执行，不依赖单次状态采样命中（不 skip、不删）。
+    expect(page.locator("#research-task-recover-button")).to_be_hidden()
 
     # spec029 / spec030 依赖 LLM + 外部检索完整运行；窗口内未到达对应阶段则跳过重型断言
     try:

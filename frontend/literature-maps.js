@@ -1664,6 +1664,15 @@
     state.createPanelOpen = false;
     state.createOptionsRequest += 1;
     state.createOptionsLoading = false;
+    state.createOptionsLoaded = false;
+    // A2：显式清掉动态插入的筛选项与 notice，避免迟到响应 / form.reset() 留下 stale 选项；
+    // 复位 createOptionsLoaded，保证下次打开面板会重新拉取 catalog 筛选项。
+    refs.sourceOptions.replaceChildren();
+    refs.conferenceOptions.replaceChildren();
+    renderProjectOptions([]);
+    renderSelectionNotice(refs.sourceNotice, '');
+    renderSelectionNotice(refs.conferenceNotice, '');
+    renderSelectionNotice(refs.projectNotice, '');
     refs.form.reset();
     refs.limitInput.value = '30';
     refs.projectInput.value = '';
@@ -1804,7 +1813,11 @@
       requestCatalog('/api/papers/conferences'),
       loadProjectsForMapForm(),
     ]);
-    if (requestId !== state.createOptionsRequest || !state.createPanelOpen) return;
+    if (requestId !== state.createOptionsRequest || !state.createPanelOpen || !state.active) {
+      // A2：迟到响应 / 视图已失活时，return 前必须复位 loading，否则下次打开面板会永久短路。
+      state.createOptionsLoading = false;
+      return;
+    }
     state.createOptionsLoading = false;
     state.createOptionsRequest = 0;
     state.createOptionsLoaded = true;

@@ -9,8 +9,9 @@
 1. 作用域限定的新规则存在且取值符合裁决（字号 12px / ≥36px 高 / 高对比配色 / 三态 / ≤760px 触摸 44px）；
 2. **全局 `.secondary-button` 基础规则不被改动**（该 class 被会话、项目、论文、技能等视图复用）；
 3. 4 个按钮的 id / 文案 / 默认显隐与事件绑定不变（只改样式，不改交互）；
-4. 资源版本号 `literature-maps.css?v=31` 与 `app.js?v=72` 已同步到生产页与同名 fixture；
-   同批次的 `styles.css` 因新增 `#kb-view` 失败态/提示样式，生效引用已同步升至 `v=70`。
+4. 资源版本号已同步到生产页与同名 fixture，当前生效值见下方常量：
+   `MAP_CSS_VERSION`（literature-maps.css?v=34）、`APP_JS_VERSION`（app.js?v=73）、
+   `STYLES_VERSION`（styles.css?v=71，因新增 `#kb-view` 失败态/提示样式）。
 """
 
 from __future__ import annotations
@@ -23,9 +24,9 @@ INDEX = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
 STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 MAP_CSS = (ROOT / "frontend/literature-maps.css").read_text(encoding="utf-8")
 MAP_JS = (ROOT / "frontend/literature-maps.js").read_text(encoding="utf-8")
-MAP_CSS_VERSION = 33
+MAP_CSS_VERSION = 34
 APP_JS_VERSION = 73
-# styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用由 69 升至 70。
+# styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用现为 71。
 STYLES_VERSION = 71
 HEADER_ACTION_IDS = (
     "literature-map-refresh-button",
@@ -279,7 +280,7 @@ def test_header_button_event_bindings_are_unchanged():
 def test_index_pins_updated_asset_versions():
     assert f'/assets/literature-maps.css?v={MAP_CSS_VERSION}"' in INDEX
     assert f'src="/assets/app.js?v={APP_JS_VERSION}"' in INDEX
-    # styles.css 本批次新增了 #kb-view 的失败态/提示样式，生效引用同步升至 69。
+    # styles.css 本批次新增了 #kb-view 的失败态/提示样式，生效引用现为 71。
     assert f'/assets/styles.css?v={STYLES_VERSION}"' in INDEX, (
         f"styles.css 内容已变，生效引用必须同步升至 {STYLES_VERSION}"
     )

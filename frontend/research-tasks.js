@@ -1212,8 +1212,41 @@
       const key = card?.dataset?.taskId || card?.dataset?.sessionId;
       if (key && !seen.has(String(key)) && typeof item.remove === 'function') item.remove();
     });
-    // appendChild moves existing nodes (no rebuild) and appends new ones in order.
-    ordered.forEach((item) => list.appendChild(item));
+    // D6：按目标顺序做最小移动——反向遍历 ordered，仅当节点尚未处于目标位置时
+    // insertBefore。无条件 appendChild 会把含焦点的复用卡片移走，导致键盘焦点丢失。
+    // 渲染属于视图层：容器缺少 insertBefore（契约桩 / 受限嵌入环境）或某次
+    // insertBefore 抛错（cursor 已被并发移除）时，绝不能让异常冒泡到 loadTasks /
+    // selectTask——那会让 catch 清空已加载的 state.tasks，并让 selectTask 在
+    // finally 之前跳过 loadReport（boot 竞态下报告被清空）。
+    let cursor = null;
+    let degraded = typeof list.insertBefore !== 'function';
+    if (!degraded) {
+      for (let index = ordered.length - 1; index >= 0; index -= 1) {
+        const item = ordered[index];
+        // 新节点尚未挂载（nextSibling 也为 null），必须插入；已挂载节点仅在
+        // 位置不符时才移动，避免把含焦点的复用卡片移走导致失焦。
+        if (item.parentNode !== list || (item !== cursor && item.nextSibling !== cursor)) {
+          try { list.insertBefore(item, cursor); }
+          catch (error) {
+            // 单次移动失败不得中断整张列表，更不得冒泡污染数据层；沿用
+            // hydrateSession 的诊断写法保留可观测性，随后统一走降级重排，
+            // 避免拿已经失效的 cursor 继续插入造成顺序错乱。
+            const message = '[research-tasks] insertBefore degraded, falling back to appendChild';
+            if (typeof root.console?.warn === 'function') root.console.warn(message, error);
+            else if (typeof console !== 'undefined' && console.warn) console.warn(message, error);
+            degraded = true;
+            break;
+          }
+        }
+        cursor = item;
+      }
+    }
+    if (degraded && typeof list.appendChild === 'function') {
+      // 降级路径：insertBefore 不可用或抛错时，按 ordered 正序 append 全部节点。
+      // appendChild 会把已挂载节点移到末尾，因此同时完成「新节点挂载」与
+      // 「已就位节点的正序重排」，保证挂载数量与顺序都等于 ordered。
+      ordered.forEach((item) => { list.appendChild(item); });
+    }
     if (empty) {
       empty.hidden = tasks.length > 0;
       if (!tasks.length) empty.textContent = '暂无研究任务';
@@ -3741,15 +3774,18 @@
       };
       const projected = sessionTaskProjection(session);
       if (!projected) throw new Error('研究会话响应缺少会话 ID');
-      // Creation succeeded: switch back to the "研究任务" tab so the new
-      // task's list/detail is visible immediately.
+      // Creation succeeded: stay in the deep-research view so the new task's
+      // list/detail is visible immediately. Switching to the chat view here
+      // (openConversationFromResearch → app.js openConversation → showView('chat'))
+      // hides #research-view via hideAllMainAreas() and the guarded history
+      // method, which breaks the "create then inspect the task" flow.
       activateResearchTab('tasks');
       state.sessions = [projected, ...state.sessions.filter((item) => item.research_session_id !== projected.research_session_id)];
       state.tasks = state.sessions;
       renderTaskList();
-      setText('research-create-status', `研究会话已创建：深度研究：${goal}，正在打开对应会话。`);
       const conversationId = session.conversation_id || response?.conversation_id;
-      if (conversationId) openConversationFromResearch(conversationId);
+      associateConversationInBackground(conversationId);
+      setText('research-create-status', `研究会话已创建：深度研究：${goal}，已切换到「研究任务」列表。`);
       await selectTask(projected.research_task_id, projected.research_session_id);
       state.createIdempotencyKey = null;
       state.triggerMessageId = null;
@@ -3776,6 +3812,26 @@
     root.history.pushState({}, '', path);
     const event = typeof root.PopStateEvent === 'function' ? new root.PopStateEvent('popstate') : (typeof root.Event === 'function' ? new root.Event('popstate') : null);
     if (event) root.dispatchEvent?.(event);
+  }
+
+  // Creating a research session must NOT drag the user into the chat view:
+  // app.js 的 openConversation 会 showView('chat')，而 guardedHistoryMethod 会对
+  // 不带 #research-view hash 的 /c/<id> 调用 closeResearchView()，两者都会隐藏
+  // #research-view。这里把会话关联放到后台：URL 仍指向 /c/<id>（app.js 在
+  // reload/popstate 时照常恢复聊天历史），但保留 #research-view hash 并显式
+  // showView() 保证研究视图可见；用户仍可点「打开对应会话」按钮主动跳转。
+  function associateConversationInBackground(conversationId) {
+    if (!conversationId) return;
+    root.history.replaceState({}, '', `/c/${encodeURIComponent(conversationId)}#research-view`);
+    state.conversationId = conversationId;
+    showView();
+    // 任务 V / M1：刷新「当前会话」指示（#research-current-conversation）。
+    // 复用既有 conversationFromUrl()：它先同步写入「当前会话：<id>」，再异步补上
+    // 会话标题；不在此重复渲染文案。此处刻意不调用 refreshWorkspace()——
+    // createTask 紧接着已 renderTaskList() 并 await selectTask() 刷新列表与详情，
+    // refreshWorkspace() 会再发一次 loadTasks() 且与 selectTask 竞争（重复 SSE、
+    // stale-selection guard）。后台关联只负责 URL / state / 视图与当前会话文案。
+    conversationFromUrl().catch(() => {});
   }
 
   function bindModeGuard() {
@@ -3902,6 +3958,8 @@
     // Tab switching / keyed list rendering probes for the stability harness.
     api.activateResearchTab = activateResearchTab;
     api.renderTaskList = renderTaskList;
+    // Creation-path probe for the "stay in research view" contract harness.
+    api.createTask = createTask;
   }
   return api;
 }));

@@ -68,7 +68,7 @@
 #literature-maps-view .literature-map-canvas-head { align-items: flex-start; }
 #literature-maps-view .literature-map-canvas-title { min-width: 0; }
 #literature-maps-view .literature-map-canvas-title h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#literature-maps-view .literature-map-canvas-meta { margin: 5px 0 0; color: var(--muted); font: 9px 'DM Mono', monospace; }
+#literature-maps-view .literature-map-canvas-meta { margin: 5px 0 0; color: var(--muted); font: 9px 'DM Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #literature-maps-view .literature-map-tools { display: flex; align-items: center; gap: 3px; }
 #literature-maps-view .literature-map-tool { min-width: 29px; padding: 5px 7px; color: var(--muted-strong); font: 10px 'DM Mono', monospace; }
 #literature-maps-view .literature-map-tool:hover { color: var(--accent); background: var(--accent-soft); }
@@ -309,6 +309,12 @@
 #literature-maps-view .literature-map-mobile-list-open,
 #literature-maps-view .literature-map-mobile-close,
 #literature-maps-view .literature-map-mobile-backdrop { display: none; }
+/* D8：桌面（>760px）下 canvas-meta 的单行截断会把标题列 max-content 撑大，
+   flex 按比例收缩进而把工具按钮列挤压折行，反而撑高 canvas-head。
+   禁止工具列收缩、让标题列承担全部收缩量；移动端保持原有 flex 行为不变。 */
+@media (min-width: 761px) {
+  #literature-maps-view .literature-map-tools { flex-shrink: 0; }
+}
 @media (max-width: 1180px) {
   #literature-maps-view .literature-map-grid { grid-template-columns: minmax(190px, .74fr) minmax(390px, 1.6fr); }
   #literature-maps-view .literature-map-detail-panel { grid-column: 1 / -1; min-height: 0; max-height: 300px; }
@@ -322,9 +328,8 @@
   #literature-maps-view .literature-map-filter-grid { grid-template-columns: 1fr; }
   #literature-maps-view .literature-map-project-field { grid-column: auto; }
   #literature-maps-view .literature-map-canvas-panel { width: 100%; box-sizing: border-box; min-height: calc(100dvh - 190px); height: calc(100dvh - 190px); }
-  /* 任务 F：375px 窄屏下标题列被工具按钮挤到极窄时，canvas-meta 长文本会折行撑高
-     flex:0 0 auto 的 canvas-head，把预览面板顶出画布。单行截断避免折行、避免撑高面板。 */
-  #literature-maps-view .literature-map-canvas-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 任务 F / D8：canvas-meta 的单行截断已上移到基础规则（桌面 + 移动全覆盖），
+     此处仅保留说明、不再重复声明，避免窄桌面视口（>760px）下长文本折行撑高 canvas-head。 */
   #literature-maps-view .literature-map-canvas { flex: 1 1 0; min-height: min(360px, max(180px, calc(100dvh - 520px))); height: auto; }
   #literature-maps-view .literature-map-canvas-panel:has(.literature-map-preview-panel:not([hidden])) .literature-map-canvas { min-height: 0; }
   #literature-maps-view .literature-map-preview-panel { flex: 0 1 34dvh; min-height: min(240px, 30dvh); max-height: 42dvh; margin: 8px; padding: 9px; overflow: auto; overscroll-behavior: contain; }

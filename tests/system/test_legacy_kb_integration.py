@@ -206,7 +206,7 @@ def test_legacy_record_is_listed_and_ask_reads_legacy_qdrant_hit(tmp_path):
              patch.object(routes, "get_available_models", return_value=["qwen3.5:9b"]), \
              patch.object(routes, "run_chat", return_value=chat_run), \
              patch.object(routes, "record_ollama_generation"), \
-             patch.object(routes, "flush"):
+             patch.object(routes, "enqueue_flush"):
             asked = client.post(
                 "/api/kb/ask",
                 json={"question": "旧论文讲了什么？", "model": "qwen3.5:9b"},

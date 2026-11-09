@@ -179,9 +179,9 @@ def test_asset_versions_are_frozen_for_this_release_batch() -> None:
     for ref in (
         'href="/assets/styles.css?v=71"',
         'src="/assets/app.js?v=73"',
-        'href="/assets/literature-maps.css?v=33"',
-        'src="/assets/literature-maps.js?v=46"',
-        'src="/assets/research-tasks.js?v=22"',
+        'href="/assets/literature-maps.css?v=34"',
+        'src="/assets/literature-maps.js?v=47"',
+        'src="/assets/research-tasks.js?v=25"',
         'src="/assets/research-session-ui.js?v=3"',
         'src="/assets/conversation-research.js?v=3"',
     ):

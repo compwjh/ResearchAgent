@@ -806,6 +806,72 @@ async function testLateBootListSuccessCannotDropSelectedCurrentSession() {
   await runBootListRace('resolve');
 }
 
+// 任务 P：锁定 boot 竞态回归的根因——key 化 diff 的最小移动依赖 insertBefore，
+// 渲染异常冒泡到 loadTasks 的 catch 会清空 state.tasks，冒泡到 selectTask 的
+// try 会跳过 loadReport。渲染层必须优雅降级，绝不污染已加载的列表/报告状态。
+async function testKeyedListRenderCannotEraseTaskListOrReport() {
+  resetState();
+  const originalGetElementById = fakeDocument.getElementById;
+  const originalCreateElement = fakeDocument.createElement;
+  const nodes = new Map();
+  fakeDocument.getElementById = (id) => {
+    if (!nodes.has(id)) nodes.set(id, fakeElement());
+    return nodes.get(id);
+  };
+  // 任务 V / M3：让 fake 卡片可观测——补一个最小 querySelector，使
+  // updateTaskCard 能把 taskId 写进 button.dataset，从而对降级后的挂载顺序
+  // 做真实断言（与 test_research_view_stability.js 补齐 fake DOM 同思路）。
+  // 只在本用例内替换，finally 中还原，不影响其它竞态用例。
+  fakeDocument.createElement = (tag) => {
+    const node = originalCreateElement(tag);
+    node.querySelector = (selector) => (
+      String(selector) === '.research-task-card'
+        ? node.childNodes.find((child) => child.className === 'research-task-card') || null
+        : null
+    );
+    return node;
+  };
+  try {
+    const tasks = [
+      { research_task_id: 'task-a', research_session_id: 'session-a', status: 'completed', created_at: '2026-01-02T00:00:00Z' },
+      { research_task_id: 'task-b', research_session_id: 'session-b', status: 'running', created_at: '2026-01-01T00:00:00Z' },
+    ];
+    state.document = fakeDocument;
+    state.tasks = tasks.slice();
+    state.sessions = tasks.slice();
+    state.selectedTaskId = 'task-a';
+    state.selectedSessionId = 'session-a';
+    state.report = { report_version: 2, status: 'completed', markdown: '当前报告' };
+
+    const list = fakeDocument.getElementById('research-task-list');
+    // (1) 受限 DOM 没有 insertBefore / nextSibling / parentNode：必须降级而不抛错。
+    assert.equal(typeof list.insertBefore, 'undefined', '契约桩刻意不提供 insertBefore');
+    assert.doesNotThrow(() => api.renderTaskList(), '缺少 insertBefore 时 keyed diff 必须优雅降级');
+    assert.equal(state.tasks.length, 2, '渲染降级不得清空已加载任务列表');
+    assert.equal(state.report?.report_version, 2, '渲染降级不得清掉当前报告');
+    assert.equal(list.childNodes.length, 2, '降级路径仍应把两张卡片挂载到列表容器');
+
+    // (2) insertBefore 自身抛错时同样不得冒泡，否则 loadTasks 会误判为加载失败
+    // 清空 state.tasks，或让 selectTask 在 finally 之前跳过 loadReport。
+    list.insertBefore = () => { throw new Error('DOM detached'); };
+    list.childNodes.length = 0;
+    assert.doesNotThrow(() => api.renderTaskList(), '单次 insertBefore 抛错必须被兜底');
+    assert.equal(state.tasks.length, 2, '渲染异常不得清空已加载任务列表');
+    assert.equal(state.report?.report_version, 2, '渲染异常不得清掉当前报告');
+    // 任务 V / M3：降级后必须真正按目标顺序挂载，不能只证明「不抛错」。
+    assert.equal(list.childNodes.length, 2,
+      'insertBefore 抛错降级后仍须把两张卡片挂载到列表容器');
+    assert.deepEqual(
+      list.childNodes.map((item) => item.querySelector('.research-task-card')?.dataset?.taskId),
+      ['task-a', 'task-b'],
+      '降级路径须按 ordered（created_at 降序）正序重挂：task-a 在前、task-b 在后',
+    );
+  } finally {
+    fakeDocument.getElementById = originalGetElementById;
+    fakeDocument.createElement = originalCreateElement;
+  }
+}
+
 (async () => {
   await testLateGenerationResponseCannotWriteTheNextTask();
   await testLateUploadResponseCannotCreateTheNextTaskButton();
@@ -820,6 +886,7 @@ async function testLateBootListSuccessCannotDropSelectedCurrentSession() {
   await testManualReportVersionSurvivesLateRefreshAndKeepsPickerValue();
   await testLateBootListFailureCannotClearSelectedCurrentSession();
   await testLateBootListSuccessCannotDropSelectedCurrentSession();
+  await testKeyedListRenderCannotEraseTaskListOrReport();
   console.log('Report action race contract: PASS (task isolation, rollback, delayed response ordering)');
 })().catch((error) => {
   console.error(error);

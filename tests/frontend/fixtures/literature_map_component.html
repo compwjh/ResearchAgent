@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文献地图组件契约样例（mock API）</title>
   <link rel="stylesheet" href="../../../frontend/styles.css?v=62">
-  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=33">
+  <link rel="stylesheet" href="../../../frontend/literature-maps.css?v=34">
   <script src="../../../frontend/vendor/purify.min.js"></script>
   <script src="../../../frontend/vendor/marked.min.js"></script>
   <script>
@@ -478,6 +478,13 @@
     };
     window.__nodeGroupBodies = [];
     window.__createBody = null;
+    // A2：catalog 筛选项请求改为可控 gate，测试显式 resolve，令「迟到回写」成为确定性路径。
+    window.__catalogOptionResolvers = [];
+    window.__catalogOptionsSettled = 0;
+    window.__releaseCatalogOptions = () => {
+      const pending = window.__catalogOptionResolvers.splice(0);
+      pending.forEach((resolve) => resolve());
+    };
     window.__applyBody = null;
     window.__applyCount = 0;
     window.__previewBodies = [];
@@ -592,7 +599,8 @@
       if (init && init.body) body = JSON.parse(init.body);
       let payload = { schema_version: 'literature-map-v1' };
       if (optionsDelay && (path.startsWith('/api/papers/sources') || path.startsWith('/api/papers/conferences') || path.startsWith('/api/projects'))) {
-        await new Promise((resolve) => window.setTimeout(resolve, 160));
+        await new Promise((resolve) => { window.__catalogOptionResolvers.push(resolve); });
+        window.__catalogOptionsSettled += 1;
       }
       if (optionsFail && (path.startsWith('/api/papers/sources') || path.startsWith('/api/papers/conferences') || path.startsWith('/api/projects'))) {
         return new Response(JSON.stringify({ detail: { code: 'OPTIONS_UNAVAILABLE', message: '筛选项暂不可用' } }), { status: 503, headers: { 'Content-Type': 'application/json' } });
@@ -1124,7 +1132,7 @@
       return new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
   </script>
-  <script src="../../../frontend/literature-maps.js?v=46"></script>
+  <script src="../../../frontend/literature-maps.js?v=47"></script>
   <script>window.LiteratureMaps.setActive(true);</script>
 </body>
 </html>

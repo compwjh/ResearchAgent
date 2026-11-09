@@ -37,6 +37,8 @@ RRF_K = 60
 _SCORE_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 _RERANKER_MODEL_ID = "ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0"
 _RERANKER_HEALTH_TTL = 30.0
+# spec-014:102 固定三文档质量探针（相关度明显不同；最相关文档必须排第一）。
+# 与 deploy/reranker/probe.sh 使用同一组 query/documents，避免两套质量集。
 _RERANKER_HEALTH_PROBE = (
     "What is the capital of France?",
     (
@@ -45,6 +47,18 @@ _RERANKER_HEALTH_PROBE = (
         "The Moon orbits Earth approximately every 27 days.",
     ),
 )
+# 两档超时上限（秒），都不允许无限等待：
+# - liveness GET /health 不跑推理，6s 足够（服务满载排队仍有余量）；
+# - 质量探针 POST /v1/rerank 跑一次三文档推理，本机实测单请求 1.5–2.3s、
+#   5 并发最长 18.3s，故留 30s。任务 N 之前的 2.0s 统一钳制是假降级根因。
+_RERANKER_HEALTH_CONNECT_TIMEOUT_CAP = 2.0
+_RERANKER_HEALTH_READ_TIMEOUT_CAP = 6.0
+_RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP = 30.0
+# spec-014:131：成功与「不可达 / 质量探针失败」缓存 30s；timeout 单独用短缓存。
+# 零缓存会让持续故障时每次 /api/kb/health 都重跑一次推理打满 reranker 后端；
+# 30s 又是「一次 2.23s 慢响应 → 全局假降级」的根因。取 4s：恢复延迟 ≤4s，
+# 窗口内并发轮询复用同一结果、不重复推理。
+_RERANKER_HEALTH_TRANSIENT_TTL = 4.0
 _health_condition = threading.Condition()
 _health_cache = {}
 _health_inflight = set()
@@ -282,32 +296,51 @@ def _health_probe(
     endpoint: Optional[str], model: str, connect_timeout: float, read_timeout: float,
     transport=None,
 ) -> dict:
+    """spec-014:72 —— ``available`` = HTTP liveness **且** 排序质量探针通过。
+
+    先发轻量 ``GET /health``（liveness），再发一次固定三文档 ``POST /v1/rerank``
+    质量探针；只有两者都通过才返回 ``available=true``。结果由
+    ``reranker_health()`` 缓存 30s（single-flight），故等价于「liveness 心跳 +
+    周期性质量验证结果缓存」，30 秒内 N 次 health 只跑一次推理，不被慢推理拖垮。
+
+    ``quality_probe_failed`` 现表示「/health 协议异常或排序质量探针未通过」，
+    与名称一致；reason 取值集合保持不变。
+    """
     if endpoint is None:
         return _health_detail(True, False, model, "connection")
-    timeout = httpx.Timeout(
-        min(max(float(connect_timeout), 0.001), 2.0),
-        connect=min(max(float(connect_timeout), 0.001), 2.0),
-        read=min(max(float(read_timeout), 0.001), 2.0),
-    )
-    kwargs = {"timeout": timeout, "trust_env": False}
+    connect = min(max(float(connect_timeout), 0.001), _RERANKER_HEALTH_CONNECT_TIMEOUT_CAP)
+    liveness_read = min(max(float(read_timeout), 0.001), _RERANKER_HEALTH_READ_TIMEOUT_CAP)
+    quality_read = min(max(float(read_timeout), 0.001), _RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP)
+    liveness_timeout = httpx.Timeout(connect, connect=connect, read=liveness_read)
+    quality_timeout = httpx.Timeout(connect, connect=connect, read=quality_read)
+    kwargs = {"timeout": liveness_timeout, "trust_env": False}
     if transport is not None:
         kwargs["transport"] = transport
     try:
         with httpx.Client(**kwargs) as client:
-            ready = client.get(f"{endpoint}/health")
+            ready = client.get(f"{endpoint}/health", timeout=liveness_timeout)
             if not ready.is_success:
-                return _health_detail(True, False, model, "model_not_prepared")
+                # 503 = 模型尚在加载；其余 5xx = 服务端真实失败（允许进负缓存）。
+                if ready.status_code == 503:
+                    reason = "model_not_prepared"
+                elif ready.status_code >= 500:
+                    reason = "connection"
+                else:
+                    reason = "quality_probe_failed"
+                return _health_detail(True, False, model, reason)
             try:
                 health_payload = ready.json()
             except (ValueError, UnicodeError):
                 return _health_detail(True, False, model, "quality_probe_failed")
             if not isinstance(health_payload, dict):
                 return _health_detail(True, False, model, "quality_probe_failed")
-
-            payload = {"query": _RERANKER_HEALTH_PROBE[0], "documents": list(_RERANKER_HEALTH_PROBE[1])}
+            payload = {
+                "query": _RERANKER_HEALTH_PROBE[0],
+                "documents": list(_RERANKER_HEALTH_PROBE[1]),
+            }
             if model != _RERANKER_MODEL_ID:
                 payload["model"] = model
-            response = client.post(f"{endpoint}/v1/rerank", json=payload)
+            response = client.post(f"{endpoint}/v1/rerank", json=payload, timeout=quality_timeout)
             if not response.is_success:
                 return _health_detail(True, False, model, "quality_probe_failed")
             try:
@@ -318,11 +351,15 @@ def _health_probe(
             if invalid_reason or scores is None or scores[1] <= max(scores[0], scores[2]):
                 return _health_detail(True, False, model, "quality_probe_failed")
             return _health_detail(True, True, model, None)
+    except httpx.ConnectTimeout:
+        # SYN 黑洞 / 防火墙 DROP 属持续性不可达，须 30s 熔断，不能归 timeout。
+        return _health_detail(True, False, model, "connection")
     except httpx.TimeoutException:
         return _health_detail(True, False, model, "timeout")
     except httpx.ConnectError:
         return _health_detail(True, False, model, "connection")
     except httpx.HTTPError:
+        # ReadError / RemoteProtocolError：与 reranker.rerank_hits 归类一致。
         return _health_detail(True, False, model, "connection")
     except (TypeError, ValueError, OverflowError):
         return _health_detail(True, False, model, "quality_probe_failed")
@@ -331,6 +368,7 @@ def _health_probe(
 
 
 def _probe_scores(data: object):
+    """校验固定三文档质量探针响应（spec-014:102）：最相关文档（index 1）必须排第一。"""
     if not isinstance(data, dict) or not isinstance(data.get("results"), list):
         return None, "schema"
     results = data["results"]
@@ -359,7 +397,12 @@ def reranker_health(
     api_model: Optional[str] = None, connect_timeout: Optional[float] = None,
     read_timeout: Optional[float] = None, transport=None, clock=None,
 ) -> dict:
-    """Probe loopback readiness and ranking quality, with a 30-second single-flight cache."""
+    """Probe loopback readiness and ranking quality, with a 30-second single-flight cache.
+
+    spec-014:134：30 秒内并发请求只触发一次探针。成功与「不可达 / 质量探针失败」
+    （spec-014:131）写 30s 缓存；timeout 写 4s 短缓存 —— 持续故障时不重跑推理
+    打满后端，又不至于像 30s 那样把一次偶发慢响应放大成全局假降级。
+    """
     enabled = RERANKER_ENABLED if enabled is None else enabled
     base_url = RERANKER_BASE_URL if base_url is None else base_url
     api_model = RERANKER_API_MODEL if api_model is None else api_model
@@ -392,7 +435,14 @@ def reranker_health(
         detail = _health_detail(True, False, model, "quality_probe_failed")
     finally:
         with _health_condition:
-            _health_cache[key] = (detail, now_fn() + _RERANKER_HEALTH_TTL)
+            # timeout 用短缓存；其余（成功 / 不可达 / 质量探针失败 / 未知 reason）
+            # 一律 30s，绝不退化为零缓存导致持续故障下每次 health 重跑推理。
+            ttl = (
+                _RERANKER_HEALTH_TRANSIENT_TTL
+                if detail["reason"] == "timeout"
+                else _RERANKER_HEALTH_TTL
+            )
+            _health_cache[key] = (detail, now_fn() + ttl)
             _health_inflight.discard(key)
             _health_condition.notify_all()
     return dict(detail)

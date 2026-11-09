@@ -99,8 +99,16 @@
       labelsRendered: 0,
       selectedNodeId: null,
       resetInteractionDurations() {
+        // Clear every window-scoped duration bucket, otherwise snapshot()'s
+        // Math.max(...) still reports a page-lifetime maximum instead of the
+        // burst being measured. Cumulative counters (renderRafCount,
+        // layoutRafCount, labelsRendered, ...) are deliberately preserved.
         this.interactionDurations = [];
         this.longTaskDurations = [];
+        this.gestureWallDurations = [];
+        this.renderWallDurations = [];
+        this.frameDurations = [];
+        this.layoutFrameDurations = [];
       },
       snapshot() {
         const durations = this.interactionDurations;
@@ -136,6 +144,18 @@
     };
     window.__mapMetrics = metrics;
     window.__mapReady = false;
+
+    // Layout completion barrier. The eight bounded layout frames are driven
+    // by a requestAnimationFrame chain, while __mapReady is set synchronously
+    // at the end of this script (before the first frame). Readers must wait
+    // for __layoutSettledCount to reach MAX_LAYOUT_ITERATIONS (or await the
+    // __layoutSettled promise) instead of guessing with a fixed sleep: the
+    // eighth frame may otherwise not have run when snapshot() is read (== 7).
+    window.__layoutSettledCount = 0;
+    let resolveLayoutSettled;
+    window.__layoutSettled = new Promise((resolve) => {
+      resolveLayoutSettled = resolve;
+    });
 
     function createGraph() {
       for (let i = 0; i < NODE_COUNT; i += 1) {
@@ -371,6 +391,7 @@
         view.panY = activePointer.originPanY + (event.clientY - activePointer.startY) * scaleX;
         scheduleViewRender(performance.now());
       }
+      activePointer.lastMoveAt = performance.now();
       recordInteraction(start);
     }
 
@@ -380,7 +401,11 @@
       if (activePointer.type === "node") {
         nodeElements.get(activePointer.node.id).classList.remove("is-dragging");
       }
-      const gestureStartedAt = activePointer.startedAt;
+      // Measure only the render response after the final pointer move. The
+      // pointerdown -> ... -> last pointermove span is input dispatch time
+      // (CDP round trips for real input, rAF pacing for synthetic input) and
+      // must not be folded into the gesture wall duration.
+      const gestureStartedAt = activePointer.lastMoveAt ?? activePointer.startedAt;
       requestAnimationFrame(() => {
         metrics.gestureWallDurations.push(performance.now() - gestureStartedAt);
       });
@@ -441,7 +466,15 @@
       const frameDuration = performance.now() - frameStart;
       layout.frameDurations.push(frameDuration);
       metrics.layoutFrameDurations.push(frameDuration);
-      if (layout.iterations < MAX_LAYOUT_ITERATIONS) requestAnimationFrame(runBoundedLayout);
+      // Publish the count only after this frame's layout work is finished, so
+      // observing 8 really means eight completed frames, not the eighth frame
+      // merely having started. Resolve the barrier on the final frame.
+      window.__layoutSettledCount = layout.iterations;
+      if (layout.iterations < MAX_LAYOUT_ITERATIONS) {
+        requestAnimationFrame(runBoundedLayout);
+      } else {
+        resolveLayoutSettled(window.__layoutSettledCount);
+      }
     }
 
     createGraph();

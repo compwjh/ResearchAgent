@@ -20,6 +20,7 @@ import re
 import sqlite3
 import sys
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +36,7 @@ CATALOG_DB = ROOT / "data" / "paper_search" / "state.sqlite3"
 MEMORY_DB = ROOT / "data" / "memory" / "memory.sqlite3"
 SEED_CONVERSATION_PREFIX = "seed-demo-"
 SEED_AGENT_RUN = "seed-demo-run"
+BACKUP_ROOT = ROOT / "data" / "backup"
 
 DIMENSIONS = (
     ("d1", "威胁模型与前提假设"),
@@ -275,8 +277,90 @@ def _db_path(store: ResearchStore) -> str:
     return str(getattr(store, "database_path", ROOT / "data" / "research" / "research.sqlite3"))
 
 
+def _has_pending_seed_rows(research_db: str | Path, memory_db: str | Path) -> bool:
+    """只读探测是否真的存在待清理的 seed 数据，用于快照条件化（评审 MEDIUM-6）。
+
+    全新 checkout / 源库缺失时按「无待删数据」跳过并打印诊断，绝不硬失败：
+    ``clean()`` 的 ``sqlite3.connect`` 会自动创建空库，seed 仍可继续。
+    只读探测出错时保守返回 True（宁可多留一份快照，也不漏掉回滚兜底）。
+    """
+    probes = (
+        ("research", Path(research_db), "SELECT 1 FROM research_tasks WHERE conversation_id LIKE ? LIMIT 1"),
+        ("memory", Path(memory_db), "SELECT 1 FROM conversations WHERE conversation_id LIKE ? LIMIT 1"),
+    )
+    for label, path, sql in probes:
+        if not path.exists():
+            print(f"backup: skip probe {label} (missing source db: {path})")
+            continue
+        try:
+            with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as db:
+                if db.execute(sql, (SEED_CONVERSATION_PREFIX + "%",)).fetchone():
+                    return True
+        except sqlite3.Error as error:
+            print(f"backup: skip probe {label} ({type(error).__name__}: unreadable)")
+            return True
+    return False
+
+
+def snapshot_databases(research_db: str | Path, memory_db: str | Path, backup_dir: str | Path) -> dict[str, Path]:
+    """清理前对**存在的**源库各生成一份一致性 online-backup 快照。
+
+    ``sqlite3.Connection.backup()`` 走 SQLite Online Backup API，读取源库
+    **已提交**状态（包含仍留在 ``-wal``、尚未 checkpoint 回主库的内容），产出
+    自包含的单文件快照，不依赖 ``-wal`` / ``-shm``。这替代了此前「两库单文件
+    cp」——cp 只复制主库文件，可能漏掉 WAL 中已提交的数据。
+
+    两份快照各自内部一致，但它们是**分别**备份的，不表示跨库同一时间点；
+    WAL 模式下的跨库原子性限制见 ``clean()``。
+
+    源库缺失时跳过该库并打印诊断（不硬失败）；两库同名时给后一份加
+    ``<name>-`` 前缀，避免静默互相覆盖。两个 ``connect`` 都放进 ``try``，
+    ``finally`` 成对释放，第二个连接失败时第一个也不会泄漏。
+    """
+    directory = Path(backup_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    snapshots: dict[str, Path] = {}
+    used_names: set[str] = set()
+    for name, source in (("research", Path(research_db)), ("memory", Path(memory_db))):
+        if not source.exists():
+            print(f"backup: skip {name} (missing source db: {source})")
+            continue
+        target = directory / source.name
+        if target.name in used_names:
+            target = directory / f"{name}-{source.name}"
+        used_names.add(target.name)
+        src = dst = None
+        try:
+            src = sqlite3.connect(source)
+            dst = sqlite3.connect(target)
+            src.backup(dst)
+        finally:
+            if dst is not None:
+                dst.close()
+            if src is not None:
+                src.close()
+        snapshots[name] = target
+    return snapshots
+
+
 def clean(store: ResearchStore) -> int:
-    with sqlite3.connect(_db_path(store)) as db:
+    """删除 seed 演示任务及其会话，返回被删除的任务数（``len(ids)``）。
+
+    两库 DELETE 收进**一个** ``sqlite3.connect(research_db)`` 连接：先
+    ``ATTACH DATABASE ? AS memory``，再用 ``BEGIN IMMEDIATE`` 开启一个显式事务，
+    research 库 5 表与 ``memory.conversations`` 的删除全在其中，取代此前两个
+    独立连接/事务（评审 LOW-4）。
+
+    **跨库原子性的诚实边界**：WAL 模式下 SQLite 对 ATTACH 的多个库**不保证
+    原子提交**（各库分别提交），所以这里不是严格原子，中途失败仍可能出现
+    「research 已删、memory 未删」。兜底是 ``main()`` 在清理前用
+    ``snapshot_databases()`` 生成两库一致性快照以便回滚，且 ``--clean``
+    幂等重跑能把残留补齐。
+    """
+    db = sqlite3.connect(_db_path(store))
+    try:
+        db.execute("ATTACH DATABASE ? AS memory", (str(MEMORY_DB),))
+        db.execute("BEGIN IMMEDIATE")
         ids = [
             str(row[0])
             for row in db.execute(
@@ -290,11 +374,16 @@ def clean(store: ResearchStore) -> int:
             db.execute("DELETE FROM research_reports WHERE research_task_id=?", (task_id,))
             db.execute("DELETE FROM research_sessions WHERE research_task_id=?", (task_id,))
             db.execute("DELETE FROM research_tasks WHERE research_task_id=?", (task_id,))
-    with sqlite3.connect(MEMORY_DB) as db:
         db.execute(
-            "DELETE FROM conversations WHERE conversation_id LIKE ?",
+            "DELETE FROM memory.conversations WHERE conversation_id LIKE ?",
             (SEED_CONVERSATION_PREFIX + "%",),
         )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
     return len(ids)
 
 
@@ -379,6 +468,15 @@ def main() -> None:
     args = parser.parse_args()
     store = ResearchStore()
     print(f"db: {store.database_path}")
+    # 仅在确实存在待删除 seed 数据时做两库一致性快照（评审 MEDIUM-6）：无条件
+    # 快照会让每次正常 seed 都在 data/backup/<UTC-微秒>/ 落两份完整 SQLite 且
+    # 永不清理。目录带时间戳，--clean 幂等重跑不会覆盖前一次快照。
+    if _has_pending_seed_rows(_db_path(store), MEMORY_DB):
+        backup_dir = BACKUP_ROOT / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+        snapshots = snapshot_databases(_db_path(store), MEMORY_DB, backup_dir)
+        print(f"backup: {', '.join(str(path) for path in snapshots.values())}")
+    else:
+        print("backup: skipped (no seed rows to clean)")
     removed = clean(store)
     print(f"cleaned: {removed} demo task(s)")
     if args.clean:
