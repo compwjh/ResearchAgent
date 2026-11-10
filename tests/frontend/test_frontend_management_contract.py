@@ -76,8 +76,8 @@ def test_document_renderer_uses_safe_text_boundaries() -> None:
 
 
 def test_keeps_static_asset_versions_and_scoped_css() -> None:
-    assert 'href="/assets/styles.css?v=71"' in INDEX
-    assert 'src="/assets/app.js?v=73"' in INDEX
+    assert 'href="/assets/styles.css?v=73"' in INDEX
+    assert 'src="/assets/app.js?v=74"' in INDEX
     assert "#memory-view" in STYLES
     assert "#memory-document-editor" in STYLES
     assert "#memory-document-conflict" in STYLES

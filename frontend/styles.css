@@ -504,6 +504,23 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
   #memory-view .memory-project-documents-list { grid-template-columns: 1fr; }
 }
 
+/* 可发现性修复：返回全局 / 跳到编辑器 / 收起-展开。选择器全部限定 #memory-view，
+   以自定义语义类结尾（不带 secondary-button token，也不以 .btn-outline 结尾，避免干扰
+   任务 C 对 .btn-outline 基类的源码切片契约）。列表默认仍展开、全量列出。 */
+#memory-view .memory-project-documents-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+#memory-view .memory-jump-to-editor { flex: 0 0 auto; padding: 8px 12px; }
+#memory-view .memory-project-documents-toggle { flex: 0 0 auto; padding: 8px 12px; }
+#memory-view .memory-back-to-global { margin-top: 8px; padding: 7px 12px; }
+/* 轻度压缩列表占位，让编辑器在 1440×900 首屏更靠上（不隐藏、不改成下拉选择项目）。
+   覆盖值放在既有规则之后，既有 CSS 源码字符串保持原样。 */
+#memory-view .memory-project-documents { gap: 8px; margin-bottom: 10px; padding: 12px; }
+#memory-view .memory-project-documents-list { gap: 8px; }
+#memory-view .memory-project-doc-open { gap: 6px; padding: 9px; }
+@media (max-width: 860px) {
+  #memory-view .memory-project-documents-actions { justify-content: flex-start; }
+  #memory-view .memory-back-to-global { width: 100%; }
+}
+
 /* ===== 模型库视图（spec-007） ===== */
 @keyframes modelFadeIn {
   from { opacity: 0; transform: translateY(8px); }
@@ -2750,6 +2767,10 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #research-view .research-workspace {
   display: grid;
+  /* 固定列宽，避免 tab 切换时隐式 auto 列随内容收缩导致页头整体位移 */
+  grid-template-columns: minmax(0, 1fr);
+  /* 行按内容排布，避免 min-height 剩余空间拉伸页头行造成标题垂直位移 */
+  align-content: start;
   gap: 20px;
   width: min(1440px, 100%);
   min-height: calc(100vh - 68px);

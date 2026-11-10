@@ -73,6 +73,11 @@ const memoryProjectDocumentsList = document.querySelector('#memory-project-docum
 const memoryProjectDocumentsEmpty = document.querySelector('#memory-project-documents-empty');
 const memoryProjectDocumentsStatus = document.querySelector('#memory-project-documents-status');
 const memoryProjectDocumentsRefresh = document.querySelector('#memory-project-documents-refresh');
+// 记忆文档可发现性修复：返回全局 / 跳到编辑器 / 列表收起-展开 / 编辑器面板。
+const memoryBackToGlobal = document.querySelector('#memory-back-to-global');
+const memoryJumpToEditor = document.querySelector('#memory-jump-to-editor');
+const memoryProjectDocumentsToggle = document.querySelector('#memory-project-documents-toggle');
+const memoryDocumentPanel = document.querySelector('.memory-document-panel');
 const systemRuleCard = document.querySelector('#system-rule-card');
 const systemRuleContent = document.querySelector('#system-rule-content');
 const systemRuleUpdated = document.querySelector('#system-rule-updated');
@@ -3539,8 +3544,20 @@ function memoryDocumentKey(scope = memoryScopeSelect?.value || 'global', project
 }
 
 function memoryDocumentLabelFor(scope, projectId) {
-  if (scope === 'project') return projectId ? `projects/${projectId}.md` : '请选择 active 项目';
-  return 'MEMORY.md';
+  if (scope !== 'project') return '全局记忆 · MEMORY.md';
+  const id = String(projectId || '');
+  // 项目名优先取项目记忆列表状态，其次取项目列表状态；都取不到才退回短 ID。
+  // typeof 守卫：本函数会被 Playwright fake DOM 按源码切片执行，那里没有这些全局。
+  const docs = typeof memoryProjectDocumentsState !== 'undefined' && memoryProjectDocumentsState
+    ? (memoryProjectDocumentsState.items || []) : [];
+  const projects = typeof projectState !== 'undefined' && projectState ? (projectState.items || []) : [];
+  const fromDocs = docs.find((item) => String(item?.project_id || '') === id);
+  const fromProjects = projects.find((item) => String(item?.project_id || '') === id);
+  const name = String(fromDocs?.project_name || fromDocs?.name || fromProjects?.name || fromProjects?.project_name || '').trim();
+  if (name) return `项目记忆 · ${name}`;
+  if (!id) return '项目记忆 · 请选择 active 项目';
+  const short = typeof formatShortHash === 'function' ? formatShortHash(id, 8) : id.slice(0, 8);
+  return `项目记忆 · ${short}`;
 }
 
 function memoryDocumentDraft() {
@@ -3642,6 +3659,10 @@ async function refreshMemoryDocumentKeepingDraft() {
 function renderMemoryDocument() {
   const count = Array.from(memoryDocumentDraft()).length;
   if (memoryDocumentLabel) memoryDocumentLabel.textContent = memoryDocumentLabelFor(memoryState.scope, memoryState.projectId);
+  // 「返回全局 MEMORY.md」仅 project 作用域显示；typeof 守卫兼容按源码切片的 fake DOM。
+  if (typeof memoryBackToGlobal !== 'undefined' && memoryBackToGlobal) {
+    memoryBackToGlobal.hidden = memoryState.scope !== 'project';
+  }
   setMemoryDocumentRevision(memoryState.revision);
   updateMemoryDocumentCount();
   if (memoryDocumentEmpty) memoryDocumentEmpty.hidden = !memoryState.loaded || count > 0 || memoryState.loading;
@@ -3788,6 +3809,8 @@ async function switchMemoryDocument(scope, projectId) {
     return;
   }
   memoryState.dirty = false;
+  // 需求 5：切回全局时清掉 memoryProjectSelect 残留值（覆盖顶部下拉 / 返回按钮全部路径）。
+  if (scope !== 'project') clearMemoryProjectSelection();
   await loadMemoryDocument({ scope, projectId });
 }
 
@@ -3908,12 +3931,79 @@ function renderMemoryProjectDocuments() {
       // 同步作用域控件使编辑器下拉与打开的文档一致；typeof 守卫让纯渲染沙箱也能触发。
       if (typeof memoryScopeSelect !== 'undefined' && memoryScopeSelect) memoryScopeSelect.value = 'project';
       if (typeof memoryProjectLabel !== 'undefined' && memoryProjectLabel) memoryProjectLabel.hidden = false;
-      if (typeof memoryProjectSelect !== 'undefined' && memoryProjectSelect) memoryProjectSelect.value = projectId;
-      switchMemoryDocument('project', projectId);
+      // 需求 5：设值前确认 option 存在（active 列表未加载时补一个），避免赋值失败。
+      if (typeof ensureMemoryProjectOption === 'function') ensureMemoryProjectOption(projectId, projectName);
+      else if (typeof memoryProjectSelect !== 'undefined' && memoryProjectSelect) memoryProjectSelect.value = projectId;
+      const switching = switchMemoryDocument('project', projectId);
+      // 需求 3：切换完成后滚动编辑器 + 明确「返回全局」提示；typeof 守卫兼容既有沙箱。
+      if (typeof announceOpenedProjectMemory === 'function') announceOpenedProjectMemory(projectName, projectId, switching);
     });
     li.append(open);
     list.append(li);
   });
+}
+
+// ===== 记忆文档可发现性修复：返回全局 / 跳到编辑器 / 收起-展开 / 状态同步 =====
+// 全部顶层函数，自包含且以 typeof 守卫依赖，供静态契约按源码切片与 node:vm 探针执行。
+
+function ensureMemoryProjectOption(projectId, projectName) {
+  if (typeof memoryProjectSelect === 'undefined' || !memoryProjectSelect) return;
+  const value = String(projectId || '');
+  const exists = Array.from(memoryProjectSelect.options || []).some((option) => option.value === value);
+  if (!exists && value) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = projectName || value;
+    memoryProjectSelect.appendChild(option);
+  }
+  memoryProjectSelect.value = value;
+}
+
+function clearMemoryProjectSelection() {
+  if (typeof memoryProjectSelect !== 'undefined' && memoryProjectSelect) memoryProjectSelect.value = '';
+}
+
+function scrollMemoryDocumentIntoView() {
+  const panel = (typeof memoryDocumentPanel !== 'undefined' && memoryDocumentPanel)
+    || (typeof document !== 'undefined' && document.querySelector ? document.querySelector('.memory-document-panel') : null);
+  if (panel && typeof panel.scrollIntoView === 'function') {
+    panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+}
+
+function announceOpenedProjectMemory(projectName, projectId, switching) {
+  const finish = () => {
+    if (typeof setMemoryStatus === 'function') {
+      setMemoryStatus(`已打开项目记忆「${projectName}」；点『返回全局 MEMORY.md』可切回`);
+    }
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => scrollMemoryDocumentIntoView());
+    else if (typeof scrollMemoryDocumentIntoView === 'function') scrollMemoryDocumentIntoView();
+  };
+  // 等 switchMemoryDocument 完成再滚动/提示；不阻塞点击交互。
+  if (switching && typeof switching.finally === 'function') switching.finally(finish);
+  else finish();
+}
+
+function backToGlobalMemoryDocument() {
+  if (typeof memoryScopeSelect !== 'undefined' && memoryScopeSelect) memoryScopeSelect.value = 'global';
+  if (typeof memoryProjectLabel !== 'undefined' && memoryProjectLabel) memoryProjectLabel.hidden = true;
+  clearMemoryProjectSelection();
+  if (typeof memoryBackToGlobal !== 'undefined' && memoryBackToGlobal) memoryBackToGlobal.hidden = true;
+  // 需求 1：走既有切换链路，不改 loadMemoryDocument / saveMemoryDocument / OCC / 409。
+  switchMemoryDocument('global', null);
+}
+
+function toggleMemoryProjectDocuments() {
+  const list = typeof memoryProjectDocumentsList !== 'undefined' ? memoryProjectDocumentsList : null;
+  if (!list) return;
+  // 默认展开；只切显隐，不删除/截断任何卡片（守住「全部 active 项目一次性列出」裁决）。
+  const collapsing = !list.hidden;
+  list.hidden = collapsing;
+  const toggle = typeof memoryProjectDocumentsToggle !== 'undefined' ? memoryProjectDocumentsToggle : null;
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', collapsing ? 'false' : 'true');
+    toggle.textContent = collapsing ? '展开列表' : '收起列表';
+  }
 }
 
 function appendConversationEvent(assistantMessage, processing, eventData) {
@@ -4225,6 +4315,10 @@ if (memoryRefreshButton) memoryRefreshButton.addEventListener('click', () => {
 });
 // 任务 D：项目记忆列表独立刷新（不触碰单文档草稿 / OCC）。
 if (memoryProjectDocumentsRefresh) memoryProjectDocumentsRefresh.addEventListener('click', () => loadMemoryProjectDocuments());
+// 记忆文档可发现性修复：显式返回全局 / 跳到编辑器 / 收起-展开列表。
+if (memoryBackToGlobal) memoryBackToGlobal.addEventListener('click', backToGlobalMemoryDocument);
+if (memoryJumpToEditor) memoryJumpToEditor.addEventListener('click', () => scrollMemoryDocumentIntoView());
+if (memoryProjectDocumentsToggle) memoryProjectDocumentsToggle.addEventListener('click', toggleMemoryProjectDocuments);
 if (memoryDocumentEditor) memoryDocumentEditor.addEventListener('input', handleMemoryDocumentInput);
 if (memoryDocumentSaveButton) memoryDocumentSaveButton.addEventListener('click', saveMemoryDocument);
 if (memoryDocumentConflictRefreshButton) memoryDocumentConflictRefreshButton.addEventListener('click', refreshMemoryDocumentKeepingDraft);
