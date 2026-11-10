@@ -3337,6 +3337,14 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
     gap: 14px;
   }
 
+  /* 窄屏（中间列仅 343px）：head 改回单列，按钮组独占一行靠右，避免横向溢出 / 挤压标题 */
+  #research-view .research-detail-head { grid-template-columns: minmax(0, 1fr); }
+  #research-view .research-detail-head > .research-page-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: end;
+  }
+
   #research-view .research-page-header {
     display: grid;
     align-items: start;
@@ -3623,8 +3631,25 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 
 #research-view .research-detail-head {
   display: grid;
+  /* 任务操作按钮组放右上角：badge 与按钮组同处首行，标题/meta/notice 各占整行 */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 7px;
   margin-bottom: 16px;
+}
+
+/* badge 留在首行左列，与右上角按钮组并排 */
+#research-view .research-detail-head > .research-badge { grid-column: 1; grid-row: 1; }
+
+/* 标题 / meta / 恢复提示跨两列占满整行，不被右侧按钮组挤压 */
+#research-view .research-detail-head > :not(.research-page-actions):not(.research-badge) { grid-column: 1 / -1; }
+
+#research-view .research-detail-head > .research-page-actions {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
+  justify-content: flex-end;
 }
 
 #research-view .research-detail-head h2 {

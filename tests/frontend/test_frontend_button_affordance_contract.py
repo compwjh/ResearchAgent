@@ -193,7 +193,7 @@ def test_xss_sensitive_textcontent_is_kept_verbatim() -> None:
 # ---- 4. task boundaries ------------------------------------------------------
 def test_asset_versions_are_frozen() -> None:
     for marker in (
-        'href="/assets/styles.css?v=73"',
+        'href="/assets/styles.css?v=75"',
         'src="/assets/app.js?v=74"',
         'src="/assets/research-tasks.js?v=25"',
         'src="/assets/literature-maps.js?v=47"',

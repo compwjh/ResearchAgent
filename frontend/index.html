@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ResearchAgent</title>
     <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/styles.css?v=30 /assets/styles.css?v=31 /assets/styles.css?v=32 /assets/styles.css?v=33 /assets/styles.css?v=34 /assets/styles.css?v=35 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=50 /assets/styles.css?v=53 /assets/styles.css?v=62 -->
-    <link rel="stylesheet" href="/assets/styles.css?v=73">
+    <link rel="stylesheet" href="/assets/styles.css?v=75">
     <!-- Spec044: 本地 vendor KaTeX 0.16.45（无 CDN / 无运行时网络请求） -->
     <link rel="stylesheet" href="/assets/vendor/katex/katex.min.css?v=1">
   <link rel="stylesheet" href="/assets/literature-maps.css?v=34">
@@ -36,7 +36,10 @@
       #research-view .research-badge { display: inline-flex; width: fit-content; align-items: center; border-radius: 999px; padding: 3px 7px; background: var(--accent-soft); color: var(--accent); font: 10px 'DM Mono', monospace; }
       #research-view .research-badge[data-status="failed"], #research-view .research-badge[data-status="cancelled"], #research-view .research-badge[data-status="interrupted"] { background: #fff0f0; color: #a33; }
       #research-view .research-badge[data-status="completed"], #research-view .research-badge[data-status="partial"] { background: #ebf8ef; color: #287c43; }
-      #research-view .research-detail-head { display: grid; gap: 7px; margin-bottom: 16px; }
+      #research-view .research-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 7px; margin-bottom: 16px; }
+      #research-view .research-detail-head > .research-badge { grid-column: 1; grid-row: 1; }
+      #research-view .research-detail-head > :not(.research-page-actions):not(.research-badge) { grid-column: 1 / -1; }
+      #research-view .research-detail-head > .research-page-actions { grid-column: 2; grid-row: 1; justify-self: end; align-self: start; justify-content: flex-end; }
       #research-view .research-detail-head h2 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
       #research-view .research-detail-section { padding: 14px 0; border-top: 1px solid var(--line); }
       #research-view .research-detail-section h3 { margin: 0 0 9px; font-size: 13px; }
@@ -66,7 +69,7 @@
       #research-view .research-checkbox { display: flex !important; align-items: center; gap: 7px !important; }
       #research-view .research-checkbox input { width: auto; }
       @media (max-width: 1080px) { #research-view .research-grid { grid-template-columns: minmax(200px, .8fr) minmax(320px, 1.2fr); } #research-view .research-summary-column { grid-column: 1 / -1; } }
-      @media (max-width: 760px) { #research-view .research-workspace { min-height: calc(100vh - 60px); padding: 22px 16px 28px; } #research-view .research-page-header { align-items: flex-start; flex-direction: column; } #research-view .research-grid { grid-template-columns: 1fr; } #research-view .research-summary-column { grid-column: auto; } #research-view .research-column > details[open] > summary { position: sticky; top: 0; z-index: 1; background: #fff; } #research-view .research-form-grid { grid-template-columns: 1fr; } #research-view .research-timeline { max-height: none; } }
+      @media (max-width: 760px) { #research-view .research-workspace { min-height: calc(100vh - 60px); padding: 22px 16px 28px; } #research-view .research-page-header { align-items: flex-start; flex-direction: column; } #research-view .research-grid { grid-template-columns: 1fr; } #research-view .research-summary-column { grid-column: auto; } #research-view .research-column > details[open] > summary { position: sticky; top: 0; z-index: 1; background: #fff; } #research-view .research-form-grid { grid-template-columns: 1fr; } #research-view .research-timeline { max-height: none; } #research-view .research-detail-head { grid-template-columns: minmax(0, 1fr); } #research-view .research-detail-head > .research-page-actions { grid-column: 1; grid-row: auto; justify-self: end; } }
       /* 主 tab（研究任务 / 创建研究会话）：与 styles.css 保持同步，作用域限定 #research-view。 */
       #research-view .research-main-tabs { display: flex; align-items: center; gap: 4px; width: fit-content; padding: 4px; border: 1px solid var(--line); border-radius: 9px; background: #fafafd; }
       #research-view .research-main-tab { border: 1px solid transparent; border-radius: 7px; padding: 8px 13px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; }
@@ -212,14 +215,6 @@
             <h1 id="research-title">深度研究</h1>
             <p class="subtitle" id="research-current-conversation">从当前会话创建并观察可恢复的研究任务。</p>
           </div>
-          <div class="research-page-actions">
-            <button class="secondary-button btn-outline" id="research-refresh-button" type="button">刷新任务</button>
-            <button class="secondary-button btn-outline research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
-            <button class="secondary-button btn-outline research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
-            <button class="secondary-button btn-outline research-task-action" id="research-task-recover-button" type="button" hidden aria-hidden="true">检查并恢复</button>
-            <button class="send-button research-task-action" id="research-task-approve-button" type="button" hidden aria-hidden="true">批准计划</button>
-            <button class="secondary-button btn-outline danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
-          </div>
         </header>
 
         <div class="research-main-tabs kb-tabs" id="research-main-tabs" role="tablist" aria-label="深度研究主导航">
@@ -264,6 +259,14 @@
                 <h2 id="research-detail-title">选择一个任务</h2>
                 <p class="research-detail-meta" id="research-detail-meta">刷新后会先恢复任务详情，再连接实时事件。</p>
                 <p class="research-recovery-notice" id="research-recovery-notice" role="status" aria-live="polite" hidden></p>
+                <div class="research-page-actions">
+                  <button class="secondary-button btn-outline" id="research-refresh-button" type="button">刷新任务</button>
+                  <button class="secondary-button btn-outline research-task-action" id="research-task-pause-button" type="button" hidden aria-hidden="true">暂停研究</button>
+                  <button class="secondary-button btn-outline research-task-action" id="research-task-resume-button" type="button" hidden aria-hidden="true">继续研究</button>
+                  <button class="secondary-button btn-outline research-task-action" id="research-task-recover-button" type="button" hidden aria-hidden="true">检查并恢复</button>
+                  <button class="send-button research-task-action" id="research-task-approve-button" type="button" hidden aria-hidden="true">批准计划</button>
+                  <button class="secondary-button btn-outline danger-button" id="research-cancel-button" type="button" disabled>取消当前任务</button>
+                </div>
               </div>
               <p class="research-empty" id="research-detail-empty">从左侧选择任务，或从当前会话创建任务。</p>
               <p class="research-empty research-records-empty" hidden>暂无执行记录</p>
