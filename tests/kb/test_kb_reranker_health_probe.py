@@ -24,8 +24,10 @@ RED → GREEN 记录（2026-11-10，任务 N 的 liveness-only 实现下先跑�
 不删弱任何既有断言）。
 """
 
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass
 from unittest.mock import Mock, patch
@@ -61,6 +63,11 @@ _WRONG_ORDER_RESULTS = [
     {"index": 1, "relevance_score": 0.1},
     {"index": 2, "relevance_score": 0.2},
 ]
+# 单块合法质量响应：用于验证正常的 1.5–2.3s 推理不会被总时限误杀。
+_VALID_RERANK_BODY = (
+    b'{"results":[{"index":0,"relevance_score":0.1},'
+    b'{"index":1,"relevance_score":0.9},{"index":2,"relevance_score":0.2}]}'
+)
 
 
 @dataclass(frozen=True)
@@ -106,8 +113,10 @@ class _FakeRerankerServer(httpx.BaseTransport):
         rerank_results=None,
         rerank_body=None,
         really_sleep=False,
+        unexpected_error=False,
     ):
         self.calls = []
+        self.unexpected_error = unexpected_error
         self.read_timeouts = []
         self.connect_error = connect_error
         self.connect_timeout = connect_timeout
@@ -128,6 +137,8 @@ class _FakeRerankerServer(httpx.BaseTransport):
         self.calls.append((request.method, request.url.path))
         read_timeout = float(request.extensions.get("timeout", {}).get("read") or 0.0)
         self.read_timeouts.append((request.url.path, read_timeout))
+        if self.unexpected_error:
+            raise RuntimeError("unexpected code-level failure")
         if self.connect_timeout:
             raise httpx.ConnectTimeout("connect timed out", request=request)
         if self.connect_error:
@@ -159,6 +170,64 @@ class _FakeRerankerServer(httpx.BaseTransport):
             results = _VALID_RESULTS if self.rerank_results is None else self.rerank_results
             return httpx.Response(self.rerank_status, json={"results": results})
         return httpx.Response(404, json={"error": "not found"})
+
+
+class _ClockDrivenStream(httpx.SyncByteStream):
+    """按注入时钟逐块吐字节：每块之间间隔 ``step`` 秒（小于 read cap，httpx 不会超时）。
+
+    用假时钟推进模拟时间，使「异常后端每隔数秒吐 1 字节」的场景可在毫秒级复现，
+    无需真的 sleep 数十秒。``body`` 为单块合法 JSON 时用于验证正常推理不被总时限误杀。
+    """
+
+    def __init__(self, clock, *, step, count=1, body=None, advance_before=True):
+        self.clock = clock
+        self.step = step
+        self.count = count
+        self.body = body
+        self.advance_before = advance_before
+
+    def __iter__(self):
+        for _ in range(self.count):
+            if self.advance_before:
+                self.clock.advance(self.step)
+            yield b"x" if self.body is None else self.body
+
+
+class _SlowDripRerankerServer(httpx.BaseTransport):
+    """liveness 正常；质量 POST 无限慢速吐单字节，模拟 read timeout 永不触发的后端。"""
+
+    def __init__(self, clock, *, step=3.0, count=100, body=None):
+        self.clock = clock
+        self.step = step
+        self.count = count
+        self.body = body
+        self.calls = []
+        self.read_timeouts = []
+
+    def handle_request(self, request):
+        self.calls.append((request.method, request.url.path))
+        read_timeout = float(request.extensions.get("timeout", {}).get("read") or 0.0)
+        self.read_timeouts.append((request.url.path, read_timeout))
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
+        return httpx.Response(200, stream=_ClockDrivenStream(
+            self.clock, step=self.step, count=self.count, body=self.body,
+        ))
+
+
+class _BlockingHealthServer(httpx.BaseTransport):
+    """leader 进到 /health 后阻塞，直到 release；用于验证 single-flight 等待有界。"""
+
+    def __init__(self, entered, release):
+        self.entered = entered
+        self.release = release
+        self.calls = []
+
+    def handle_request(self, request):
+        self.calls.append((request.method, request.url.path))
+        self.entered.set()
+        self.release.wait(timeout=5.0)
+        raise httpx.ReadTimeout("slow health", request=request)
 
 
 def _cached_entries(transport):
@@ -422,6 +491,106 @@ class HealthProbeTests(unittest.TestCase):
         self.assertFalse(body["reranker"])
         self.assertIn(("POST", "/v1/rerank"), fake.calls)
 
+    def test_unexpected_failure_reason_is_diagnosable_and_logged(self):
+        """L-1：代码级意外异常不得伪装成质量失败，且必须留服务端日志（原始异常不进响应）。"""
+        fake = _FakeRerankerServer(unexpected_error=True)
+        clock = _FakeClock(100.0)
+        with self.assertLogs(retrieve.__name__, level="ERROR") as logs:
+            detail = retrieve.reranker_health(enabled=True, transport=fake, clock=clock)
+        self.assertFalse(detail["available"], detail)
+        self.assertEqual(detail["reason"], "unexpected")
+        self.assertEqual(len(fake.calls), 1)
+        self.assertTrue(any("reason=unexpected" in line for line in logs.output))
+        self.assertNotIn("What is the capital of France", "\n".join(logs.output))
+        entries = _cached_entries(fake)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0][0]["reason"], "unexpected")
+        self.assertAlmostEqual(entries[0][1] - clock(), NEGATIVE_TTL_SECONDS)
+        with retrieve._health_condition:
+            self.assertFalse(retrieve._health_inflight)
+
+    def test_api_kb_health_unexpected_reason_is_diagnosable(self):
+        """L-1：endpoint 级响应结构不变，reason 明确为 unexpected。"""
+        fake = _FakeRerankerServer(unexpected_error=True)
+        with self.assertLogs(retrieve.__name__, level="ERROR"), patch.object(
+            routes_kb, "reranker_health",
+            lambda: retrieve.reranker_health(enabled=True, transport=fake),
+        ), _offline_kb_health_patches():
+            response = TestClient(app).get("/api/kb/health")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(set(body), {
+            "qdrant", "embedding", "reranker", "reranker_detail",
+            "papers", "chunks", "v2_llm", "generation",
+        })
+        detail = body["reranker_detail"]
+        self.assertEqual(set(detail), {"enabled", "available", "backend", "model", "reason"})
+        self.assertFalse(detail["available"])
+        self.assertEqual(detail["reason"], "unexpected")
+        self.assertFalse(body["reranker"])
+
+    def test_slow_dribble_response_exits_at_total_deadline(self):
+        """M-2：每 3s 吐 1 字节（远小于 30s read cap）也必须在总时限内判 timeout。"""
+        total_cap = getattr(retrieve, "_RERANKER_HEALTH_TOTAL_TIMEOUT_SECONDS", None)
+        self.assertIsNotNone(total_cap, "health 探针必须有总时限常量")
+        self.assertGreater(total_cap, retrieve._RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP)
+        self.assertLessEqual(total_cap, 60.0, "总时限必须有上限，不得无限等待")
+        step = 3.0
+        self.assertLess(step, retrieve._RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP,
+                        "单字节间隔必须小于 read cap，否则测不到 read timeout 非总时限的缺口")
+        clock = _FakeClock(100.0)
+        fake = _SlowDripRerankerServer(clock, step=step, count=100)
+        start = clock()
+        detail = retrieve.reranker_health(enabled=True, transport=fake, clock=clock)
+        self.assertFalse(detail["available"], detail)
+        self.assertEqual(detail["reason"], "timeout")
+        self.assertEqual(fake.calls, [("GET", "/health"), ("POST", "/v1/rerank")])
+        self.assertEqual(dict(fake.read_timeouts)["/v1/rerank"], 30.0, "两档 read cap 不变")
+        self.assertLessEqual(clock() - start, total_cap + step)
+        entries = _cached_entries(fake)
+        self.assertEqual(len(entries), 1)
+        self.assertAlmostEqual(entries[0][1] - clock(), 4.0, places=3,
+                               msg="总时限超时仍按 timeout 走 4s 短缓存")
+        with retrieve._health_condition:
+            self.assertFalse(retrieve._health_inflight, "探针必须收敛，inflight 不得残留")
+
+    def test_normal_slow_inference_survives_total_deadline(self):
+        """M-2：正常 2.3s 推理不得被总时限误杀（1.5–2.3s 是本机实测区间上界）。"""
+        clock = _FakeClock(100.0)
+        fake = _SlowDripRerankerServer(clock, step=2.3, count=1, body=_VALID_RERANK_BODY)
+        detail = retrieve.reranker_health(enabled=True, transport=fake, clock=clock)
+        self.assertTrue(detail["available"], detail)
+        self.assertIsNone(detail["reason"])
+        self.assertEqual(clock(), 102.3)
+
+    def test_single_flight_wait_is_bounded(self):
+        """M-2：leader 挂起时 waiter 不得无限等待，须在有界 deadline 内快速失败。"""
+        entered, release = threading.Event(), threading.Event()
+        fake = _BlockingHealthServer(entered, release)
+        clock = _FakeClock(100.0)
+        wait_cap = 0.3
+        with patch.object(retrieve, "_RERANKER_HEALTH_WAIT_CAP", wait_cap, create=True), \
+                ThreadPoolExecutor(max_workers=2) as pool:
+            leader = pool.submit(
+                retrieve.reranker_health, enabled=True, transport=fake, clock=clock,
+            )
+            self.assertTrue(entered.wait(2.0), "leader 必须进入探针")
+            waiter = pool.submit(
+                retrieve.reranker_health, enabled=True, transport=fake, clock=clock,
+            )
+            try:
+                time.sleep(wait_cap + 0.3)
+                self.assertTrue(waiter.done(), "leader 仍挂起时 waiter 必须已按有界 deadline 返回")
+            finally:
+                release.set()
+            detail = waiter.result(timeout=3.0)
+            self.assertFalse(detail["available"], detail)
+            self.assertEqual(detail["reason"], "timeout")
+            self.assertEqual(fake.calls, [("GET", "/health")], "等待者不得重复发起探针")
+            leader.result(timeout=3.0)
+        with retrieve._health_condition:
+            self.assertFalse(retrieve._health_inflight)
+
 
 class RerankNegativeCacheTests(unittest.TestCase):
     """reranker.py 检索链路熔断：所有持续性失败都必须 ≥30s 负缓存（spec-014:131）。
@@ -550,6 +719,78 @@ class RerankNegativeCacheTests(unittest.TestCase):
         )
         self.assertTrue(result.used)
         self.assertEqual(seen, [60.0], "配置 600s 也必须钳到 spec-014:131 的 60s 上限")
+
+    def test_negative_cache_ttl_floor_is_at_least_30_seconds(self):
+        """L-2：负缓存下限 ≥30s 必须有门禁（29s 仍命中、31s 后重新发请求）。"""
+        clock = _FakeClock(100.0)
+        calls = []
+
+        def handler(request):
+            calls.append(request)
+            raise httpx.ReadTimeout("slow inference", request=request)
+
+        transport = httpx.MockTransport(handler)
+        first = reranker.rerank_hits(
+            "q", self.hits, transport=transport, clock=clock, negative_ttl=1,
+        )
+        self.assertEqual(first.reason, "timeout")
+        with reranker._lock:
+            expiry = reranker._cache[(reranker.DEFAULT_BASE_URL, "")][1]
+        self.assertGreaterEqual(expiry - clock(), NEGATIVE_TTL_SECONDS,
+                                "_remember 必须用 max(MIN_NEGATIVE_TTL, ttl)")
+        clock.advance(29)
+        second = reranker.rerank_hits(
+            "q", self.hits, transport=transport, clock=clock, negative_ttl=1,
+        )
+        self.assertEqual(second.reason, "timeout")
+        self.assertEqual(len(calls), 1, "29s 仍必须命中 ≥30s 负缓存")
+        clock.advance(31)
+        third = reranker.rerank_hits(
+            "q", self.hits, transport=transport, clock=clock, negative_ttl=1,
+        )
+        self.assertEqual(third.reason, "timeout")
+        self.assertEqual(len(calls), 2, "31s 后必须重新发起请求")
+
+    def test_concurrent_first_hang_makes_only_one_network_call(self):
+        """M-1：5 个并发首次请求同时 hang，只有 1 次真实重排调用，其余快速失败。"""
+        wait_cap = getattr(reranker, "_RERANK_INFLIGHT_WAIT_CAP", 0.5)
+        self.assertLess(wait_cap, reranker.MAX_READ_TIMEOUT,
+                        "在飞等待上限必须显著小于 60s read 上限，不得各自阻塞满 60s")
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+
+        def handler(request):
+            calls.append(request)
+            entered.set()
+            release.wait(timeout=8.0)
+            raise httpx.ReadTimeout("slow inference", request=request)
+
+        transport = httpx.MockTransport(handler)
+
+        def call():
+            started_at = time.monotonic()
+            result = reranker.rerank_hits("q", self.hits, transport=transport)
+            return result, time.monotonic() - started_at
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(call) for _ in range(5)]
+            self.assertTrue(entered.wait(2.0), "必须真的发起一次重排请求")
+            try:
+                time.sleep(wait_cap + 0.2)
+                self.assertEqual(len(calls), 1, "并发首次 hang 期间不得出现第二次真实重排调用")
+            finally:
+                release.set()
+            outcomes = [future.result(timeout=10.0) for future in futures]
+        self.assertEqual(len(calls), 1, "5 个并发首次请求只能有 1 次真实重排调用")
+        for result, _elapsed in outcomes:
+            self.assertFalse(result.used)
+            self.assertEqual(result.reason, "timeout")
+        fast = [elapsed for _result, elapsed in outcomes if elapsed < wait_cap + 1.0]
+        self.assertGreaterEqual(len(fast), 4, "至少 4 个等待者应在有界等待内快速失败")
+        self.assertEqual(
+            reranker._cached((reranker.DEFAULT_BASE_URL, ""), time.monotonic()),
+            "timeout", "leader 失败后仍须写 ≥30s 负缓存（spec-014:131）",
+        )
 
 
 if __name__ == "__main__":

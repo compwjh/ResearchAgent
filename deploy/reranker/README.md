@@ -71,19 +71,21 @@ curl -sS http://127.0.0.1:8000/api/kb/health       # 核对 reason=disabled
 ## 5. 已知边界（本机 CPU）
 
 > **2026-11-10 任务 U 修订**：任务 N 曾把心跳降为「只判 liveness、不跑质量推理」，但 `spec-014:72/102/131/149` 的 `available` 定义、质量探针、30s 熔断与 A7 验收项从未修订，plan 追加节的「按新语义理解」不构成契约变更。任务 U 已恢复实现以符合 spec 原文，并保留任务 N 对「慢响应假降级」根因的正确定位。本节为当前实现。
+>
+> **2026-11-11 任务 W 追加**：收口复验报告 5 项残留工单（M-1/M-2/L-1/L-2/L-3），`spec-014` 契约、`config.py` 冻结默认值、`/api/kb/health` 响应结构与 `available` 质量语义均未改。
 
-- **`available` = 质量已验证**：`_health_probe()` 先发轻量 `GET <base_url>/health`（liveness），再发一次固定三文档 `POST /v1/rerank` 质量探针（与 `deploy/reranker/probe.sh` 同一组 query/documents）。只有 HTTP 2xx、响应可解析、且最相关文档排第一（分数不完全相同）才返回 `available=true`。模型在运行中损坏（`/health` 正常但排序异常）时 health 会如实报 `quality_probe_failed`，不再与 `kb.rerank` 事件的 `degraded_reason` 互相矛盾。
-- **不被慢推理拖垮**：`reranker_health()` 用 `_RERANKER_HEALTH_TTL=30.0` 的 monotonic + single-flight 缓存，30 秒内并发/重复 health 请求只触发一次探针（spec-014:134），等价于「liveness 心跳 + 周期性质量验证结果缓存」。
-- **两档超时**：liveness `GET /health` 用 `_RERANKER_HEALTH_CONNECT_TIMEOUT_CAP=2.0` / `_RERANKER_HEALTH_READ_TIMEOUT_CAP=6.0`；质量 `POST /v1/rerank` 用 `_RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP=30.0`（覆盖实测单请求 1.5–2.3s 与 5 并发最长 18.3s，仍有硬上限）。不再把 connect/read 统一钳到 2.0s，故慢但成功的推理不会假降级。
+- **`available` = 质量已验证**：`_health_probe()` 先发轻量 `GET <base_url>/health`（liveness），再发一次固定三文档 `POST /v1/rerank` 质量探针。query/documents 唯一数据源是 `deploy/reranker/quality-probe.json`：运行期 Python 与启动期 `deploy/reranker/probe.sh` 都从该文件读取（`tests/kb/test_kb_reranker_quality_probe_consistency.py` 解析两侧实际 POST 体做一致性门禁）。只有 HTTP 2xx、响应可解析、且最相关文档排第一（分数不完全相同）才返回 `available=true`。模型在运行中损坏（`/health` 正常但排序异常）时 health 会如实报 `quality_probe_failed`，不再与 `kb.rerank` 事件的 `degraded_reason` 互相矛盾。
+- **不被慢推理拖垮**：`reranker_health()` 用 `_RERANKER_HEALTH_TTL=30.0` 的 monotonic + single-flight 缓存，30 秒内并发/重复 health 请求只触发一次探针（spec-014:134），等价于「liveness 心跳 + 周期性质量验证结果缓存」。等待者有 `_RERANKER_HEALTH_WAIT_CAP=50.0` 的真实时钟有界 deadline，超时直接返回 `available=false, reason=timeout`，不再无限占用线程。
+- **两档超时 + 总时限**：liveness `GET /health` 用 `_RERANKER_HEALTH_CONNECT_TIMEOUT_CAP=2.0` / `_RERANKER_HEALTH_READ_TIMEOUT_CAP=6.0`；质量 `POST /v1/rerank` 用 `_RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP=30.0`（覆盖实测单请求 1.5–2.3s 与 5 并发最长 18.3s）。`httpx` 的 read cap 是「相邻两次读的间隔」而非请求总时限，故探针另加 `_RERANKER_HEALTH_TOTAL_TIMEOUT_SECONDS=45.0` 的总时限（2×connect 2s + 6s + 30s = 40s 理论最长合法耗时 + 5s 余量），用流式 `iter_bytes()` 逐块校验；慢速吐字节的异常后端会收敛为 `timeout`，正常推理不受影响。
 - **分层缓存**：成功与「不可达 / 质量探针失败」写 30s 缓存（spec-014:131）；`timeout` 写 `_RERANKER_HEALTH_TRANSIENT_TTL=4.0` 的**短缓存** —— 零缓存会让持续故障时每次 health 重跑推理打满后端，30s 又是旧假降级根因，4s 兼顾两者。
-- **检索侧熔断恢复**：`rerank_hits` 对 timeout / ConnectTimeout / `invalid_*` / `unexpected` / 4xx / 5xx 等所有失败写 ≥30s 负缓存，避免 60s hang 时每次 KB 问答都阻塞、打满 FastAPI 线程池；`httpx.Timeout` 另加 spec-014:131 的 60s 硬上限（`config.py` 默认 `60.0` 不变）。`ConnectTimeout` 与 `ReadError` 在 health、检索两处统一归 `connection`。
-- `/api/kb/health` 响应结构与 `reason` 取值集合不变：`null` / `disabled` / `connection` / `timeout` / `quality_probe_failed` / `model_not_prepared`。`quality_probe_failed` 现名实相符（协议异常或质量探针未通过）。
+- **检索侧熔断恢复**：`rerank_hits` 对 timeout / ConnectTimeout / `invalid_*` / `unexpected` / 4xx / 5xx 等所有失败写 ≥30s 负缓存，避免 60s hang 时每次 KB 问答都阻塞、打满 FastAPI 线程池；`httpx.Timeout` 另加 spec-014:131 的 60s 硬上限（`config.py` 默认 `60.0` 不变）。任务 W 另加按 `(endpoint, model)` 的 single-flight：leader 发真实请求，并发等待者最多等 `_RERANK_INFLIGHT_WAIT_CAP=3.0` 秒（覆盖正常 1.5–2.3s 推理）即复用 leader 的失败 reason / 快速失败，消除「首个 60s 窗口内并发各自阻塞」；leader 成功时等待者继续发自己的请求，不跳过精排。`ConnectTimeout` 与 `ReadError` 在 health、检索两处统一归 `connection`。
+- `/api/kb/health` 响应结构不变；`reason` 取值集合新增 `unexpected`（与 `reranker.RerankReason` 已有值一致）：`null` / `disabled` / `connection` / `timeout` / `quality_probe_failed` / `model_not_prepared` / `unexpected`。`quality_probe_failed` 仍只表示协议异常或质量探针未通过；未预期的代码级异常改报 `unexpected` 并写服务端 `logger.exception`（原始异常不进响应/事件，30s 负缓存语义不变）。
 
-启动时 `deploy/reranker/start.sh` 仍会调 `deploy/reranker/probe.sh` 做一次三文档质量校验（第 3 节验收输出 `reranker probe passed: health ready; ranking valid`），失败即让 `deploy/start.sh` 干净降级；运行期质量由 health 周期探针持续验证，二者互补。
+启动时 `deploy/reranker/start.sh` 仍会调 `deploy/reranker/probe.sh` 做一次三文档质量校验（第 3 节验收输出 `reranker probe passed: health ready; ranking valid`），失败即让 `deploy/start.sh` 干净降级；运行期质量由 health 周期探针持续验证，二者互补。共享质量集只用 `quality-probe.json` 一份：`probe.sh` 复用其原有 `python_bin` 检测（`.venv/bin/python` → `python3` → 报错退出 2），**不引入 jq / 新运行时依赖**；文件缺失或 Python 不可用时脚本以明确报错退出，`deploy/start.sh` 按既有路径干净降级为 RRF。
 
 排查顺序（本机终端依次执行；资产恢复见第 1–2 节、启动环境变量见第 3 节）：
 
 1. `RERANKER_SERVER_BIN="$PWD/deploy/reranker/.runtime/llama-b12230/llama-server" ./deploy/start.sh -d`；不带 `RERANKER_SERVER_BIN` 即干净降级为 RRF、`reason="disabled"`（见第 4 节），属期望行为。
 2. `./deploy/reranker/probe.sh` → 看到 `reranker probe passed: health ready; ranking valid`。
-3. 若曾出现 `connection` / `model_not_prepared` / `quality_probe_failed`，最多**等待 30s** 让负缓存过期；若为 `timeout`，最多等 4s 短缓存过期后自动重试（期间并发轮询复用同一结果，不重复跑推理）。
+3. 若曾出现 `connection` / `model_not_prepared` / `quality_probe_failed` / `unexpected`，最多**等待 30s** 让负缓存过期；若为 `timeout`，最多等 4s 短缓存过期后自动重试（期间并发轮询复用同一结果，不重复跑推理）。`unexpected` 代表应用代码级意外故障，先看服务端 `logger.exception` 栈，不要按「模型质量损坏」去排查；它同样走 30s 熔断。
 4. 单次 `curl -sS http://127.0.0.1:8000/api/kb/health` → 只有拿到 `reranker_detail.available=true` 且 `reason=null` 才能记录精排已启用，否则如实记录 RRF 降级（见 `deploy/VERIFICATION.md:73`）。

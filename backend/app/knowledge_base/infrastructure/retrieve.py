@@ -4,11 +4,14 @@
 量纲不可比；RRF 只利用排名，无需归一化调参（见 011-tech-review §四）。
 """
 
+import json
+import logging
 import math
 import re
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Sequence
 
 import httpx
@@ -33,20 +36,30 @@ from backend.app.platform.config import (
 from backend.app.platform.observability import record_event
 from backend.app.platform.observability.safe import safe_call
 
+logger = logging.getLogger(__name__)
+
 RRF_K = 60
 _SCORE_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 _RERANKER_MODEL_ID = "ggml-org/Qwen3-reranker-0.6B-Q8_0-GGUF:Q8_0"
 _RERANKER_HEALTH_TTL = 30.0
 # spec-014:102 固定三文档质量探针（相关度明显不同；最相关文档必须排第一）。
-# 与 deploy/reranker/probe.sh 使用同一组 query/documents，避免两套质量集。
-_RERANKER_HEALTH_PROBE = (
-    "What is the capital of France?",
-    (
-        "Whales are marine mammals that breathe air.",
-        "Paris is the capital and most populous city of France.",
-        "The Moon orbits Earth approximately every 27 days.",
-    ),
+# 唯一数据源为 deploy/reranker/quality-probe.json：Python 与 probe.sh 都从它读取，
+# 不再各自硬编码一份，避免启动期与运行期质量集漂移（tests/kb 一致性门禁守卫）。
+_QUALITY_PROBE_PATH = (
+    Path(__file__).resolve().parents[4] / "deploy" / "reranker" / "quality-probe.json"
 )
+
+
+def _load_health_probe():
+    data = json.loads(_QUALITY_PROBE_PATH.read_text(encoding="utf-8"))
+    query, documents = data["query"], tuple(data["documents"])
+    if (not isinstance(query, str) or not query.strip() or len(documents) != 3
+            or not all(isinstance(document, str) for document in documents)):
+        raise ValueError("quality probe requires one query and exactly three documents")
+    return query, documents
+
+
+_RERANKER_HEALTH_PROBE = _load_health_probe()
 # 两档超时上限（秒），都不允许无限等待：
 # - liveness GET /health 不跑推理，6s 足够（服务满载排队仍有余量）；
 # - 质量探针 POST /v1/rerank 跑一次三文档推理，本机实测单请求 1.5–2.3s、
@@ -59,6 +72,13 @@ _RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP = 30.0
 # 30s 又是「一次 2.23s 慢响应 → 全局假降级」的根因。取 4s：恢复延迟 ≤4s，
 # 窗口内并发轮询复用同一结果、不重复推理。
 _RERANKER_HEALTH_TRANSIENT_TTL = 4.0
+# httpx 的 read timeout 只约束「相邻两次 socket 读之间的间隔」，不是整个请求的总时限：
+# 异常后端每隔小于 read cap 的时间吐 1 字节即可让探针永不收敛。总时限取两档 read cap
+# 下的理论最长合法耗时 = 2×connect 2.0 + liveness 6.0 + quality 30.0 = 40.0s，
+# 再加 5s 调度/解析余量 → 45.0s。正常 1.5–2.3s 推理远低于该值，6s/30s 两档 cap 不变。
+_RERANKER_HEALTH_TOTAL_TIMEOUT_SECONDS = 45.0
+# single-flight 等待者的真实时钟上限：总时限 + 5s 通知余量，绝不无限等待。
+_RERANKER_HEALTH_WAIT_CAP = _RERANKER_HEALTH_TOTAL_TIMEOUT_SECONDS + 5.0
 _health_condition = threading.Condition()
 _health_cache = {}
 _health_inflight = set()
@@ -292,22 +312,38 @@ def _health_detail(enabled: bool, available: bool, model: str, reason: Optional[
     }
 
 
+def _request_json(client, method: str, url: str, *, payload, timeout, deadline, now_fn):
+    """流式读取并施加**总时限**：read timeout 只是两次读的间隔，管不了慢速吐字节。"""
+    chunks = []
+    with client.stream(method, url, json=payload, timeout=timeout) as stream:
+        for chunk in stream.iter_bytes():
+            if now_fn() >= deadline:
+                raise httpx.ReadTimeout("health probe total deadline exceeded", request=stream.request)
+            chunks.append(chunk)
+        if now_fn() >= deadline:
+            raise httpx.ReadTimeout("health probe total deadline exceeded", request=stream.request)
+        status, request = stream.status_code, stream.request
+    return httpx.Response(status, content=b"".join(chunks), request=request)
+
+
 def _health_probe(
     endpoint: Optional[str], model: str, connect_timeout: float, read_timeout: float,
-    transport=None,
+    transport=None, now_fn=None,
 ) -> dict:
     """spec-014:72 —— ``available`` = HTTP liveness **且** 排序质量探针通过。
 
     先发轻量 ``GET /health``（liveness），再发一次固定三文档 ``POST /v1/rerank``
     质量探针；只有两者都通过才返回 ``available=true``。结果由
-    ``reranker_health()`` 缓存 30s（single-flight），故等价于「liveness 心跳 +
-    周期性质量验证结果缓存」，30 秒内 N 次 health 只跑一次推理，不被慢推理拖垮。
+    ``reranker_health()`` 缓存 30s（single-flight + 有界等待 + 请求总时限）。
 
-    ``quality_probe_failed`` 现表示「/health 协议异常或排序质量探针未通过」，
-    与名称一致；reason 取值集合保持不变。
+    ``quality_probe_failed`` 表示「/health 协议异常或排序质量探针未通过」；
+    未预期的代码级异常归 ``unexpected``（与 reranker.RerankReason 集合一致）
+    并记服务端日志，不伪装成质量失败。
     """
     if endpoint is None:
         return _health_detail(True, False, model, "connection")
+    now_fn = now_fn or time.monotonic
+    deadline = now_fn() + _RERANKER_HEALTH_TOTAL_TIMEOUT_SECONDS
     connect = min(max(float(connect_timeout), 0.001), _RERANKER_HEALTH_CONNECT_TIMEOUT_CAP)
     liveness_read = min(max(float(read_timeout), 0.001), _RERANKER_HEALTH_READ_TIMEOUT_CAP)
     quality_read = min(max(float(read_timeout), 0.001), _RERANKER_HEALTH_QUALITY_READ_TIMEOUT_CAP)
@@ -318,7 +354,10 @@ def _health_probe(
         kwargs["transport"] = transport
     try:
         with httpx.Client(**kwargs) as client:
-            ready = client.get(f"{endpoint}/health", timeout=liveness_timeout)
+            ready = _request_json(
+                client, "GET", f"{endpoint}/health", payload=None,
+                timeout=liveness_timeout, deadline=deadline, now_fn=now_fn,
+            )
             if not ready.is_success:
                 # 503 = 模型尚在加载；其余 5xx = 服务端真实失败（允许进负缓存）。
                 if ready.status_code == 503:
@@ -340,7 +379,10 @@ def _health_probe(
             }
             if model != _RERANKER_MODEL_ID:
                 payload["model"] = model
-            response = client.post(f"{endpoint}/v1/rerank", json=payload, timeout=quality_timeout)
+            response = _request_json(
+                client, "POST", f"{endpoint}/v1/rerank", payload=payload,
+                timeout=quality_timeout, deadline=deadline, now_fn=now_fn,
+            )
             if not response.is_success:
                 return _health_detail(True, False, model, "quality_probe_failed")
             try:
@@ -364,7 +406,8 @@ def _health_probe(
     except (TypeError, ValueError, OverflowError):
         return _health_detail(True, False, model, "quality_probe_failed")
     except Exception:
-        return _health_detail(True, False, model, "quality_probe_failed")
+        logger.exception("reranker health probe unexpected failure: reason=unexpected")
+        return _health_detail(True, False, model, "unexpected")
 
 
 def _probe_scores(data: object):
@@ -402,6 +445,7 @@ def reranker_health(
     spec-014:134：30 秒内并发请求只触发一次探针。成功与「不可达 / 质量探针失败」
     （spec-014:131）写 30s 缓存；timeout 写 4s 短缓存 —— 持续故障时不重跑推理
     打满后端，又不至于像 30s 那样把一次偶发慢响应放大成全局假降级。
+    等待者有真实时钟有界 deadline，探针自身另有总时限，绝不无限占用线程。
     """
     enabled = RERANKER_ENABLED if enabled is None else enabled
     base_url = RERANKER_BASE_URL if base_url is None else base_url
@@ -418,6 +462,7 @@ def reranker_health(
     # live path remains keyed only by the configured loopback endpoint/model.
     key = (endpoint or "", model, id(transport) if transport is not None else None)
     now_fn = clock or time.monotonic
+    wait_deadline = time.monotonic() + _RERANKER_HEALTH_WAIT_CAP
     while True:
         now = now_fn()
         with _health_condition:
@@ -427,15 +472,21 @@ def reranker_health(
             if key not in _health_inflight:
                 _health_inflight.add(key)
                 break
-            _health_condition.wait(timeout=0.1)
-    detail = _health_detail(True, False, model, "quality_probe_failed")
+            remaining = wait_deadline - time.monotonic()
+            if remaining <= 0:
+                # 探针异常挂起时不再无限等待；返回可诊断的 timeout（不写缓存，
+                # leader 收敛后仍会写自己的结果），也不重复发起探针。
+                return _health_detail(True, False, model, "timeout")
+            _health_condition.wait(timeout=min(0.1, remaining))
+    detail = _health_detail(True, False, model, "unexpected")
     try:
-        detail = _health_probe(endpoint, model, connect_timeout, read_timeout, transport)
+        detail = _health_probe(endpoint, model, connect_timeout, read_timeout, transport, now_fn)
     except Exception:
-        detail = _health_detail(True, False, model, "quality_probe_failed")
+        logger.exception("reranker health unexpected failure: reason=unexpected")
+        detail = _health_detail(True, False, model, "unexpected")
     finally:
         with _health_condition:
-            # timeout 用短缓存；其余（成功 / 不可达 / 质量探针失败 / 未知 reason）
+            # timeout 用短缓存；其余（成功 / 不可达 / 质量探针失败 / unexpected）
             # 一律 30s，绝不退化为零缓存导致持续故障下每次 health 重跑推理。
             ttl = (
                 _RERANKER_HEALTH_TRANSIENT_TTL

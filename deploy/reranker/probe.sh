@@ -12,6 +12,13 @@ esac
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "$script_dir/../.." && pwd)"
+# 质量集只有一份：与运行期 backend/.../retrieve.py 共用 quality-probe.json。
+# 复用下面已有的 Python 3 检测（本脚本本来就用它校验 JSON），不引入 jq 等新依赖。
+probe_file="$script_dir/quality-probe.json"
+if [[ ! -f "$probe_file" ]]; then
+  printf 'reranker probe failed: shared quality probe set is missing: %s\n' "$probe_file" >&2
+  exit 2
+fi
 if [[ -x "$project_dir/.venv/bin/python" ]]; then
   python_bin="$project_dir/.venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
@@ -34,23 +41,34 @@ if [[ ! "$health_status" =~ ^2[0-9][0-9]$ ]]; then
   exit 1
 fi
 
-RERANKER_API_MODEL="$api_model" "$python_bin" - "$tmp_dir/request.json" <<'PY'
+RERANKER_API_MODEL="$api_model" "$python_bin" - "$probe_file" "$tmp_dir/request.json" <<'PY'
 import json
 import os
 import sys
 
-payload = {
-    "query": "What is the capital of France?",
-    "documents": [
-        "Whales are marine mammals that breathe air.",
-        "Paris is the capital and most populous city of France.",
-        "The Moon orbits Earth approximately every 27 days.",
-    ],
-}
+def fail(message):
+    print(f"reranker probe failed: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, json.JSONDecodeError):
+    fail(f"cannot read shared quality probe set: {sys.argv[1]}")
+
+if not isinstance(payload, dict):
+    fail("shared quality probe set must be a JSON object")
+query = payload.get("query")
+documents = payload.get("documents")
+if (not isinstance(query, str) or not query.strip()
+        or not isinstance(documents, list) or len(documents) != 3
+        or not all(isinstance(document, str) and document for document in documents)):
+    fail("shared quality probe set requires one query and exactly three documents")
+
 api_model = os.environ.get("RERANKER_API_MODEL", "")
 if api_model:
     payload["model"] = api_model
-with open(sys.argv[1], "w", encoding="utf-8") as output:
+with open(sys.argv[2], "w", encoding="utf-8") as output:
     json.dump(payload, output)
 PY
 

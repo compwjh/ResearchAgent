@@ -1,0 +1,8 @@
+{
+  "query": "What is the capital of France?",
+  "documents": [
+    "Whales are marine mammals that breathe air.",
+    "Paris is the capital and most populous city of France.",
+    "The Moon orbits Earth approximately every 27 days."
+  ]
+}

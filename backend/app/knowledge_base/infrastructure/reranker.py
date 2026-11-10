@@ -31,9 +31,49 @@ class RerankResult(NamedTuple, Generic[T]):
 _cache: Dict[Tuple[str, str], Tuple[RerankReason, float]] = {}
 _lock = threading.Lock()
 
+
+class _RerankFlight:
+    """一次 (endpoint, model) 在飞重排；等待者复用 leader 的失败 reason。"""
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.reason: Optional[RerankReason] = None
+
+
+_rerank_condition = threading.Condition()
+_rerank_inflight: Dict[Tuple[str, str], _RerankFlight] = {}
+# 在飞等待上限（秒）：本机实测正常单请求 1.5–2.3s（retrieve.py 注释），留余量取 3.0s；
+# reranker hang 时等待者 3s 内快速失败，而不是各自阻塞满 60s read 上限。
+# 这不是网络超时：spec-014:131 的 60s/2s 硬上限与 config.py 冻结默认值均不变。
+_RERANK_INFLIGHT_WAIT_CAP = 3.0
+
+
+def _claim_flight(key: Tuple[str, str]) -> Tuple[_RerankFlight, bool]:
+    with _rerank_condition:
+        flight = _rerank_inflight.get(key)
+        if flight is None:
+            flight = _RerankFlight()
+            _rerank_inflight[key] = flight
+            return flight, True
+        return flight, False
+
+
+def _finish_flight(key: Tuple[str, str], flight: _RerankFlight,
+                   reason: Optional[RerankReason]) -> None:
+    flight.reason = reason
+    flight.done.set()
+    with _rerank_condition:
+        if _rerank_inflight.get(key) is flight:
+            _rerank_inflight.pop(key, None)
+        _rerank_condition.notify_all()
+
+
 def clear_negative_cache() -> None:
     with _lock:
         _cache.clear()
+    with _rerank_condition:
+        _rerank_inflight.clear()
+        _rerank_condition.notify_all()
 
 def _url(value: str) -> Optional[str]:
     raw = (value or DEFAULT_BASE_URL).strip().rstrip("/")
@@ -114,7 +154,8 @@ def rerank_hits(
     if endpoint is None or not isinstance(query, str) or not query.strip():
         return _fail(original, "unexpected")
     now, model = clock or time.monotonic, (api_model or "").strip()
-    key, cached = (endpoint, model), _cached((endpoint, model), now())
+    key = (endpoint, model)
+    cached = _cached(key, now())
     if cached:
         return _fail(original, cached)
     getter = document_getter or (lambda hit: getattr(hit, "text", ""))
@@ -125,47 +166,62 @@ def rerank_hits(
     payload = {"query": query, "documents": documents}
     if model:
         payload["model"] = model
+    # M-1：负缓存在请求结束后才写，首个 60s 窗口内若无在飞去重，并发问答会各自
+    # 阻塞 60s。按 (endpoint, model) 做 single-flight：leader 发真实请求，等待者
+    # 在有界等待内复用 leader 的失败 reason；挂死时快速失败，不再占满线程池。
+    # leader 成功时等待者继续发自己的请求（正常推理约 1.5–2.3s），不跳过精排。
+    flight, leader = _claim_flight(key)
+    if not leader:
+        if not flight.done.wait(_RERANK_INFLIGHT_WAIT_CAP):
+            return _fail(original, "timeout")
+        if flight.reason is not None:
+            return _fail(original, flight.reason)
     # spec-014:131 熔断：所有失败（timeout / 连接半死 / 模型输出损坏 / 4xx / 5xx）
-    # 一律写 ≥30s 负缓存。reranker 端口存活但 hang 时，若 timeout 不缓存，每次 KB
-    # 问答都会同步阻塞 60s 且无去重，可打满 FastAPI 线程池（影响面超出 KB 检索）。
-    # 成功路径清掉负缓存，禁用/0/1 候选零网络请求。
-    started, reason = now(), None
-    read = min(_positive(read_timeout, DEFAULT_READ_TIMEOUT), MAX_READ_TIMEOUT)
-    connect = min(_positive(connect_timeout, DEFAULT_CONNECT_TIMEOUT), MAX_CONNECT_TIMEOUT)
-    timeout = httpx.Timeout(read, connect=connect)
+    # 一律写 ≥30s 负缓存。成功路径清掉负缓存，禁用/0/1 候选零网络请求。
+    published: Optional[RerankReason] = "unexpected"
     try:
-        kwargs = {"timeout": timeout, "trust_env": False}
-        if transport is not None:
-            kwargs["transport"] = transport
-        with httpx.Client(**kwargs) as client:
-            response = client.post(f"{endpoint}/v1/rerank", json=payload)
-        if not response.is_success:
-            reason = "http_status"
-        else:
-            try:
-                data = response.json()
-            except (ValueError, UnicodeError):
-                reason = "invalid_json"
+        started, reason = now(), None
+        read = min(_positive(read_timeout, DEFAULT_READ_TIMEOUT), MAX_READ_TIMEOUT)
+        connect = min(_positive(connect_timeout, DEFAULT_CONNECT_TIMEOUT), MAX_CONNECT_TIMEOUT)
+        timeout = httpx.Timeout(read, connect=connect)
+        try:
+            kwargs = {"timeout": timeout, "trust_env": False}
+            if transport is not None:
+                kwargs["transport"] = transport
+            with httpx.Client(**kwargs) as client:
+                response = client.post(f"{endpoint}/v1/rerank", json=payload)
+            if not response.is_success:
+                reason = "http_status"
             else:
-                scores, reason = _scores(data, len(original))
-                if reason is None and scores is not None:
-                    order = sorted(range(len(original)), key=lambda i: (-scores[i], i))
-                    with _lock:
-                        _cache.pop(key, None)
-                    return RerankResult([original[i] for i in order], True, False, None,
-                                        (now() - started) * 1000.0, tuple(scores))
-    except httpx.ConnectTimeout:
-        # SYN 黑洞 / 防火墙 DROP 表现为连接超时，属持续性不可达，必须 30s 熔断。
-        reason = "connection"
-    except httpx.TimeoutException:
-        reason = "timeout"
-    except httpx.ConnectError:
-        reason = "connection"
-    except httpx.HTTPError:
-        # ReadError / RemoteProtocolError 等：与 retrieve._health_probe 归类一致。
-        reason = "connection"
-    except Exception:
-        reason = "unexpected"
-    elapsed, reason = (now() - started) * 1000.0, reason or "unexpected"
-    _remember(key, reason, now(), _positive(negative_ttl, MIN_NEGATIVE_TTL))
-    return _fail(original, reason, elapsed)
+                try:
+                    data = response.json()
+                except (ValueError, UnicodeError):
+                    reason = "invalid_json"
+                else:
+                    scores, reason = _scores(data, len(original))
+                    if reason is None and scores is not None:
+                        order = sorted(range(len(original)), key=lambda i: (-scores[i], i))
+                        with _lock:
+                            _cache.pop(key, None)
+                        published = None
+                        return RerankResult([original[i] for i in order], True, False, None,
+                                            (now() - started) * 1000.0, tuple(scores))
+        except httpx.ConnectTimeout:
+            # SYN 黑洞 / 防火墙 DROP 表现为连接超时，属持续性不可达，必须 30s 熔断。
+            reason = "connection"
+        except httpx.TimeoutException:
+            reason = "timeout"
+        except httpx.ConnectError:
+            reason = "connection"
+        except httpx.HTTPError:
+            # ReadError / RemoteProtocolError 等：与 retrieve._health_probe 归类一致。
+            reason = "connection"
+        except Exception:
+            reason = "unexpected"
+        elapsed, reason = (now() - started) * 1000.0, reason or "unexpected"
+        published = reason
+        _remember(key, reason, now(), _positive(negative_ttl, MIN_NEGATIVE_TTL))
+        return _fail(original, reason, elapsed)
+    finally:
+        if leader:
+            _finish_flight(key, flight, published)
