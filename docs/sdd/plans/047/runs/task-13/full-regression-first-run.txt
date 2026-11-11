@@ -1,0 +1,246 @@
+........................................................................ [  1%]
+.....ss................................................................. [  3%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+.....................................................................F.. [ 13%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+..................................................... [ 27%]
+.................................................................. [ 29%]
+.................................................................... [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+..................................F..................................... [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 49%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+................................................................... [ 54%]
+................................................................. [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+................................................................... [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+..................................................................... [ 92%]
+........................................................... [ 93%]
+................................................................... [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 98%]
+........................................................                 [100%]
+=================================== FAILURES ===================================
+____________ test_synthetic_svg_supports_sparse_graph_interactions _____________
+
+tmp_path = PosixPath('/private/var/folders/hf/sw8ft8g933qc4jbn7htmq_gc0000gn/T/pytest-of-wjh/pytest-65/test_synthetic_svg_supports_sp0')
+
+    def test_synthetic_svg_supports_sparse_graph_interactions(tmp_path: Path) -> None:
+        """Use a real browser to record baseline and representative-load facts."""
+    
+        from playwright.sync_api import sync_playwright
+    
+        with sync_playwright() as playwright:
+            browser = _open_browser_or_skip(playwright)
+            artifact_root = ARTIFACTS if os.environ.get("LITMAP_SAVE_FEASIBILITY_ARTIFACTS") == "1" else tmp_path
+            screenshot_root = artifact_root / "screenshots"
+            screenshot_paths = {
+                "baseline": screenshot_root / SCREENSHOT.name,
+                "high": screenshot_root / HIGH_SCREENSHOT.name,
+            }
+            records = {}
+            for profile in ("baseline", "high"):
+                page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+                _load_profile(page, profile)
+>               records[profile] = _exercise_interactions(page, profile)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/frontend/test_frontend_map_feasibility.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <Page url='file:///Users/wjh/ResearchAgent/tests/frontend/fixtures/literature_map_performance.html?profile=high'>
+profile = 'high'
+
+    def _exercise_interactions(page, profile: str) -> dict:
+        initial = _read_graph(page)
+        assert initial["nodeCount"] == 200
+        if profile == "high":
+            assert initial["edgeCount"] == 620
+            assert initial["citationEdges"] >= 300
+            assert initial["similarityEdges"] >= 300
+        else:
+            assert initial["edgeCount"] == 34
+            assert initial["edgeCount"] < initial["nodeCount"]
+        assert initial["citationEdges"] > 0
+        assert initial["similarityEdges"] > 0
+        assert 0 < initial["labelCount"] <= 10
+        assert initial["metrics"]["layoutIterations"] == 8
+        assert initial["metrics"]["layoutRafCount"] <= 8
+        assert initial["metrics"]["longTaskSupported"] is True
+    
+        initial_view = page.evaluate("window.__mapMetrics.snapshot()")
+        page.get_by_role("button", name="放大").click()
+        page.wait_for_timeout(50)
+        after_zoom = page.evaluate("window.__mapMetrics.snapshot()")
+        assert after_zoom["zoom"] > initial_view["zoom"]
+        assert after_zoom["layoutIterations"] == initial_view["layoutIterations"]
+    
+        svg = page.locator("#literature-map")
+        box = svg.bounding_box()
+        assert box is not None
+        page.mouse.move(box["x"] + 18, box["y"] + 18)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 74, box["y"] + 48, steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(50)
+        after_pan = page.evaluate("window.__mapMetrics.snapshot()")
+        assert after_pan["panX"] != 0 or after_pan["panY"] != 0
+    
+        node = page.locator('[data-node-id="node-17"]')
+        node_box = node.bounding_box()
+        assert node_box is not None
+        before_position = page.evaluate(
+            """() => {
+                const node = document.querySelector('[data-node-id="node-17"]');
+                return {x: Number(node.getAttribute('cx')), y: Number(node.getAttribute('cy'))};
+            }"""
+        )
+        page.mouse.move(node_box["x"] + node_box["width"] / 2, node_box["y"] + node_box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(node_box["x"] + 34, node_box["y"] + 26, steps=6)
+        page.mouse.up()
+        page.wait_for_timeout(50)
+        after_position = page.evaluate(
+            """() => {
+                const node = document.querySelector('[data-node-id="node-17"]');
+                return {x: Number(node.getAttribute('cx')), y: Number(node.getAttribute('cy'))};
+            }"""
+        )
+        assert after_position != before_position
+        page.locator('[data-node-id="node-17"]').click()
+        page.wait_for_function(
+            "document.querySelector('[data-node-id=\"node-17\"]').getAttribute('data-selected') === 'true'"
+        )
+    
+        # Prove the measurement reset removes prior-window observations. The busy
+        # loop is deliberately outside the measured gesture so this is a real
+        # PerformanceObserver entry, not a synthetic array write.
+        before_reset = page.evaluate("window.__mapMetrics.snapshot()")
+        assert before_reset["interactionCount"] > 0, before_reset
+        page.evaluate(
+            """() => new Promise((resolve) => {
+                setTimeout(() => {
+                    const deadline = performance.now() + 60;
+                    while (performance.now() < deadline) {}
+                    resolve();
+                }, 0);
+            })"""
+        )
+        page.wait_for_timeout(100)
+        before_reset = page.evaluate("window.__mapMetrics.snapshot()")
+        assert before_reset["longTaskCount"] >= 1, before_reset
+        page.evaluate("window.__mapMetrics.resetInteractionDurations()")
+        after_reset = page.evaluate("window.__mapMetrics.snapshot()")
+        assert after_reset["interactionCount"] == 0, after_reset
+        assert after_reset["longTaskCount"] == 0, after_reset
+    
+        # Exercise a burst of view updates and keep event, frame, and gesture wall
+        # time as separate observations.
+        page.mouse.move(box["x"] + 210, box["y"] + 140)
+        page.mouse.down()
+        for offset in range(12, 92, 8):
+            page.mouse.move(box["x"] + offset, box["y"] + offset // 2)
+        page.mouse.up()
+        page.wait_for_timeout(150)
+        final = page.evaluate("window.__mapMetrics.snapshot()")
+        assert final["layoutIterations"] == initial_view["layoutIterations"]
+        assert final["maxInteractionDurationMs"] < 50
+        assert final["maxFrameDurationMs"] < 50
+        assert final["maxLayoutFrameDurationMs"] < 50
+        # The scripted gesture intentionally emits many pointer events; its wall
+        # duration includes the input sequence itself.  A one-second ceiling catches
+        # a stuck interaction without confusing it with per-frame responsiveness.
+>       assert final["maxGestureWallMs"] < 1000, final
+E       AssertionError: {'zoom': 1.2, 'panX': -59.32203389830508, 'panY': -57.62711864406779, 'profile': 'high', ...}
+E       assert 1177.8999999985099 < 1000
+
+tests/frontend/test_frontend_map_feasibility.py:200: AssertionError
+________ test_ccs_audit_records_bounded_no_go_for_every_requested_year _________
+
+    def test_ccs_audit_records_bounded_no_go_for_every_requested_year():
+>       audit = AUDIT.read_text(encoding="utf-8")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/paper_discovery/test_ccs_catalog_coverage.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1058: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/wjh/ResearchAgent/artifacts/task-07/ccs-coverage.md')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/wjh/ResearchAgent/artifacts/task-07/ccs-coverage.md'
+
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1044: FileNotFoundError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/frontend/test_frontend_map_feasibility.py::test_synthetic_svg_supports_sparse_graph_interactions
+FAILED tests/paper_discovery/test_ccs_catalog_coverage.py::test_ccs_audit_records_bounded_no_go_for_every_requested_year
+2 failed, 4305 passed, 2 skipped, 5 warnings, 67 subtests passed in 1308.88s (0:21:48)
+Transient error HTTPConnectionPool(host='127.0.0.1', port=3000): Max retries exceeded with url: /api/public/otel/v1/traces (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=3000): Failed to establish a new connection: [Errno 61] Connection refused")) encountered while exporting span batch, retrying in 1.06s.
+Transient error HTTPConnectionPool(host='127.0.0.1', port=3000): Max retries exceeded with url: /api/public/otel/v1/traces (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=3000): Failed to establish a new connection: [Errno 61] Connection refused")) encountered while exporting span batch, retrying in 2.28s.
+Failed to export span batch due to timeout, max retries or shutdown.
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

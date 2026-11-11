@@ -1,0 +1,81 @@
+{
+  "spec": "047",
+  "scope": "追加范围二：评测指标体系细化（22 指标 / 5 分组）",
+  "generated_at": "2026-11-10",
+  "tool": "playwright-cli（真实 Chromium，非 node harness / 非 mock）",
+  "url": "http://127.0.0.1:8000/#evaluation-view",
+  "service": {
+    "health_http_status": 200,
+    "start_command": "RERANKER_ENABLED=false ./deploy/start.sh -d",
+    "pid_at_verification": 34342,
+    "port": 8000
+  },
+  "steps": [
+    {
+      "step": 1,
+      "action": "打开 #evaluation-view，抓取初始快照",
+      "result": "导航「▦ 评测」可见；三个下拉与「开始评分」按钮可见；状态提示「选项已加载：请选择策略、模型与评测集后点击「开始评分」」",
+      "artifact": "eval-initial.yaml"
+    },
+    {
+      "step": 2,
+      "action": "三选一：baseline + qwen3.5:9b + intent-classification，点击「开始评分」",
+      "result": "真实 POST /api/evaluation/score 返回 200；状态提示「评分完成：eval-eaa43839bd3f4eceaa891c1d7dbde196」",
+      "browser_run_id": "eval-eaa43839bd3f4eceaa891c1d7dbde196",
+      "artifact": "eval-scored.yaml"
+    },
+    {
+      "step": 3,
+      "action": "断言分维度分数区",
+      "result": "22 张指标卡、5 个分组标题（检索质量 / 意图识别 / 回答质量 / 生成可用性 / 安全）；意图识别组 3 项 computed（1.0000 / 1.0000 / 0.0000），其余组如实显示「缺少标注（needs_ground_truth）」+ 原因；无 [object Object]；评测段 innerHTML 计数 0",
+      "assertions": {
+        "card_count": 22,
+        "group_count": 5,
+        "group_titles": ["检索质量", "意图识别", "回答质量", "生成可用性", "安全"],
+        "object_object_present": false,
+        "innerHTML_nodes": 0,
+        "computed_values_on_intent_run": ["1.0000", "1.0000", "0.0000"]
+      }
+    },
+    {
+      "step": 4,
+      "action": "从「运行历史」回看 chat-quality run eval-1cae839cd91a412ea647b5c8e3eb829d",
+      "result": "回答质量 / 生成 / 安全组 11 项真实分数可见：回答切题度 0.5000、简洁度 1.0000、有用性 0.5000、有据性 0.0000、无幻觉比例 1.0000、字面完全一致率 0.0000、编辑相似度 0.0662、生成成功率 1.0000、平均字符数 281.5000、无有害内容 1.0000、无个人信息泄漏 1.0000；memory_correctness 与检索/意图组如实 needs_ground_truth + reason",
+      "assertion": "回答质量组不再只有 2 个维度，11 项真实出分在界面可见"
+    },
+    {
+      "step": 5,
+      "action": "「两次对比」选 A=eval-01420acf62aa40bf9ad035c9fc35a251（baseline/rag）、B=eval-5fdf023e2fa446c5aeb0021754de2f07（topk-10/rag），点击「对比」",
+      "result": "按组渲染 delta：召回率@k +0.5000、准确率@k +0.0000、MRR@k +0.0833、命中率@k +0.5000、nDCG@k +0.1781、检索片段相关性 -0.5000；其余 16 项无可比数值显示「—」，不伪造 0；无 [object Object]",
+      "delta_lines": [
+        "召回率@k：delta +0.5000",
+        "准确率@k：delta +0.0000",
+        "MRR@k：delta +0.0833",
+        "命中率@k：delta +0.5000",
+        "nDCG@k（二值相关性）：delta +0.1781",
+        "检索片段相关性：delta -0.5000"
+      ]
+    },
+    {
+      "step": 6,
+      "action": "截图与最终快照落盘",
+      "artifact": ["eval-scored.png", "eval-final.yaml"]
+    }
+  ],
+  "console": {
+    "errors": 4,
+    "detail": "4 个 /api/conversations/{id} 404，来自其它视图的历史会话列表，与评测台无关；上一轮追加范围一验收已记录同类现象，不据此判失败",
+    "warnings": 0
+  },
+  "known_non_blocking": [
+    "Langfuse :3000 未启动；本范围打分落点为本地 run 产物 + 界面，按 spec 不判失败",
+    "全仓 1 个与本次无关的 test_frontend_map_feasibility 手势性能阈值 wall-clock flaky（阈值 1000ms，实测 1013.70ms，间歇 PASS），如实记录、未擅自放宽"
+  ],
+  "artifacts": [
+    "docs/sdd/plans/047/runs/task-13/eval-initial.yaml",
+    "docs/sdd/plans/047/runs/task-13/eval-scored.yaml",
+    "docs/sdd/plans/047/runs/task-13/eval-final.yaml",
+    "docs/sdd/plans/047/runs/task-13/eval-scored.png",
+    "docs/sdd/plans/047/runs/task-13/evaluation-metrics-api-e2e.json"
+  ]
+}

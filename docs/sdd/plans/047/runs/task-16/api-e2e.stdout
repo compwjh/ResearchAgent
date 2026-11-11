@@ -1,0 +1,17 @@
+[01-health] GET /api/health -> HTTP 200 / 0.078s
+[02-options] GET /api/evaluation/options -> HTTP 200 / 0.008s
+DATASETS={'rag-retrieval': 128, 'intent-classification': 120, 'chat-quality': 120} STRATEGY_B=topk-10
+[03-score-chat-100-baseline] POST /api/evaluation/score -> HTTP 200 / 596.084s
+GO_NO_GO=GO computed=12/22
+[04-score-intent-100-baseline] POST /api/evaluation/score -> HTTP 200 / 0.043s
+[05-score-chat-100-second-strategy] POST /api/evaluation/score -> HTTP 200 / 467.302s
+[06-score-rag-20-baseline] POST /api/evaluation/score -> HTTP 200 / 54.953s
+[07-score-max-items-1] POST /api/evaluation/score -> HTTP 200 / 21.006s
+[08-compare-same-dataset] GET /api/evaluation/compare -> HTTP 200 / 0.007s
+[09-compare-cross-dataset-expect-409] GET /api/evaluation/compare -> HTTP 409 / 0.008s
+[10-runs-list] GET /api/evaluation/runs -> HTTP 200 / 0.012s
+[11-run-detail] GET /api/evaluation/runs/eval-009223dbf9f649f4bc3426376431e0b6 -> HTTP 200 / 0.006s
+[12-invalid-option-expect-404] POST /api/evaluation/score -> HTTP 404 / 0.004s
+[13-invalid-dataset-expect-4xx] POST /api/evaluation/score -> HTTP 400 / 0.005s
+SUMMARY={"base_url": "http://127.0.0.1:8000", "model": "qwen3.5:9b", "datasets": {"rag-retrieval": 128, "intent-classification": 120, "chat-quality": 120}, "strategy_b": "topk-10", "run_ids": {"a": "eval-009223dbf9f649f4bc3426376431e0b6", "b": "eval-3a66bad78d0c44c1914dfbff64e6f4e5"}, "record_count": 13, "checks": {"01_health_200": true, "02_options_200": true, "02_all_datasets_ge_100": true, "03_chat_100_200": true, "03_22_metrics": true, "03_go_no_go": true, "04_intent_100_200": true, "04_intent_group_computed": true, "05_second_chat_100_200": true, "06_rag_20_200": true, "06_rag_group_computed": true, "07_max_items_1_200": true, "08_compare_200": true, "09_cross_dataset_409": true, "10_runs_200": true, "11_run_detail_200": true, "12_invalid_option_404": true, "13_invalid_dataset_4xx": true}, "passed": 18, "total_checks": 18, "failed_checks": [], "go_no_go": "GO", "conclusion": "PASS"}
+WROTE /Users/wjh/ResearchAgent/docs/sdd/plans/047/runs/task-16/evaluation-samples-api-e2e.json

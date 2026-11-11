@@ -54,6 +54,8 @@ def test_report_writer_initializes_json_and_markdown_skeleton(tmp_path):
     assert document["errors"] == []
     assert set(document["summary"]) == SUMMARY_KEYS
     assert all(value == 0 for value in document["summary"].values())
+    # Spec-047 Task-04: 无 --gold 时走降级态。恒 null 不再是「无条件」事实，
+    # 由下方「反伪造护栏 + 有条件可计算」两组用例显式覆盖各降级条件。
     assert document["human_agree_rate"] is None
     assert document["constructed_gold_only"] is True
     assert "constructed gold" in document["constructed_gold_note"].lower()
@@ -157,7 +159,7 @@ def test_checkpoint_failure_keeps_previous_artifacts_and_cleans_temp_files(
     assert not list(tmp_path.glob(".report.md.*.tmp"))
 
 
-def test_human_agree_rate_is_always_null_and_constructed_gold_is_explicit(tmp_path):
+def test_untrusted_human_agreement_claims_are_stripped_to_safe_defaults(tmp_path):
     writer = ReportWriter(
         tmp_path,
         metadata={"human_agree_rate": 0.99, "constructed_gold_only": False},
@@ -361,3 +363,191 @@ def test_make_report_returns_safe_defaults_even_with_untrusted_metadata():
     assert report["human_agree_rate"] is None
     assert report["constructed_gold_only"] is True
     assert report["metadata"]["task"] == "memory_correctness"
+
+
+# ---------------------------------------------------------------------------
+# Spec-047 Task-04 (P2①): 人工 gold 一致率 —— 降级态 / 可计算态 / 反伪造护栏
+#
+# 说明：以下 gold 文件均为「测试内构造的临时夹具」，明确标注 TEST-FIXTURE，
+# 不是真实人工标注，仅用于验证「可导入 + 可计算」能力与反伪造护栏。
+# ---------------------------------------------------------------------------
+
+_TEST_GOLD_NOTE = (
+    "TEST-FIXTURE ONLY: synthetic labels generated inside pytest, "
+    "NOT real human annotation. Real agreement pending manual labeling."
+)
+
+
+def _gold_item(item_id, human_label="good", *, gold_source="human"):
+    return {
+        "item_id": item_id,
+        "human_label": human_label,
+        "annotator": "test-fixture",
+        "annotated_at": "2026-11-09T00:00:00+00:00",
+        "gold_source": gold_source,
+    }
+
+
+def _write_human_gold(path, items, *, schema_version="human-gold-v1"):
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "note": _TEST_GOLD_NOTE,
+                "items": items,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _scored_items(n=20, *, agree=15):
+    """n 条 scored report items：前 agree 条判官多数标签 good，其余 partial。"""
+    return [
+        {
+            "trace_id": f"trace-{i}",
+            "status": "scored",
+            "label": "good" if i < agree else "partial",
+            "score": 1.0,
+        }
+        for i in range(n)
+    ]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "no_gold",
+        "empty_items",
+        "below_n_min",
+        "non_human_source",
+        "payload_bearing_item",
+    ],
+)
+def test_human_agree_rate_stays_null_without_usable_human_gold(tmp_path, case):
+    """降级态：无 gold / 空 / 不足 20 / 非人工来源 / 脱敏违规 -> 恒 null + True。"""
+    gold_path = None
+    if case == "empty_items":
+        gold_path = _write_human_gold(tmp_path / "gold.json", [])
+    elif case == "below_n_min":
+        gold_path = _write_human_gold(
+            tmp_path / "gold.json",
+            [_gold_item(f"trace-{i}") for i in range(19)],
+        )
+    elif case == "non_human_source":
+        # 构造/合成 gold 不得冒充人工标注（spec-042:245）
+        gold_path = _write_human_gold(
+            tmp_path / "gold.json",
+            [_gold_item(f"trace-{i}", gold_source="constructed") for i in range(20)],
+        )
+    elif case == "payload_bearing_item":
+        # gold 文件含 prompt/input 原文 -> 条目被拒，且原文绝不落入 report
+        gold_path = _write_human_gold(
+            tmp_path / "gold.json",
+            [
+                {
+                    **_gold_item(f"trace-{i}"),
+                    "prompt": "SECRET SYSTEM PROMPT PAYLOAD",
+                    "input": "private question",
+                }
+                for i in range(20)
+            ],
+        )
+
+    output_dir = tmp_path / "out"
+    writer = ReportWriter(output_dir, gold_path=str(gold_path) if gold_path else None)
+    writer.checkpoint({**writer.document, "items": _scored_items()})
+
+    document, markdown = _load_artifacts(output_dir)
+
+    assert document["human_agree_rate"] is None
+    assert document["constructed_gold_only"] is True
+    assert "Human agreement: <code>not evaluated</code>" in markdown
+    assert "Constructed gold only: <code>True</code>" in markdown
+    serialized = json.dumps(document, ensure_ascii=False) + markdown
+    assert "SECRET SYSTEM PROMPT PAYLOAD" not in serialized
+    assert "private question" not in serialized
+
+
+def test_human_agree_rate_is_computable_with_valid_human_gold_fixture(tmp_path):
+    """可计算态：>=20 条合法脱敏人工 gold + join 成功 -> 算出一致率、可复算。"""
+    gold_path = _write_human_gold(
+        tmp_path / "gold.json",
+        [_gold_item(f"trace-{i}", "good") for i in range(20)],
+    )
+    output_dir = tmp_path / "out"
+    writer = ReportWriter(output_dir, gold_path=str(gold_path))
+    writer.checkpoint({**writer.document, "items": _scored_items(agree=15)})
+
+    document, markdown = _load_artifacts(output_dir)
+
+    assert document["human_agree_rate"] == 0.75  # round(15/20, 4)
+    assert document["constructed_gold_only"] is False
+    detail = document["human_agree_rate_detail"]
+    assert detail["n_agree"] == 15
+    assert detail["n_evaluated"] == 20
+    assert detail["n_min"] == 20
+    assert detail["gold_source"] == "human"
+    assert len(detail["gold_file_sha256"]) == 64
+    assert round(detail["n_agree"] / detail["n_evaluated"], 4) == document["human_agree_rate"]
+    assert "0.75" in markdown
+    assert "Constructed gold only: <code>False</code>" in markdown
+
+
+def test_default_report_shape_omits_optional_human_gold_keys(tmp_path):
+    """无 --gold 时 CLI 默认输出形状不变：不新增 detail / note 可选键。"""
+    ReportWriter(tmp_path)
+
+    document, _ = _load_artifacts(tmp_path)
+
+    assert document["human_agree_rate"] is None
+    assert document["constructed_gold_only"] is True
+    assert "human_agree_rate_detail" not in document
+    assert "human_agree_rate_note" not in document
+
+
+def test_load_human_gold_enforces_desensitized_schema(tmp_path):
+    """load_human_gold: 字段白名单 / gold_source 字面 / label 合法域 / item_id 非空。"""
+    from backend.eval_042.human_gold import load_human_gold
+
+    path = _write_human_gold(
+        tmp_path / "gold.json",
+        [
+            _gold_item("trace-0", "good"),
+            {**_gold_item("trace-1", "good"), "prompt": "SECRET", "input": "q"},
+            _gold_item("trace-2", "good", gold_source="synthetic"),
+            _gold_item("trace-3", "not_a_label"),
+            {**_gold_item("trace-4", "good"), "item_id": ""},
+        ],
+    )
+
+    items = load_human_gold(str(path))
+
+    assert [item["item_id"] for item in items] == ["trace-0"]
+    empty = _write_human_gold(tmp_path / "empty.json", [])
+    assert load_human_gold(str(empty)) == []
+
+
+def test_compute_human_agree_rate_formula_and_null_guards():
+    """compute_human_agree_rate: 分子/分母公式 + 分母 0 / N<20 / 无有效标注门禁。"""
+    from backend.eval_042.human_gold import (
+        MIN_HUMAN_GOLD_ITEMS,
+        compute_human_agree_rate,
+    )
+
+    assert MIN_HUMAN_GOLD_ITEMS == 20
+    report_items = _scored_items(agree=15)
+    gold_items = [_gold_item(f"trace-{i}", "good") for i in range(20)]
+
+    assert compute_human_agree_rate(report_items, gold_items) == 0.75
+    assert compute_human_agree_rate([], gold_items) is None  # 分母 0
+    assert compute_human_agree_rate(report_items, gold_items[:19]) is None  # N < 20
+    assert compute_human_agree_rate(
+        report_items,
+        [_gold_item(f"trace-{i}", "good", gold_source="constructed") for i in range(20)],
+    ) is None  # 无有效人工标注
+    assert compute_human_agree_rate(
+        [{**item, "status": "skipped"} for item in report_items], gold_items
+    ) is None  # 无 scored 条目

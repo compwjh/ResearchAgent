@@ -1,0 +1,96 @@
+{
+  "benchmark": "spec-047 追加范围三 真实 Chromium 浏览器 E2E（最终部署版本）",
+  "date": "2026-11-11",
+  "tool": "playwright-cli (Chromium)",
+  "entry_url": "http://127.0.0.1:8000/#evaluation-view",
+  "service": {
+    "pid": 50865,
+    "health": "GET /api/health -> 200",
+    "start_command": "RERANKER_ENABLED=false ./deploy/start.sh -d"
+  },
+  "live_assets": {
+    "app_js": "/assets/app.js?v=77",
+    "styles_css": "/assets/styles.css?v=73",
+    "legacy_markers_preserved": true,
+    "new_marker_is_attribute_only_fragment": true
+  },
+  "steps": [
+    {
+      "name": "① 入口与选项区",
+      "result": "PASS",
+      "evidence": "eval-initial.yaml / eval-compact.yaml；DOM eval 读取 #evaluation-dataset-select options",
+      "observed": [
+        "请选择评测集",
+        "RAG 检索召回（128 条样本）",
+        "意图识别分类（120 条样本）",
+        "回答质量（既有判官轨迹）（120 条样本）"
+      ],
+      "note": "三份集真实样本数均 ≥100，选项区直接可见（spec §8 ①）"
+    },
+    {
+      "name": "② 紧凑指标卡",
+      "result": "PASS",
+      "evidence": "浏览器 DOM getComputedStyle + eval-compact.yaml / eval-compact.png",
+      "observed": {
+        "metric_cards": 22,
+        "group_titles": ["检索质量", "意图识别", "回答质量", "生成可用性", "安全"],
+        "card_padding": "8px",
+        "card_gap": "5px",
+        "value_font_size": "18px"
+      }
+    },
+    {
+      "name": "③ 关键信息始终可见 / 反伪造",
+      "result": "PASS",
+      "evidence": "eval-compact.yaml；第一张卡 innerText 实测",
+      "observed": {
+        "first_card_text": "召回率@k\n\n—\n\n缺少标注（needs_ground_truth）\n\n样本数：0\n\n原因：该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标",
+        "null_rendered_as_dash": true,
+        "non_computed_card_visible": true,
+        "reason_visible_outside_details": true,
+        "object_object_present": false,
+        "script_tags_injected": 0
+      }
+    },
+    {
+      "name": "④ 参数折叠 / 点击展开",
+      "result": "PASS",
+      "evidence": "浏览器点击 <summary> 后 DOM 复查",
+      "observed": {
+        "details_elements": 3,
+        "details_open_before_click": 0,
+        "summary_text": "参数与明细",
+        "open_after_click": true,
+        "param_rows_after_expand": 7,
+        "example_params": ["detector", "registry", "prediction_sources"]
+      },
+      "note": "无参数的卡片不渲染空 <details>，符合任务卡 §3"
+    },
+    {
+      "name": "⑤ 两次对比按组 delta",
+      "result": "PASS",
+      "evidence": "eval-compare.yaml / eval-compare.png；选择两个 chat-quality run 后点击「对比」",
+      "observed": {
+        "run_a": "eval-009223dbf9f649f4bc3426376431e0b6",
+        "run_b": "eval-16eaa80954264138b46a40822980d61f",
+        "groups_visible": ["检索质量", "意图识别", "回答质量", "生成可用性", "安全"],
+        "delta_rows": 22,
+        "examples": ["召回率@k：delta —", "回答质量（判官均分）：delta +0.0000", "回答切题度：delta +0.0000", "无有害内容比例：delta +0.0000"],
+        "object_object_present": false
+      }
+    }
+  ],
+  "artifacts": [
+    "docs/sdd/plans/047/runs/task-16/eval-initial.yaml",
+    "docs/sdd/plans/047/runs/task-16/eval-compact.yaml",
+    "docs/sdd/plans/047/runs/task-16/eval-compact.png",
+    "docs/sdd/plans/047/runs/task-16/eval-compare.yaml",
+    "docs/sdd/plans/047/runs/task-16/eval-compare.png"
+  ],
+  "known_non_blocking": [
+    "浏览器控制台 4 个 404 来自 /api/conversations/{id}（其它视图历史会话资源），与评测视图无关",
+    "Langfuse :3000 未启动",
+    "修复后未单独复测 27B × 100 条；选该模型可能 EVAL_SCORE_TIMEOUT，按 spec §8 ⑤ 失败恢复"
+  ],
+  "conclusion": "PASS"
+}

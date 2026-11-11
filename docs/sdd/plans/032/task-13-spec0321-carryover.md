@@ -19,7 +19,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-13/carryover.md`，逐项说明原任务、实际状态、改动文件、命令/退出码、真实运行证据与 032.1 状态台账链接。主 Agent 已验证产品 Skill 与 IDE Skill 目录分工。执行结果：Task13 合同、会话/仓储/Skill 定向测试、脚本 Ruff/py_compile/不可达服务探针通过；Task08 真实检索→导入 smoke 已通过，Task10 已补齐真实连续会话中的 sticky 工具派发和失败闭环证据，成功导入仍需受控公开 PDF 样本。
+写 `artifacts/spec-032/task-13/carryover.md`，逐项说明原任务、实际状态、改动文件、命令/退出码、真实运行证据与 032.1 状态台账链接。主 Agent 已验证产品 Skill 与 IDE Skill 目录分工。执行结果：Task13 合同、会话/仓储/Skill 定向测试、脚本 Ruff/py_compile/不可达服务探针通过；Task08 真实检索→导入 smoke 已通过，Task10 已补齐真实连续会话中的 sticky 工具派发和失败闭环证据，成功导入仍需受控公开 PDF 样本。
 
 ### 2026-09-20 复核执行结果
 

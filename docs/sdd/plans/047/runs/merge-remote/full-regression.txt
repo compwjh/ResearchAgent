@@ -1,0 +1,230 @@
+........................................................................ [  1%]
+.....ss................................................................. [  3%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+...........................................F............................ [ 22%]
+......FFFF.............................................................. [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+..................................................................................................................... [ 31%]
+.................................................................... [ 32%]
+........................................................................ [ 34%]
+.......................F................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+.................................................................................................................................... [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+................................................................... [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+..................................................................... [ 92%]
+................................................................ [ 93%]
+.............................................................. [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+...........                                                              [100%]
+=================================== FAILURES ===================================
+_____________________ test_asset_versions_are_synchronised _____________________
+
+    def test_asset_versions_are_synchronised():
+        assert 'href="/assets/styles.css?v=75"' in INDEX, "改了 styles.css，生效引用须升到 ?v=75"
+        assert 'src="/assets/app.js?v=74"' in INDEX, "app.js 未改，保持 ?v=74 不无谓 bump"
+        assert 'href="/assets/styles.css?v=74"' not in INDEX, "旧生效引用 ?v=74 须已同步"
+        live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
+        live_app = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
+        assert live_css == ["75"], f"生效 styles.css 版本唯一且为 75：{live_css}"
+>       assert live_app == ["74"], f"生效 app.js 版本唯一且为 74：{live_app}"
+E       AssertionError: 生效 app.js 版本唯一且为 74：['77']
+E       assert ['77'] == ['74']
+E         
+E         At index 0 diff: '77' != '74'
+E         Use -v to get more diff
+
+tests/frontend/test_research_detail_actions_placement_contract.py:224: AssertionError
+________________ test_filter_state_and_pure_function_are_wired _________________
+
+    def test_filter_state_and_pure_function_are_wired() -> None:
+        for marker in (
+            "state.taskQuery",
+            "state.taskIdLookup",
+            "state.taskSearchCount",
+            "filterSessionsByQuery",
+            "taskQueryHaystack",
+            "normalizeTaskQuery",
+            "TASK_QUERY_MAX_LENGTH = 128",
+            "/^[0-9a-f]{32}$/",
+            "research_task_id",
+            "research_session_id",
+            "goal_excerpt",
+            "created_at",
+            ".includes(",
+            "renderTaskSearchCount",
+            "bindTaskSearch",
+            "${matched}/${total}",
+        ):
+>           assert marker in RESEARCH
+E           assert 'state.taskQuery' in '/* Spec034 Task09: Research Tab is a Session workspace; legacy task APIs remain\n * a read/debug compatibility seam o... probe for the "stay in research view" contract harness.\n    api.createTask = createTask;\n  }\n  return api;\n}));\n'
+
+tests/frontend/test_research_task_search.py:69: AssertionError
+___________________ test_debounce_and_race_guard_are_present ___________________
+
+    def test_debounce_and_race_guard_are_present() -> None:
+        assert "250" in RESEARCH
+        for marker in (
+            "taskSearchDebounceTimer",
+            "requestSeq",
+            "isCurrentLookupRequest",
+            "applyTaskIdLookupResult",
+            "startTaskIdLookup",
+        ):
+>           assert marker in RESEARCH
+E           assert 'taskSearchDebounceTimer' in '/* Spec034 Task09: Research Tab is a Session workspace; legacy task APIs remain\n * a read/debug compatibility seam o... probe for the "stay in research view" contract harness.\n    api.createTask = createTask;\n  }\n  return api;\n}));\n'
+
+tests/frontend/test_research_task_search.py:81: AssertionError
+______ test_direct_lookup_layer_distinguishes_404_network_and_keeps_list _______
+
+    def test_direct_lookup_layer_distinguishes_404_network_and_keeps_list() -> None:
+        for marker in (
+            "TASK_NOT_FOUND",
+            "未找到该任务",
+            "定位失败，请重试",
+            "正在按 ID 定位任务",
+            "已定位并选中历史任务",
+            "无匹配结果",
+            "research-task-search-retry",
+        ):
+>           assert marker in RESEARCH
+E           assert '未找到该任务' in '/* Spec034 Task09: Research Tab is a Session workspace; legacy task APIs remain\n * a read/debug compatibility seam o... probe for the "stay in research view" contract harness.\n    api.createTask = createTask;\n  }\n  return api;\n}));\n'
+
+tests/frontend/test_research_task_search.py:94: AssertionError
+___________________ test_card_shows_and_copies_full_task_id ____________________
+
+    def test_card_shows_and_copies_full_task_id() -> None:
+        for marker in (
+            "任务 ID：",
+            "复制任务 ID",
+            "dataset.copyTaskId",
+            "navigator?.clipboard",
+            "writeText",
+            "复制失败，请手动复制",
+            "createElement('button')",
+        ):
+>           assert marker in RESEARCH
+E           assert '任务 ID：' in '/* Spec034 Task09: Research Tab is a Session workspace; legacy task APIs remain\n * a read/debug compatibility seam o... probe for the "stay in research view" contract harness.\n    api.createTask = createTask;\n  }\n  return api;\n}));\n'
+
+tests/frontend/test_research_task_search.py:116: AssertionError
+____ test_inventory_hashes_are_stable_and_write_entrypoints_are_registered _____
+
+    def test_inventory_hashes_are_stable_and_write_entrypoints_are_registered():
+        matrix = json.loads(MATRIX.read_text(encoding="utf-8"))
+        registered = set()
+        for entry in matrix["entries"]:
+            route = entry["route_or_symbol"]
+            registered.update(symbol for _module, symbol in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)", route))
+        # The matrix is intentionally the registry for write-capable symbols; this
+        # allowlist covers read-only or compatibility helpers in frozen modules.
+        allowed = {
+            "_document_error", "_document_summary", "_normalized_upload_content_type", "_decode_cursor", "_encode_cursor", "_encode_inspection_cursor",
+            "_decode_inspection_cursor", "_canonical_document", "_generation_store", "_require_generation",
+            "list_documents", "upload_document", "_read_document_source_response", "read_document_source_route",
+            "head_document_source_route", "inspect_document", "reindex_document_route", "delete_document_route",
+            "kb_component_status", "kb_health", "list_kb_papers", "kb_ask", "generate", "lifespan", "index",
+            "handle_request_validation_error", "_fsync_directory", "_write_source_exclusive", "_snapshot_value",
+            "_identity_parts", "_same_identity", "_port_status", "_index_succeeded", "_index_error_detail", "_call_supported",
+            # Pure index-state helpers: field normalization/checking only; no IO,
+            # metadata writes, manifest writes, or generation-marker publication.
+            "_normalize_index_error", "_canonical_index_record",
+            # Read-only point snapshot verification; it queries the target but
+            # never mutates Qdrant, metadata, manifests, or generation markers.
+            "_verify_index_snapshot",
+            "create_paper_import_port", "create_source_reader", "read_document_source", "create_manifest_store",
+            "record_id", "default_chunkers", "default_chunker_state", "ensure_dirs", "load_papers", "load_papers_strict",
+            "get_paper", "resolve_paper_path", "copy_source_exclusive", "new_record", "ensure_chunkers", "get_chunker_state",
+            "update_chunker_state", "point_id", "count_points", "get_client", "reset_client", "ensure_collection",
+            "upsert_chunks", "_report", "_parser", "main", "__init__", "to_dict", "_safe_browser_error_message",
+            "_safe_import_error_message", "_paper_import_error_response", "_paper_import_result_payload", "_paper_batch_error_response",
+            "_paper_batch_payload", "_paper_batch_status_payload", "_paper_search_expired", "_paper_server_snapshot", "_paper_snapshot_for_item",
+                "safe_import_error_message", "safe_import_error_code", "_import_lifecycle_boundary", "create_uploaded_document", "_capture_import_generation",
+                "submit_document_reindex", "delete_document", "_default_deleter", "delete_paper_conference",
+            "create_paper_import_batch", "get_paper_import_batch", "list_paper_import_batches", "iter_failed_chunkers",
+            "is_chunker_auto_requeued", "_save_associations",
+        }
+        frozen_items = list(matrix["inventory_files"])
+        frozen = {item["path"] for item in frozen_items}
+        actual_hashes = {}
+        for item in frozen_items:
+            path = ROOT / item["path"]
+            assert path.is_file(), item["path"]
+            actual_hashes[item["path"]] = hashlib.sha256(path.read_bytes()).hexdigest()
+>           assert actual_hashes[item["path"]] == item["sha256"], item["path"]
+E           AssertionError: backend/app/main.py
+E           assert 'cfeea4e5f6b3...18e7d73aa4c17' == '85c9beb1976a...4d0d9b55f6dfd'
+E             
+E             - 85c9beb1976a131ca43ce782b5e88029924be2479cc77316c5b4d0d9b55f6dfd
+E             + cfeea4e5f6b3ae8f71afce59bd27af2fa5babdb795d5259300218e7d73aa4c17
+
+tests/kb/test_kb_upload_closure_matrix.py:84: AssertionError
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/frontend/test_research_detail_actions_placement_contract.py::test_asset_versions_are_synchronised
+FAILED tests/frontend/test_research_task_search.py::test_filter_state_and_pure_function_are_wired
+FAILED tests/frontend/test_research_task_search.py::test_debounce_and_race_guard_are_present
+FAILED tests/frontend/test_research_task_search.py::test_direct_lookup_layer_distinguishes_404_network_and_keeps_list
+FAILED tests/frontend/test_research_task_search.py::test_card_shows_and_copies_full_task_id
+FAILED tests/kb/test_kb_upload_closure_matrix.py::test_inventory_hashes_are_stable_and_write_entrypoints_are_registered
+6 failed, 4542 passed, 2 skipped, 5 warnings, 69 subtests passed in 703.88s (0:11:43)
+Transient error HTTPConnectionPool(host='127.0.0.1', port=3000): Max retries exceeded with url: /api/public/otel/v1/traces (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=3000): Failed to establish a new connection: [Errno 61] Connection refused")) encountered while exporting span batch, retrying in 1.08s.
+Transient error HTTPConnectionPool(host='127.0.0.1', port=3000): Max retries exceeded with url: /api/public/otel/v1/traces (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=3000): Failed to establish a new connection: [Errno 61] Connection refused")) encountered while exporting span batch, retrying in 1.95s.
+Failed to export span batch due to timeout, max retries or shutdown.
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+PYTEST_EXIT=1

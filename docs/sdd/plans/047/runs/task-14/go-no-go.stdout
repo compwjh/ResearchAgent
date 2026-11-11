@@ -1,0 +1,10 @@
+POST /api/evaluation/score body={"strategy_id": "baseline", "model": "qwen3.8:27b-q4_K_M", "dataset_id": "chat-quality", "max_items": 100}
+HTTP 504 run_id=None elapsed=900.016s computed=0/0
+VERDICT: NO_GO
+  - HTTP status 504 != 200
+  - run_id 为空
+  - metrics 只有 0 项，应为 22
+  - 总耗时 900.016s > 硬判据 900s
+  - 没有任何 computed 维度，疑似靠 degraded 收场
+WROTE docs/sdd/plans/047/runs/task-14/go-no-go.json
+WROTE docs/sdd/plans/047/runs/task-14/go-no-go.log

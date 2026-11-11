@@ -24,7 +24,7 @@
 
 ## 交接与产出
 
-每源单独写 `artifacts/task-07/<source>-coverage.md`，附页面、字段统计、真实/模拟区分、命令/退出码、改动文件及未通过年份。主 Agent 汇总成 `coverage-matrix.md` 后决定 Task08 可启用范围。执行结果：首轮部分完成；IEEE S&P 2024、NDSS 2024 官方目录固定样本通过；CCS 2021–2025 已完成 bounded NO-GO 审计，未验证年份不得宣称覆盖。
+每源单独写 `artifacts/spec-032/task-07/<source>-coverage.md`，附页面、字段统计、真实/模拟区分、命令/退出码、改动文件及未通过年份。主 Agent 汇总成 `coverage-matrix.md` 后决定 Task08 可启用范围。执行结果：首轮部分完成；IEEE S&P 2024、NDSS 2024 官方目录固定样本通过；CCS 2021–2025 已完成 bounded NO-GO 审计，未验证年份不得宣称覆盖。
 
 ## 变更日志
 
@@ -34,4 +34,4 @@
 - 2026-09-20：承接原 Task04 已有会议代码，补足其未实现的官网优先和覆盖证明。
 - 2026-09-20：Luna high 子 Agent 完成 IEEE S&P 2024 官方 HTML 路由、固定样本、字段缺失告警和 PDF 响应拒绝；主 Agent 复跑 76 个定向测试，ruff、compileall、git diff --check 通过。Task08 仅可启用已验证的 IEEE 2024，其余来源继续按 NO-GO 处理。
 - 2026-09-20：Luna high 子 Agent 补齐 NDSS 2024 官方 accepted-papers HTML 路由、固定样本、字段缺失告警和 PDF 响应拒绝；仅验证 2024 固定样本子集，2021–2023、2025 仍未验证。CCS 官方节目页仍因 JavaScript/入口身份无法在受控样本中可靠隔离，保持 NO-GO。
-- 2026-09-20：Luna high 子 Agent 完成 CCS 2021–2025 官方入口审计：2021/2022/2024 可读但缺统一 DOI/详情身份键，2023 程序页显示动态数据库失败，2025 accepted 页要求 JavaScript 且列表为空；未新增 parser/source/fixture，更新 `artifacts/task-07/ccs-coverage.md` 为 bounded NO-GO，并保留 Crossref/OpenAlex fallback。
+- 2026-09-20：Luna high 子 Agent 完成 CCS 2021–2025 官方入口审计：2021/2022/2024 可读但缺统一 DOI/详情身份键，2023 程序页显示动态数据库失败，2025 accepted 页要求 JavaScript 且列表为空；未新增 parser/source/fixture，更新 `artifacts/spec-032/task-07/ccs-coverage.md` 为 bounded NO-GO，并保留 Crossref/OpenAlex fallback。

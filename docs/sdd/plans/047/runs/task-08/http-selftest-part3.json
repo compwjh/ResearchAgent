@@ -1,0 +1,554 @@
+{
+  "score_rerank_on": {
+    "status": 200,
+    "elapsed": 0.04,
+    "payload": {
+      "run_id": "eval-d54f3aec2973437fa8868cf995360abc",
+      "metrics": [
+        {
+          "key": "recall@k",
+          "label": "召回率@k",
+          "value": null,
+          "status": "degraded",
+          "sample_count": 0,
+          "detail": {
+            "strategy_id": "rerank-on",
+            "reranker_requested": true,
+            "reranker_available": false,
+            "reranker_config_enabled": true,
+            "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=True, reason=connection）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+          }
+        },
+        {
+          "key": "precision@k",
+          "label": "准确率@k",
+          "value": null,
+          "status": "degraded",
+          "sample_count": 0,
+          "detail": {
+            "strategy_id": "rerank-on",
+            "reranker_requested": true,
+            "reranker_available": false,
+            "reranker_config_enabled": true,
+            "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=True, reason=connection）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+          }
+        },
+        {
+          "key": "mrr@k",
+          "label": "MRR@k",
+          "value": null,
+          "status": "degraded",
+          "sample_count": 0,
+          "detail": {
+            "strategy_id": "rerank-on",
+            "reranker_requested": true,
+            "reranker_available": false,
+            "reranker_config_enabled": true,
+            "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=True, reason=connection）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+          }
+        },
+        {
+          "key": "intent_accuracy",
+          "label": "意图识别准确率",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+          }
+        },
+        {
+          "key": "chat_quality",
+          "label": "回答质量（判官均分）",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+          }
+        },
+        {
+          "key": "memory_correctness",
+          "label": "记忆正确性（判官均分）",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+          }
+        }
+      ],
+      "strategy": {
+        "id": "rerank-on",
+        "label": "启用重排（v1 / top_k=5 / reranker=on）",
+        "chunker": "v1",
+        "top_k": 5,
+        "reranker": "on"
+      },
+      "model": "qwen3.5:9b",
+      "dataset": "rag-retrieval",
+      "created_at": "2026-11-09T18:23:17.114919Z",
+      "judge_model": "qwen3.5:9b"
+    }
+  },
+  "score_chunker_v2": {
+    "status": 200,
+    "elapsed": 0.0,
+    "payload": {
+      "run_id": "eval-3e0ded6d8bb64a9582bd72610860599d",
+      "metrics": [
+        {
+          "key": "recall@k",
+          "label": "召回率@k",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "chunker": "v2",
+            "reason": "内置 RAG 标注集只登记 v1 切分身份；v2 切分没有对应真值，跨切分版本不可比，不编造数值"
+          }
+        },
+        {
+          "key": "precision@k",
+          "label": "准确率@k",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "chunker": "v2",
+            "reason": "内置 RAG 标注集只登记 v1 切分身份；v2 切分没有对应真值，跨切分版本不可比，不编造数值"
+          }
+        },
+        {
+          "key": "mrr@k",
+          "label": "MRR@k",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "chunker": "v2",
+            "reason": "内置 RAG 标注集只登记 v1 切分身份；v2 切分没有对应真值，跨切分版本不可比，不编造数值"
+          }
+        },
+        {
+          "key": "intent_accuracy",
+          "label": "意图识别准确率",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+          }
+        },
+        {
+          "key": "chat_quality",
+          "label": "回答质量（判官均分）",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+          }
+        },
+        {
+          "key": "memory_correctness",
+          "label": "记忆正确性（判官均分）",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+          }
+        }
+      ],
+      "strategy": {
+        "id": "chunker-v2",
+        "label": "切分 v2（top_k=5 / reranker=off）",
+        "chunker": "v2",
+        "top_k": 5,
+        "reranker": "off"
+      },
+      "model": "qwen3.5:9b",
+      "dataset": "rag-retrieval",
+      "created_at": "2026-11-09T18:23:17.117360Z",
+      "judge_model": "qwen3.5:9b"
+    }
+  },
+  "err_unknown_strategy": {
+    "status": 404,
+    "payload": {
+      "error_code": "EVAL_OPTION_NOT_FOUND",
+      "message": "评测选项不存在",
+      "retryable": false,
+      "request_id": "dd38f66be3944bb7968b1b59c9232d09",
+      "error": {
+        "code": "EVAL_OPTION_NOT_FOUND",
+        "message": "评测选项不存在"
+      }
+    }
+  },
+  "err_unknown_model": {
+    "status": 404,
+    "payload": {
+      "error_code": "EVAL_OPTION_NOT_FOUND",
+      "message": "评测选项不存在",
+      "retryable": false,
+      "request_id": "14da60d95d9448bda5e7be3928b62bfa",
+      "error": {
+        "code": "EVAL_OPTION_NOT_FOUND",
+        "message": "评测选项不存在"
+      }
+    }
+  },
+  "err_unknown_dataset": {
+    "status": 400,
+    "payload": {
+      "error_code": "EVAL_DATASET_INVALID",
+      "message": "评测集或运行标识无效",
+      "retryable": false,
+      "request_id": "28a28885a53e4f6e9a3fe2aba3394c35",
+      "error": {
+        "code": "EVAL_DATASET_INVALID",
+        "message": "评测集或运行标识无效"
+      }
+    }
+  },
+  "err_traversal_dataset": {
+    "status": 400,
+    "payload": {
+      "error_code": "EVAL_DATASET_INVALID",
+      "message": "评测集或运行标识无效",
+      "retryable": false,
+      "request_id": "4acf4f42fcf94cf9b0b986a3f2d94469",
+      "error": {
+        "code": "EVAL_DATASET_INVALID",
+        "message": "评测集或运行标识无效"
+      }
+    }
+  },
+  "err_empty_option": {
+    "status": 404,
+    "payload": {
+      "error_code": "EVAL_OPTION_NOT_FOUND",
+      "message": "评测选项不存在",
+      "retryable": false,
+      "request_id": "cc50f0dbbe2746b597e8334f69303642",
+      "error": {
+        "code": "EVAL_OPTION_NOT_FOUND",
+        "message": "评测选项不存在"
+      }
+    }
+  },
+  "runs": {
+    "status": 200,
+    "payload": {
+      "runs": [
+        {
+          "run_id": "eval-3e0ded6d8bb64a9582bd72610860599d",
+          "strategy": {
+            "id": "chunker-v2",
+            "label": "切分 v2（top_k=5 / reranker=off）",
+            "chunker": "v2",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "judge_model": "qwen3.5:9b",
+          "created_at": "2026-11-09T18:23:17.117360Z"
+        },
+        {
+          "run_id": "eval-d54f3aec2973437fa8868cf995360abc",
+          "strategy": {
+            "id": "rerank-on",
+            "label": "启用重排（v1 / top_k=5 / reranker=on）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "on"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "judge_model": "qwen3.5:9b",
+          "created_at": "2026-11-09T18:23:17.114919Z"
+        },
+        {
+          "run_id": "eval-71356d31f1ed4ba3b9eebd5003461277",
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "chat-quality",
+          "judge_model": "qwen3.5:9b",
+          "created_at": "2026-11-09T18:23:05.850868Z"
+        },
+        {
+          "run_id": "eval-f89b5aa12e6549f58fe5309d17285f64",
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "intent-classification",
+          "judge_model": "qwen3.5:9b",
+          "created_at": "2026-11-09T18:22:30.847506Z"
+        },
+        {
+          "run_id": "eval-fc99c427d5d840e485ea51131d4dbdeb",
+          "strategy": {
+            "id": "topk-10",
+            "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 10,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "judge_model": "qwen3.5:9b",
+          "created_at": "2026-11-09T18:22:30.840299Z"
+        },
+        {
+          "run_id": "eval-37e5d6d4636544f7962a1d1597f4e764",
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "judge_model": "qwen3.5:9b",
+          "created_at": "2026-11-09T18:22:22.715183Z"
+        }
+      ]
+    }
+  },
+  "run_detail": {
+    "status": 200,
+    "payload": {
+      "run_id": "eval-37e5d6d4636544f7962a1d1597f4e764",
+      "metrics": [
+        {
+          "key": "recall@k",
+          "label": "召回率@k",
+          "value": 0.5,
+          "status": "computed",
+          "sample_count": 8,
+          "detail": {
+            "k": 5,
+            "chunker": "v1",
+            "reranker": "off",
+            "strategy_id": "baseline",
+            "identity": "paper_id,chunker,chunk_index",
+            "effective_max_items": 8,
+            "matched_items": 4,
+            "first_relevant_ranks": [
+              1,
+              null,
+              null,
+              3,
+              null,
+              4,
+              null,
+              2
+            ],
+            "effective_k": 5
+          }
+        },
+        {
+          "key": "precision@k",
+          "label": "准确率@k",
+          "value": 0.1,
+          "status": "computed",
+          "sample_count": 8,
+          "detail": {
+            "k": 5,
+            "chunker": "v1",
+            "reranker": "off",
+            "strategy_id": "baseline",
+            "identity": "paper_id,chunker,chunk_index",
+            "effective_max_items": 8,
+            "matched_items": 4,
+            "first_relevant_ranks": [
+              1,
+              null,
+              null,
+              3,
+              null,
+              4,
+              null,
+              2
+            ],
+            "effective_k": 5
+          }
+        },
+        {
+          "key": "mrr@k",
+          "label": "MRR@k",
+          "value": 0.26041666666666663,
+          "status": "computed",
+          "sample_count": 8,
+          "detail": {
+            "k": 5,
+            "chunker": "v1",
+            "reranker": "off",
+            "strategy_id": "baseline",
+            "identity": "paper_id,chunker,chunk_index",
+            "effective_max_items": 8,
+            "matched_items": 4,
+            "first_relevant_ranks": [
+              1,
+              null,
+              null,
+              3,
+              null,
+              4,
+              null,
+              2
+            ],
+            "effective_k": 5
+          }
+        },
+        {
+          "key": "intent_accuracy",
+          "label": "意图识别准确率",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+          }
+        },
+        {
+          "key": "chat_quality",
+          "label": "回答质量（判官均分）",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+          }
+        },
+        {
+          "key": "memory_correctness",
+          "label": "记忆正确性（判官均分）",
+          "value": null,
+          "status": "needs_ground_truth",
+          "sample_count": 0,
+          "detail": {
+            "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+          }
+        }
+      ],
+      "strategy": {
+        "id": "baseline",
+        "label": "基线（v1 / top_k=5 / reranker=off）",
+        "chunker": "v1",
+        "top_k": 5,
+        "reranker": "off"
+      },
+      "model": "qwen3.5:9b",
+      "dataset": "rag-retrieval",
+      "created_at": "2026-11-09T18:22:22.715183Z",
+      "judge_model": "qwen3.5:9b"
+    }
+  },
+  "run_not_found": {
+    "status": 404,
+    "payload": {
+      "error_code": "EVAL_OPTION_NOT_FOUND",
+      "message": "评测选项不存在",
+      "retryable": false,
+      "request_id": "8bdc979e552942e68287b339f73b6e7b",
+      "error": {
+        "code": "EVAL_OPTION_NOT_FOUND",
+        "message": "评测选项不存在"
+      }
+    }
+  },
+  "compare_same_dataset": {
+    "status": 200,
+    "payload": {
+      "a": "eval-37e5d6d4636544f7962a1d1597f4e764",
+      "b": "eval-fc99c427d5d840e485ea51131d4dbdeb",
+      "dataset": "rag-retrieval",
+      "judge_model": "qwen3.5:9b",
+      "deltas": [
+        {
+          "key": "recall@k",
+          "label": "召回率@k",
+          "value_a": 0.5,
+          "value_b": 1.0,
+          "delta": 0.5,
+          "status_a": "computed",
+          "status_b": "computed"
+        },
+        {
+          "key": "precision@k",
+          "label": "准确率@k",
+          "value_a": 0.1,
+          "value_b": 0.09999999999999999,
+          "delta": -1.3877787807814457e-17,
+          "status_a": "computed",
+          "status_b": "computed"
+        },
+        {
+          "key": "mrr@k",
+          "label": "MRR@k",
+          "value_a": 0.26041666666666663,
+          "value_b": 0.32862103174603174,
+          "delta": 0.06820436507936511,
+          "status_a": "computed",
+          "status_b": "computed"
+        },
+        {
+          "key": "intent_accuracy",
+          "label": "意图识别准确率",
+          "value_a": null,
+          "value_b": null,
+          "delta": null,
+          "status_a": "needs_ground_truth",
+          "status_b": "needs_ground_truth"
+        },
+        {
+          "key": "chat_quality",
+          "label": "回答质量（判官均分）",
+          "value_a": null,
+          "value_b": null,
+          "delta": null,
+          "status_a": "needs_ground_truth",
+          "status_b": "needs_ground_truth"
+        },
+        {
+          "key": "memory_correctness",
+          "label": "记忆正确性（判官均分）",
+          "value_a": null,
+          "value_b": null,
+          "delta": null,
+          "status_a": "needs_ground_truth",
+          "status_b": "needs_ground_truth"
+        }
+      ]
+    }
+  },
+  "compare_cross_dataset": {
+    "status": 409,
+    "payload": {
+      "error_code": "EVAL_NOT_COMPARABLE",
+      "message": "两次运行不可比较",
+      "retryable": false,
+      "request_id": "6c79b0843f914dadbb02e5cefb630b1b",
+      "error": {
+        "code": "EVAL_NOT_COMPARABLE",
+        "message": "两次运行不可比较"
+      }
+    }
+  }
+}

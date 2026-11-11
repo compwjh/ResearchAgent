@@ -205,7 +205,8 @@ def test_asset_versions_bumped_and_five_others_unchanged() -> None:
 def test_live_tags_no_longer_reference_old_versions() -> None:
     live_app = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
-    assert live_app == ["74"], f"生效 app.js 版本唯一且为 74：{live_app}"
+    # 合并 spec-047 后 app.js 升到 v=77（含评测视图）；v=74 保留为纯属性兼容 marker
+    assert live_app == ["77"], f"生效 app.js 版本唯一且为 77：{live_app}"
     assert live_css == ["75"], f"生效 styles.css 版本唯一且为 75：{live_css}"
 
 

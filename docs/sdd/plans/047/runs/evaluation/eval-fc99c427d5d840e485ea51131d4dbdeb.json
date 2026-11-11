@@ -1,0 +1,127 @@
+{
+  "run_id": "eval-fc99c427d5d840e485ea51131d4dbdeb",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 8,
+      "detail": {
+        "k": 10,
+        "chunker": "v1",
+        "reranker": "off",
+        "strategy_id": "topk-10",
+        "identity": "paper_id,chunker,chunk_index",
+        "effective_max_items": 8,
+        "matched_items": 8,
+        "first_relevant_ranks": [
+          1,
+          6,
+          8,
+          3,
+          7,
+          4,
+          9,
+          2
+        ],
+        "effective_k": 10
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "value": 0.09999999999999999,
+      "status": "computed",
+      "sample_count": 8,
+      "detail": {
+        "k": 10,
+        "chunker": "v1",
+        "reranker": "off",
+        "strategy_id": "topk-10",
+        "identity": "paper_id,chunker,chunk_index",
+        "effective_max_items": 8,
+        "matched_items": 8,
+        "first_relevant_ranks": [
+          1,
+          6,
+          8,
+          3,
+          7,
+          4,
+          9,
+          2
+        ],
+        "effective_k": 10
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "value": 0.32862103174603174,
+      "status": "computed",
+      "sample_count": 8,
+      "detail": {
+        "k": 10,
+        "chunker": "v1",
+        "reranker": "off",
+        "strategy_id": "topk-10",
+        "identity": "paper_id,chunker,chunk_index",
+        "effective_max_items": 8,
+        "matched_items": 8,
+        "first_relevant_ranks": [
+          1,
+          6,
+          8,
+          3,
+          7,
+          4,
+          9,
+          2
+        ],
+        "effective_k": 10
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "topk-10",
+    "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+    "chunker": "v1",
+    "top_k": 10,
+    "reranker": "off"
+  },
+  "model": "qwen3.5:9b",
+  "dataset": "rag-retrieval",
+  "created_at": "2026-11-09T18:22:30.840299Z",
+  "judge_model": "qwen3.5:9b"
+}

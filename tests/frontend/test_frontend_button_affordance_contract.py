@@ -40,8 +40,10 @@ TEXT_SOURCES = {
 # the decoration idempotent.
 TOKEN = re.compile(r"(?<![\w.-])secondary-button(?![\w-])")
 UNDECORATED = re.compile(r"(?<![\w.-])secondary-button(?![\w-])(?!\s+btn-outline)")
+# 合并 spec-047 评测视图后 index.html 新增 3 个 secondary-button
+# （搜索重试 / 刷新历史 / 对比），冻结基线按真实 UI 同步为 28；三者均带 btn-outline。
 BASELINE_COUNTS = {
-    "index.html": 25,
+    "index.html": 28,
     "app.js": 29,
     "research-tasks.js": 11,
     "literature-maps.js": 58,

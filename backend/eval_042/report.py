@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import human_gold
+
 REPORT_SCHEMA_VERSION = "agent-evaluation-report-v1"
 REPORT_JSON_NAME = "report.json"
 REPORT_MARKDOWN_NAME = "report.md"
@@ -99,6 +101,7 @@ _SECRET_MARKERS = (
 )
 _REPORT_ATTESTATION_FIELDS = {
     "humanagreerate",
+    "humanagreeratedetail",
     "humanagreateratenote",
     "humanagreement",
     "humanannotation",
@@ -193,7 +196,47 @@ def _summary_defaults() -> dict[str, int]:
     return {key: 0 for key in _SUMMARY_KEYS}
 
 
-def _sanitize_document(document: Mapping[str, object]) -> dict[str, Any]:
+def _apply_human_gold(
+    safe: dict[str, Any], gold_file: human_gold.HumanGoldFile
+) -> None:
+    """把可信 gold 计算结果写入已清洗的 report（仅可计算态新增可选键）。
+
+    ``gold_file`` 只能由 :func:`human_gold.load_human_gold_file` 从本地文件
+    生成、并作为函数参数显式传入；它不是 document 里的普通键，因此不可信
+    metadata / document 注入无法触发计算（反伪造护栏）。
+    """
+    if gold_file.error or not gold_file.items:
+        reason = gold_file.error or "no valid human gold items"
+    else:
+        metrics = human_gold.human_agree_metrics(safe.get("items", []), gold_file.items)
+        reason = metrics["reason"]
+        if metrics["rate"] is not None:
+            safe["human_agree_rate"] = metrics["rate"]
+            safe["constructed_gold_only"] = False
+            safe["human_agree_rate_detail"] = {
+                "n_agree": metrics["n_agree"],
+                "n_evaluated": metrics["n_evaluated"],
+                "n_min": metrics["n_min"],
+                "gold_file_sha256": gold_file.sha256,
+                "gold_source": gold_file.source,
+            }
+    if "human_agree_rate_detail" in safe:
+        safe["human_agree_rate_note"] = (
+            "Computed against human gold labels; see human_agree_rate_detail."
+        )
+    else:
+        safe["human_agree_rate_note"] = (
+            "Human agreement not computed: "
+            + reason
+            + "; real human agreement pending manual annotation."
+        )
+
+
+def _sanitize_document(
+    document: Mapping[str, object],
+    *,
+    human_gold_file: human_gold.HumanGoldFile | None = None,
+) -> dict[str, Any]:
     if not isinstance(document, Mapping):
         raise TypeError("report document must be a mapping")
 
@@ -224,18 +267,28 @@ def _sanitize_document(document: Mapping[str, object]) -> dict[str, Any]:
     if not isinstance(safe["errors"], list):
         raise TypeError("report document errors must be a list")
 
-    # This report must not imply that automatic or constructed labels are
-    # human truth.  Force the safe values even if a caller supplied something
-    # else in metadata.
+    # 反伪造护栏（默认降级态）：不可信 document / metadata 塞入的
+    # human_agree_rate / constructed_gold_only / detail 一律清洗为安全值。
+    # 无 --gold 时不新增任何可选键，CLI 默认输出形状保持不变。
+    safe.pop("human_agree_rate_note", None)
+    safe.pop("human_agree_rate_detail", None)
     safe["human_agree_rate"] = None
     safe["constructed_gold_only"] = True
     safe["constructed_gold_note"] = (
         "Task-03 gold is constructed gold only; human annotation was not run."
     )
+    # Spec-047 Task-04 (P2①): 仅当 gold 由本模块从本地文件加载（可信来源）
+    # 且分母>0 / N>=20 时覆盖为可计算态；否则保持降级态并给出原因。
+    if isinstance(human_gold_file, human_gold.HumanGoldFile):
+        _apply_human_gold(safe, human_gold_file)
     return safe
 
 
-def make_report(metadata: Mapping[str, object] | None = None) -> dict[str, Any]:
+def make_report(
+    metadata: Mapping[str, object] | None = None,
+    *,
+    human_gold_file: human_gold.HumanGoldFile | None = None,
+) -> dict[str, Any]:
     """Return a safe, writable report skeleton in ``running`` state."""
     return _sanitize_document(
         {
@@ -252,7 +305,8 @@ def make_report(metadata: Mapping[str, object] | None = None) -> dict[str, Any]:
             "started_at": _utc_now(),
             "finished_at": None,
             "metadata": dict(metadata or {}),
-        }
+        },
+        human_gold_file=human_gold_file,
     )
 
 
@@ -268,9 +322,13 @@ def _json_text(value: object) -> str:
         return _safe_text(value)
 
 
-def render_markdown(document: Mapping[str, object]) -> str:
+def render_markdown(
+    document: Mapping[str, object],
+    *,
+    human_gold_file: human_gold.HumanGoldFile | None = None,
+) -> str:
     """Render Markdown from the same sanitized model persisted as JSON."""
-    safe = _sanitize_document(document)
+    safe = _sanitize_document(document, human_gold_file=human_gold_file)
     summary = safe["summary"]
     lines = [
         "# Agent evaluation report",
@@ -433,7 +491,13 @@ def _restore_snapshot(path: Path, snapshot: bytes | None) -> None:
 class ReportWriter:
     """Checkpoint a local JSON/Markdown report with bounded pair rollback."""
 
-    def __init__(self, output_dir: str | Path, metadata: Mapping[str, object] | None = None):
+    def __init__(
+        self,
+        output_dir: str | Path,
+        metadata: Mapping[str, object] | None = None,
+        *,
+        gold_path: str | Path | None = None,
+    ):
         self.output_dir = _validate_output_dir(output_dir)
         self.json_path = self.output_dir / REPORT_JSON_NAME
         self.markdown_path = self.output_dir / REPORT_MARKDOWN_NAME
@@ -443,7 +507,12 @@ class ReportWriter:
         # The kernel releases it automatically if the holding process crashes.
         self._lock_path = self.output_dir / ".report.writer.lock"
         self._lock_fd = open(self._lock_path, "a")
-        self.document = make_report(metadata)
+        # Spec-047 Task-04: 只有显式 --gold 才加载本地脱敏 gold；默认 None，
+        # 报告形状与降级态（human_agree_rate=null）完全不变。
+        self._human_gold_file = (
+            human_gold.load_human_gold_file(gold_path) if gold_path else None
+        )
+        self.document = make_report(metadata, human_gold_file=self._human_gold_file)
         # The skeleton is intentionally written immediately so malformed input
         # or a later runtime exception still has a local artifact to update.
         self.checkpoint(self.document)
@@ -472,11 +541,17 @@ class ReportWriter:
 
     def checkpoint(self, document: dict[str, Any]) -> dict[str, Any]:
         """Write both projections, restoring the prior pair if publication fails."""
-        safe_document = _sanitize_document(document)
+        safe_document = _sanitize_document(
+            document,
+            human_gold_file=getattr(self, "_human_gold_file", None),
+        )
         json_content = json.dumps(
             safe_document, ensure_ascii=False, indent=2, sort_keys=True
         ) + "\n"
-        markdown_content = render_markdown(safe_document)
+        markdown_content = render_markdown(
+            safe_document,
+            human_gold_file=getattr(self, "_human_gold_file", None),
+        )
         with self._lock():
             json_tmp: str | None = None
             markdown_tmp: str | None = None

@@ -153,7 +153,37 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="只输出 JSON（便于重定向到文件）。",
     )
+    parser.add_argument(
+        "--summary-output",
+        default=None,
+        help="可选：把前端 benchmark_summary 契约形状的摘要写入指定 JSON 文件。",
+    )
+    parser.add_argument(
+        "--task-id",
+        default=None,
+        help="可选：把摘要作为一条 task 事件写入指定研究任务（不新增 SSE 类型/端点）。",
+    )
     return parser
+
+
+def _write_summary_output(path_str: str, summary: Dict) -> None:
+    """写摘要文件；只写文件，不打印任何内容，保证 stdout 与默认输出一致。"""
+    path = Path(path_str)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _append_summary_event(task_id: str, summary: Dict) -> None:
+    """复用唯一的 ResearchStore.append_event 写入一条基准摘要事件。
+
+    event_type 取 ``task``：它同时在后端 ``EVENT_TYPES`` 与前端
+    ``research-tasks.js:12`` 的 EVENT_TYPES 白名单内，且 append_event 只推进
+    ``last_event_seq/updated_at``，不改任务 status、不新增 SSE 事件类型。
+    延迟导入使默认路径（不传 --task-id）完全不触碰 research 基础设施。
+    """
+    from backend.app.research.infrastructure.research_store import ResearchStore
+
+    ResearchStore().append_event(task_id, "task", {"benchmark_summary": summary})
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -169,6 +199,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(_format_summary(report))
         print()
         print(json.dumps(report, ensure_ascii=False, indent=2))
+
+    # 可选通道：两个新参数都不传时这段代码完全不执行，stdout 与改动前逐字节一致。
+    if args.summary_output or args.task_id:
+        from backend.app.platform.benchmark_summary import benchmark_summary_from_report
+
+        summary = benchmark_summary_from_report(report)
+        if args.summary_output:
+            _write_summary_output(args.summary_output, summary)
+        if args.task_id:
+            _append_summary_event(args.task_id, summary)
     return 0
 
 

@@ -1,0 +1,90 @@
+{
+  "run": "force-run-2",
+  "verified_at": "2026-11-09T02:01:20.990260+00:00",
+  "command": "set -a; . ./.env; set +a; .venv/bin/python scripts/setup_langfuse_dashboards.py --force",
+  "exit_code": 0,
+  "stdout_path": "docs/sdd/plans/047/runs/task-08/force-run-2.txt",
+  "stdout_head": [
+    "[重建] 只读 widget 清单：40 个（仅备份，不用于删除）",
+    "[重建] 01 TTFT 分解与冷启动对比",
+    "[重建] 02 分位数与慢请求"
+  ],
+  "new_dashboard_ids_from_stdout": [
+    "cmw8m6o5o00898o8s0imb2kdi",
+    "cmw8m6oee00988o8s4buhk4v1",
+    "cmw8m6omy00a18o8stbmp45wu",
+    "cmw8m6osm00as8o8s2onwukhx",
+    "cmw8m6oyk00bj8o8satqwgvk6",
+    "cmw8m6p4p00ca8o8snp6efxxo"
+  ],
+  "after": {
+    "meta": {
+      "page": 1,
+      "limit": 100,
+      "totalItems": 40,
+      "totalPages": 1
+    },
+    "dashboard_ids": [
+      "cmw8m6p4p00ca8o8snp6efxxo",
+      "cmw8m6oyk00bj8o8satqwgvk6",
+      "cmw8m6osm00as8o8s2onwukhx",
+      "cmw8m6omy00a18o8stbmp45wu",
+      "cmw8m6oee00988o8s4buhk4v1",
+      "cmw8m6o5o00898o8s0imb2kdi"
+    ],
+    "widget_ids": [
+      "cmw8m6o1y007l8o8seb1idldn",
+      "cmw8m6o2e007o8o8s0yyc3wdt",
+      "cmw8m6o2s007r8o8s1l895w8a",
+      "cmw8m6o36007u8o8scaggmvwg",
+      "cmw8m6o3l007x8o8scdaz1bvh",
+      "cmw8m6o4900808o8sq0zg2vf5",
+      "cmw8m6o4s00838o8s6ho5fokg",
+      "cmw8m6o5900868o8s29juppee",
+      "cmw8m6oat008k8o8sogkqf5x4",
+      "cmw8m6ob7008n8o8svbiszi4e",
+      "cmw8m6obn008q8o8sigowf9ib",
+      "cmw8m6oc1008t8o8s6cy33ozr",
+      "cmw8m6ocj008w8o8se7idcic4",
+      "cmw8m6ocx008z8o8sovplg9xo",
+      "cmw8m6odd00928o8sdjduysa2",
+      "cmw8m6odz00958o8ssre5fnxt",
+      "cmw8m6oka009j8o8sstt6jd0a",
+      "cmw8m6okp009m8o8su7j6nnyv",
+      "cmw8m6ol2009p8o8s540qz054",
+      "cmw8m6olg009s8o8sip1ts0i3",
+      "cmw8m6om4009v8o8sqivl1ca0",
+      "cmw8m6omk009y8o8swnmei49n",
+      "cmw8m6oq500aa8o8s6b2c0wzv",
+      "cmw8m6oqi00ad8o8srhj11kix",
+      "cmw8m6oqy00ag8o8sx9tfnie4",
+      "cmw8m6orc00aj8o8sipmzh0ht",
+      "cmw8m6ors00am8o8s9jxlxdpj",
+      "cmw8m6os600ap8o8sot8ryxxz",
+      "cmw8m6ow200b18o8sbrnvzema",
+      "cmw8m6owk00b48o8srm2o9d40",
+      "cmw8m6owz00b78o8sotzijdt2",
+      "cmw8m6oxd00ba8o8s4582zzti",
+      "cmw8m6oxq00bd8o8s54zblxc4",
+      "cmw8m6oy500bg8o8sejglrjjh",
+      "cmw8m6p2700bs8o8s6fdaiqca",
+      "cmw8m6p2k00bv8o8snvzimshl",
+      "cmw8m6p2z00by8o8swosxemn9",
+      "cmw8m6p3d00c18o8s5stvxdty",
+      "cmw8m6p3r00c48o8snxcnk8b4",
+      "cmw8m6p4600c78o8spi3v8jqn"
+    ]
+  },
+  "checks": {
+    "dashboards_eq_6": true,
+    "widgets_eq_40": true,
+    "meta_totalItems_eq_40": true,
+    "no_orphan_widgets": true,
+    "names_match_definition": true,
+    "ids_fully_rotated_vs_run1": true,
+    "widget_count_unchanged_vs_run1": true,
+    "manifest_eq_40": true,
+    "manifest_ids_match_live": true
+  },
+  "verdict": "PASS"
+}

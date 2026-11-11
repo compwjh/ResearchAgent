@@ -24,7 +24,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-11/issue-recovery.md`：状态图、接口样例、身份判定与人工确认记录、命令/退出码、改动文件及风险。主 Agent 已复核用户上传仍调用既有 KB 安全导入。执行结果：后端闭环完成；定向测试 `102 passed、12 subtests`，Ruff、compileall、diff-check 通过；真实 headed-browser/远程上传 smoke 留 Task12/最终验收。
+写 `artifacts/spec-032/task-11/issue-recovery.md`：状态图、接口样例、身份判定与人工确认记录、命令/退出码、改动文件及风险。主 Agent 已复核用户上传仍调用既有 KB 安全导入。执行结果：后端闭环完成；定向测试 `102 passed、12 subtests`，Ruff、compileall、diff-check 通过；真实 headed-browser/远程上传 smoke 留 Task12/最终验收。
 
 ## 变更日志
 

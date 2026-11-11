@@ -1,0 +1,133 @@
+{
+  "artifact": "spec-047 task-06 P2③ 在线实时评测 — 当前部署版本真实 E2E",
+  "captured_at": "2026-11-08T22:32:34+00:00",
+  "langfuse_base": "http://127.0.0.1:3000",
+  "chat_base": "http://127.0.0.1:8000",
+  "credentials_source": ".env LANGFUSE_PUBLIC_KEY / SECRET_KEY (values not recorded; injected as process env LANGFUSE_PK/SK)",
+  "discipline": {
+    "switch_default": "EVAL_ONLINE_ENABLED=False (no .env change, no service restart)",
+    "controlled_window": "process-local env vars + config attrs toggled ON inside try/finally, restored before exit",
+    "mock_or_fake_transport_for_score_write": false,
+    "real_judge": "qwen3.5:9b via real Ollama (no fake judge)",
+    "status_recorder": "instrumented offline_guard.offline_urlopen records response.status only; real HTTP unchanged"
+  },
+  "T0_default_off": {
+    "default_switch_enabled": false,
+    "real_chat": {
+      "http_status": 200,
+      "saw_done": true,
+      "sse_lines": 3
+    },
+    "chat_quality_score_count": {
+      "before": 27,
+      "after": 27,
+      "delta": 0,
+      "http_status": 200
+    },
+    "all_scores_count": {
+      "before": 1793,
+      "after": 1800,
+      "note": "any delta is observation metric scores from spans.py (existing behavior), NOT online-eval"
+    },
+    "bypass_submit_while_off": "disabled",
+    "verdict": "no_new_online_eval_score"
+  },
+  "T1_controlled_window_on": {
+    "controlled_window": {
+      "EVAL_ONLINE_ENABLED": true,
+      "EVAL_ONLINE_SAMPLE_RATE": 1.0
+    },
+    "real_completed_trace": {
+      "trace_id": "abfe474ba20272ba230a02327bf73024",
+      "input_len": 1145,
+      "output_len": 47,
+      "status": "scored",
+      "is_real_completed": true,
+      "dedupe_id": "eval042-a4375d60c269e404f0573286bc7d44b2"
+    },
+    "async_submit": {
+      "result": "queued",
+      "synchronous_judge_call": false
+    },
+    "worker": {
+      "wait_idle": true,
+      "status": {
+        "enabled": true,
+        "queued": 0,
+        "inflight": 0,
+        "circuit_open": false,
+        "consecutive_failures": 0,
+        "worker_alive": true,
+        "submitted": 1,
+        "sampled_out": 0,
+        "processed": 1,
+        "scored": 1,
+        "unavailable": 0
+      }
+    },
+    "score_write": {
+      "real_score_id": "eval042-a4375d60c269e404f0573286bc7d44b2",
+      "trace_id": "abfe474ba20272ba230a02327bf73024",
+      "post_http_status": 200,
+      "post_count": 1,
+      "exact_id_readback": {
+        "found": true,
+        "http_status": 200,
+        "score": {
+          "id": "eval042-a4375d60c269e404f0573286bc7d44b2",
+          "name": "chat_quality",
+          "value": 1,
+          "dataType": "NUMERIC",
+          "traceId": "abfe474ba20272ba230a02327bf73024"
+        }
+      },
+      "chat_quality_total_after": 28,
+      "http_calls": [
+        {
+          "method": "GET",
+          "path": "/api/public/scores/eval042-a4375d60c269e404f0573286bc7d44b2",
+          "status": 404
+        },
+        {
+          "method": "POST",
+          "path": "/api/public/scores",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/public/scores/eval042-a4375d60c269e404f0573286bc7d44b2",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/api/public/scores/eval042-a4375d60c269e404f0573286bc7d44b2",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/api/public/scores/eval042-a4375d60c269e404f0573286bc7d44b2",
+          "status": 404
+        },
+        {
+          "method": "GET",
+          "path": "/api/public/scores/eval042-a4375d60c269e404f0573286bc7d44b2",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/public/scores/eval042-a4375d60c269e404f0573286bc7d44b2",
+          "status": 200
+        }
+      ]
+    },
+    "final_status": "verified"
+  },
+  "restore_default_off": {
+    "EVAL_ONLINE_ENABLED": false,
+    "EVAL_ONLINE_SAMPLE_RATE": 0.0,
+    "env_EVAL_ONLINE_ENABLED_present": false,
+    "dotenv_has_eval_online_keys": false,
+    "verdict": "restored"
+  },
+  "final_status": "verified"
+}

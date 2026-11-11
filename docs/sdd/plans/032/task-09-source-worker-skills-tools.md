@@ -21,7 +21,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-09/worker-tool-contract.md` 和逐来源执行样例，回传改动文件、测试命令/退出码、Tool schema 版本、风险/阻塞。主 Agent 验证注册入口可实际执行，而非只出现在 Tool 列表。执行结果：已完成；统一 `paper_discovery` Tool 已真实注册和分派，两个来源通过同一验证器，未验证来源保持 blocked。
+写 `artifacts/spec-032/task-09/worker-tool-contract.md` 和逐来源执行样例，回传改动文件、测试命令/退出码、Tool schema 版本、风险/阻塞。主 Agent 验证注册入口可实际执行，而非只出现在 Tool 列表。执行结果：已完成；统一 `paper_discovery` Tool 已真实注册和分派，两个来源通过同一验证器，未验证来源保持 blocked。
 
 ## 变更日志
 

@@ -1,0 +1,18 @@
+BASE=http://127.0.0.1:8000  MESSAGE_ID=97af066db4e359189aa9c6eb7583fb73  2026-11-08T09:07:22Z
+--- NO PARAM ---
+keys= ['steps'] count= 25
+--- LIMIT=2 ---
+keys= ['has_more', 'next_cursor', 'steps'] count= 2 has_more= True next_cursor= eyJ2IjoxLCJraW5kIjoicHJvY2Vzc2luZy1zdGVwIiwiYXQiOiIyMDI2LTEwLTMxVDAzOjM2OjQzLjUyMjMxNiswMDowMCIsImlkIjoiYzUzNWI4YjBlNjc0NDJjZGI3NzBjYmY4MmUyYjdjYWQifQ
+--- LIMIT=0 ---
+HTTP=400
+body= {'detail': {'code': 'INVALID_LIMIT', 'message': 'limit 越界', 'retryable': False}}
+--- LIMIT=abc ---
+HTTP=400
+body= {'detail': {'code': 'INVALID_LIMIT', 'message': 'limit 必须是整数', 'retryable': False}}
+--- BAD CURSOR ---
+HTTP=400
+body= {'detail': {'code': 'INVALID_CURSOR', 'message': 'invalid cursor', 'retryable': False}}
+--- PAGE 2 (cursor from page 1) ---
+count= 2 has_more= True first_step_id= c56885611a5f41b0b8077a4c7f851d03
+--- FULL PAGINATION WALK ---
+no_param_count= 25 paged_count= 25 pages= 9 unique= 25 set_equal= True

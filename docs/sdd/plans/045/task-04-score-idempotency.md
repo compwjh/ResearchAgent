@@ -1,11 +1,11 @@
 > 关联：[spec-045](../../specs/045-evaluation-observability-hardening.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 02；当前状态：`待执行`
+> 依赖：任务 02；当前状态：`已完成`（2026-11-08 接手机器真实运行时验证）
 
 # Task 04 — 评测结果可靠性：score 幂等 + 报告目录文件锁
 
 ## 状态与一句话目标
 
-`待执行`。让评测可以重复跑、并行跑而不污染结果：同一 trace 重跑不产生重复 Langfuse score，
+`已完成`。让评测可以重复跑、并行跑而不污染结果：同一 trace 重跑不产生重复 Langfuse score，
 多进程共用输出目录不互相覆盖报告。
 
 对应 spec 11 项中的 **08（能力补齐）**。
@@ -78,3 +78,21 @@
 
 初始写「待执行后填写」。执行后回填：红绿测试输出、两次真实运行的 score ID 与数量、
 并发测试命令与结果、改动文件清单、`spec-status-changelog.md` 条目。
+
+## 接手机器执行结果（2026-11-08，真实运行时验证）
+
+**状态：已完成。** 交接文档称「`post_score_idempotent` 未接入 runner」已过时：
+只读核实 `backend/eval_042/runner.py:563` 已调用 `post_score_idempotent`，
+`langfuse_export.py:170-216` 保留 `_DEFAULT_SCORE_WRITER` 兼容注入，
+`report.py` 的 `fcntl.flock` 文件锁真实生成 `.report.writer.lock`。
+
+真实证据（见 `runs/task-02/evidence.md` 第 5 节）：
+
+```
+第一次真实 CLI --export → scored=2 / written=2 / verified=2 / failed=0，scores totalItems=979
+重跑（另一 --output-dir，同一批 trace）→ 同样 scored=2 / written=2，scores totalItems=979
+delta=0，无任何新 eval042-* score
+```
+
+即幂等键在**真实 Langfuse**（非 mock）上生效。定向测试
+`pytest tests/evaluation/ tests/observability/ tests/platform/ -q` → `214 passed, EXIT=0`。

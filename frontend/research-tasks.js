@@ -193,7 +193,15 @@
       reportActionRequestKey: null, reportActionRequestTaskId: null, reportActionRetryMode: null,
       reportActionInFlight: false, retrying: new Set(), issueActions: new Set(), pollTimer: null, generation: 0,
     },
+    taskQuery: '',
+    taskIdLookup: { status: 'idle', taskId: null, result: null, requestSeq: 0, message: '' },
+    taskSearchCount: { matched: 0, total: 0 },
+    taskSearchDebounceTimer: null,
   };
+
+  const TASK_QUERY_MAX_LENGTH = 128;
+  const FULL_TASK_ID_PATTERN = /^[0-9a-f]{32}$/;
+  const TASK_LOOKUP_DEBOUNCE_MS = 250;
 
   const TASK_ACTION_PATHS = Object.freeze({
     pause: 'pause', resume: 'resume', approve: 'feedback', cancel: 'cancel', recover: 'recover',
@@ -1154,8 +1162,212 @@
     open.setAttribute('aria-label', '打开对应会话');
     open.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); openConversationFromResearch(open.dataset.conversationId); });
     item.appendChild(open);
+    const taskIdText = text(task.research_task_id, '');
+    const idRow = doc.createElement('span');
+    idRow.className = 'research-task-card-meta research-task-card-id';
+    idRow.textContent = taskIdText ? `任务 ID：${taskIdText}` : '';
+    button.append(idRow);
+    const copy = doc.createElement('button');
+    copy.type = 'button';
+    copy.className = 'research-open-session research-copy-task-id';
+    copy.dataset.copyTaskId = taskIdText;
+    copy.textContent = '复制任务 ID';
+    copy.setAttribute('aria-label', taskIdText ? `复制任务 ID ${taskIdText}` : '复制任务 ID');
+    copy.addEventListener('click', async (event) => {
+      event.preventDefault(); event.stopPropagation();
+      const value = copy.dataset.copyTaskId;
+      const copied = value ? await copyTaskIdToClipboard(value) : false;
+      copy.textContent = copied ? '已复制' : '复制失败，请手动复制';
+      root.setTimeout(() => { copy.textContent = '复制任务 ID'; }, 2000);
+    });
+    item.appendChild(copy);
     updateTaskCard(item, task);
     return item;
+  }
+
+  // --- Research task search: pure helpers exported on the api for Node tests,
+  // with all dynamic text written through textContent (no raw HTML injection). ---
+  function normalizeTaskQuery(raw) {
+    const source = typeof raw === 'string' ? raw : (raw === null || raw === undefined ? '' : String(raw));
+    const trimmed = source.trim().toLowerCase();
+    const value = trimmed.slice(0, TASK_QUERY_MAX_LENGTH);
+    return {
+      value,
+      truncated: trimmed.length > TASK_QUERY_MAX_LENGTH,
+      isTaskId: FULL_TASK_ID_PATTERN.test(value),
+    };
+  }
+
+  function taskQueryHaystack(session) {
+    // Five-field haystack: task id / session id / goal excerpt / status / time.
+    return [
+      session?.research_task_id,
+      session?.research_session_id,
+      session?.goal_excerpt,
+      session?.status,
+      session?.created_at || session?.updated_at,
+    ].map((value) => (value === null || value === undefined ? '' : String(value))).join(' ').toLowerCase();
+  }
+
+  function filterSessionsByQuery(query, sessions) {
+    const list = Array.isArray(sessions) ? sessions : [];
+    const { value } = normalizeTaskQuery(query);
+    if (!value) return list.slice();
+    return list.filter((session) => session && typeof session === 'object'
+      && taskQueryHaystack(session).includes(value));
+  }
+
+  function isCurrentLookupRequest(requestSeq, currentSeq) {
+    return Number.isFinite(requestSeq) && requestSeq === currentSeq;
+  }
+
+  // Pure reducer: a late/stale resolve must never overwrite the newest lookup.
+  function applyTaskIdLookupResult(lookup, requestSeq, patch) {
+    const current = lookup && typeof lookup === 'object'
+      ? lookup
+      : { status: 'idle', taskId: null, result: null, requestSeq: 0, message: '' };
+    if (!isCurrentLookupRequest(requestSeq, current.requestSeq)) return current;
+    return { ...current, ...(patch || {}) };
+  }
+
+  async function copyTaskIdToClipboard(value) {
+    try {
+      const clipboard = root.navigator?.clipboard;
+      if (!clipboard || typeof clipboard.writeText !== 'function') return false;
+      await clipboard.writeText(value);
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function renderTaskSearchCount() {
+    const node = byId('research-task-search-count');
+    if (node) {
+      const { matched, total } = state.taskSearchCount;
+      node.textContent = `${matched}/${total}`;
+    }
+    const empty = byId('research-task-search-empty');
+    if (empty) {
+      const filtered = Boolean(normalizeTaskQuery(state.taskQuery).value);
+      const lookupActive = state.taskIdLookup.status !== 'idle';
+      empty.textContent = filtered ? '无匹配结果' : '';
+      empty.hidden = !(filtered && state.taskSearchCount.matched === 0 && !lookupActive);
+    }
+  }
+
+  function renderTaskSearchStatus() {
+    const node = byId('research-task-search-status');
+    const retry = byId('research-task-search-retry');
+    const empty = byId('research-task-search-empty');
+    const lookup = state.taskIdLookup;
+    const active = lookup.status !== 'idle';
+    if (node) {
+      const message = lookup.status === 'loading' ? '正在按 ID 定位任务…'
+        : lookup.status === 'hit' ? (lookup.message || '已定位并选中历史任务')
+          : lookup.status === 'miss' ? '未找到该任务，请检查 ID'
+            : lookup.status === 'error' ? '定位失败，请重试' : '';
+      node.textContent = message;
+      node.hidden = !message;
+    }
+    if (empty && active) empty.hidden = true;
+    if (retry) retry.hidden = lookup.status !== 'miss' && lookup.status !== 'error';
+  }
+
+  function clearTaskSearchDebounce() {
+    if (state.taskSearchDebounceTimer) {
+      root.clearTimeout(state.taskSearchDebounceTimer);
+      state.taskSearchDebounceTimer = null;
+    }
+  }
+
+  function resetTaskIdLookup() {
+    clearTaskSearchDebounce();
+    // A bumped requestSeq invalidates every in-flight lookup resolve.
+    state.taskIdLookup = {
+      status: 'idle', taskId: null, result: null,
+      requestSeq: (state.taskIdLookup.requestSeq || 0) + 1, message: '',
+    };
+    renderTaskSearchStatus();
+  }
+
+  function startTaskIdLookup(taskId) {
+    const requestSeq = (state.taskIdLookup.requestSeq || 0) + 1;
+    state.taskIdLookup = { status: 'loading', taskId, result: null, requestSeq, message: '' };
+    renderTaskSearchStatus();
+    return requestSeq;
+  }
+
+  async function runTaskIdLookup(taskId, requestSeq) {
+    let detail = null;
+    try {
+      // D1-B: reverse lookup on the existing endpoint. The template string
+      // keeps the URL contract intact (no single-quote legacy literal).
+      detail = await requestJson(`/api/research-tasks/${encodeURIComponent(taskId)}`);
+    } catch (error) {
+      if (!isCurrentLookupRequest(requestSeq, state.taskIdLookup.requestSeq)) return;
+      const notFound = error?.status === 404 || error?.code === 'TASK_NOT_FOUND';
+      const message = notFound ? '未找到该任务，请检查 ID' : '定位失败，请重试';
+      state.taskIdLookup = applyTaskIdLookupResult(state.taskIdLookup, requestSeq, {
+        status: notFound ? 'miss' : 'error', result: null, message,
+      });
+      renderTaskSearchStatus();
+      return;  // 404 / network error: keep the list as-is, surface the retry entry.
+    }
+    if (!isCurrentLookupRequest(requestSeq, state.taskIdLookup.requestSeq)) return;
+    // research_session_id is injected by the backend and may be null (B7).
+    const sid = detail?.research_session_id || null;
+    state.taskIdLookup = applyTaskIdLookupResult(state.taskIdLookup, requestSeq, {
+      status: 'hit', result: detail, message: `已定位并选中历史任务 ${taskId}`,
+    });
+    renderTaskSearchStatus();
+    // knownSession is omitted: selectTask fetches the session, degrades on
+    // failure and upserts the historical task itself (upsertSessionTask).
+    await selectTask(taskId, sid);
+  }
+
+  function scheduleTaskIdLookup(taskId, immediate = false) {
+    clearTaskSearchDebounce();
+    const requestSeq = startTaskIdLookup(taskId);
+    const run = () => {
+      state.taskSearchDebounceTimer = null;
+      return runTaskIdLookup(taskId, requestSeq);
+    };
+    if (immediate) return run();
+    state.taskSearchDebounceTimer = root.setTimeout(run, TASK_LOOKUP_DEBOUNCE_MS);
+  }
+
+  function bindTaskSearch() {
+    const input = byId('research-task-search');
+    if (!input) return;
+    input.addEventListener('input', () => applyTaskQuery(input.value, false));
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      applyTaskQuery(input.value, true);
+    });
+    byId('research-task-search-retry')?.addEventListener('click', () => {
+      const candidate = state.taskIdLookup.taskId || normalizeTaskQuery(state.taskQuery).value;
+      const normalized = normalizeTaskQuery(candidate);
+      if (normalized.isTaskId) scheduleTaskIdLookup(normalized.value, true);
+    });
+    renderTaskSearchCount();
+  }
+
+  function applyTaskQuery(raw, forceLookup = false) {
+    const input = byId('research-task-search');
+    const source = typeof raw === 'string' ? raw : '';
+    const limited = source.slice(0, TASK_QUERY_MAX_LENGTH);
+    if (input && input.value !== limited) input.value = limited;
+    state.taskQuery = limited;
+    const normalized = normalizeTaskQuery(limited);
+    if (normalized.isTaskId) {
+      // Full 32-char hex (or Enter with such an ID): D1-B direct lookup.
+      // The list is left untouched while loading; selectTask renders on hit.
+      scheduleTaskIdLookup(normalized.value, forceLookup);
+      return;
+    }
+    // Non-hex input never enters a URL: front-end filter over the loaded rows.
+    resetTaskIdLookup();
+    renderTaskList();
   }
 
   // children is an HTMLCollection in the browser but a plain array (or a Proxy
@@ -1177,6 +1389,9 @@
     const empty = byId('research-list-empty');
     if (!list) return;
     const tasks = [...state.tasks].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    const visible = filterSessionsByQuery(state.taskQuery, tasks);
+    state.taskSearchCount = { matched: visible.length, total: tasks.length };
+    renderTaskSearchCount();
     // Keyed diff: index existing cards by taskId, reuse nodes, update only the
     // changed text/status. No replaceChildren, so the green "已完成" badge and
     // progress text are updated in place instead of being torn down every frame.
@@ -1187,14 +1402,14 @@
       if (key) existing.set(String(key), item);
     });
     if (options.onlyTaskId) {
-      const affected = tasks.find((task) => String(task.research_task_id || '') === String(options.onlyTaskId)
+      const affected = visible.find((task) => String(task.research_task_id || '') === String(options.onlyTaskId)
         || String(task.research_session_id || '') === String(options.onlyTaskId));
       const node = existing.get(String(options.onlyTaskId));
       if (affected && node) updateTaskCard(node, affected);
       return;
     }
     const seen = new Set();
-    const ordered = tasks.map((task) => {
+    const ordered = visible.map((task) => {
       const key = String(task.research_task_id || task.research_session_id || '');
       const found = key && existing.get(key);
       let item;
@@ -1248,10 +1463,10 @@
       ordered.forEach((item) => { list.appendChild(item); });
     }
     if (empty) {
-      empty.hidden = tasks.length > 0;
-      if (!tasks.length) empty.textContent = '暂无研究任务';
+      empty.hidden = visible.length > 0;
+      if (!visible.length) empty.textContent = '暂无研究任务';
     }
-    setText('research-list-status', tasks.length ? `共 ${tasks.length} 个研究会话` : '暂无研究任务');
+    setText('research-list-status', visible.length ? `共 ${visible.length} 个研究会话` : '暂无研究任务');
   }
 
   async function hydrateSession(raw) {
@@ -3927,7 +4142,7 @@
     if (state.booted) return;
     state.document = documentRef; state.booted = true; state.conversationId = parseConversationId();
     if (!byId('research-view')) return;
-    bindResearchTabs(); bindModeGuard(); bindNavigation(); bindNotifications();
+    bindResearchTabs(); bindModeGuard(); bindNavigation(); bindNotifications(); bindTaskSearch();
     conversationFromUrl();
     loadTasks();
     if (root.location.hash === '#research-view') root.setTimeout(() => { showView(); return refreshWorkspace(); }, 0);
@@ -3946,6 +4161,8 @@
     acquisitionStatusLabel, acquisitionErrorText, acquisitionIsTerminal,
     normalizeMatrix, citationValues, citationIndex, locatorForEvidence, locatorText,
     versionedReportUrl, renderMatrix, renderReportFormatTabs, selectReportFormat, loadMatrix,
+    normalizeTaskQuery, taskQueryHaystack, filterSessionsByQuery,
+    isCurrentLookupRequest, applyTaskIdLookupResult,
   };
   // Keep race probes available to the CommonJS contract harness without
   // expanding the browser-facing ResearchTasks surface.

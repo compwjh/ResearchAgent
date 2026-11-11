@@ -33,7 +33,7 @@
 - 四会议逐年验收，未验证年份只可有界尝试；必须有真实样本才能标记可用。
 - 批准的 Research Task 自动导入、普通检索手动导入；失败具体论文入待处理队列，整源失败留来源进度。
 - 开发 Task 只跑受影响定向测试，Task14 唯一一次全量回归。
-- 产出写入 `docs/sdd/plans/032/artifacts/task-NN/`。
+- 产出写入 `docs/sdd/plans/032/artifacts/task-NN/`；**2026-09 的历史交接物另有一处落点 `artifacts/spec-032/task-NN/`**（原为裸 `artifacts/task-NN/`，2026-11-10 按 `artifacts/README.md` 目录契约迁移）。两处并存、不合并、不删除；引用前先看路径前缀。
 
 ## Task04 验收证据（2026-09-14 补充，状态待 spec 负责人确认）
 

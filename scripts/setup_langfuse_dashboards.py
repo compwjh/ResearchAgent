@@ -20,11 +20,23 @@
 """
 
 import argparse
+import json
+import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
+
+try:  # POSIX 文件锁；非 POSIX 平台降级为无锁（仅本地脚本使用）
+    import fcntl
+except ImportError:  # pragma: no cover - 本项目运行于 macOS / Linux
+    fcntl = None
+
+logger = logging.getLogger("setup_langfuse_dashboards")
 
 # ---------------------------------------------------------------- 基础定义
 # 这些取值是探测 Langfuse v4.27.0 源码与 API 实测得到的，改前先重新探测。
@@ -45,6 +57,16 @@ SCORE_TPS = "tokens_per_sec"
 SCORE_COLD = "is_cold_start"
 
 OBS_GENERATION_FILTER = {"column": "type", "operator": "=", "value": "GENERATION", "type": "string"}
+
+# widget 清单分页：vendor 的 listPublicDashboardWidgets 只按 projectId 分页、默认 limit=50，
+# 必须按 meta.totalPages 循环翻页（limit 保守取 100），不能假设单页能取全。
+WIDGETS_PAGE_LIMIT = 100
+
+# 脚本自记录「本次创建的 widget_id」清单（本地文件，非 DB），跨 --force 重跑保留。
+DEFAULT_MANIFEST_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "docs/sdd/plans/047/runs/task-02/widget-manifest.json"
+)
 
 
 def score_filter(score_name: str) -> List[Dict[str, Any]]:
@@ -210,6 +232,39 @@ class DashboardBuilder:
         response.raise_for_status()
         return response.json()["data"]
 
+    def list_widgets(self) -> List[Dict[str, Any]]:
+        """只读枚举项目内全部 widget，按 meta.totalPages 翻页（异常 fail-open 不抛）。
+
+        仅用于 --force 前的只读清单备份 / 重建后总数校验；绝不作为删除依据
+        （vendor 无 createdBy/来源过滤，无法区分用户手工 widget）。
+        """
+        widgets: List[Dict[str, Any]] = []
+        page = 1
+        while True:
+            try:
+                response = httpx.get(
+                    self._url("/dashboard-widgets"),
+                    auth=self.auth,
+                    params={"page": page, "limit": WIDGETS_PAGE_LIMIT},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                chunk = payload.get("data", [])
+                meta = payload.get("meta", {})
+                total_pages = int(meta.get("totalPages", 1) or 1)
+            except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+                logger.warning(
+                    "列举 widget 失败（fail-open，已取 %d 个，page=%d）：%s",
+                    len(widgets), page, exc,
+                )
+                break
+            widgets.extend(chunk)
+            if page >= total_pages or not chunk:
+                break
+            page += 1
+        return widgets
+
     def create_widget(self, spec: Dict[str, Any]) -> str:
         response = httpx.post(
             self._url("/dashboard-widgets"), auth=self.auth, json=spec, timeout=30
@@ -246,13 +301,223 @@ class DashboardBuilder:
         if response.status_code >= 400:
             raise RuntimeError(f"删除 dashboard 失败：{response.status_code} {response.text[:200]}")
 
+    def delete_widget(self, widget_id: str) -> None:
+        """按 ID 删除单个 widget（404 视为已不存在，fail-open 记日志不抛）。"""
+        response = httpx.delete(
+            self._url(f"/dashboard-widgets/{widget_id}"), auth=self.auth, timeout=30
+        )
+        if response.status_code == 404:
+            logger.warning("widget「%s」已不存在，跳过删除", widget_id)
+            return
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"删除 widget「{widget_id}」失败：{response.status_code} {response.text[:200]}"
+            )
 
-def main() -> int:
+
+# ---------------------------------------------------------------- widget manifest
+# 本地文件、非 DB。只记录「本脚本 create_widget 返回的 ID」，--force 只按这些 ID 删/复用。
+# 原子写（临时文件 + os.replace）+ 进程间文件锁，对齐 backend/eval_042/report.py 的纪律。
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _empty_manifest(project_id: str = "") -> Dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "project_id": project_id,
+        "created_at": _utc_now(),
+        "source": "setup_langfuse_dashboards.py",
+        "widgets": [],
+    }
+
+
+def load_manifest(path: Path) -> Dict[str, Any]:
+    """读取 manifest；缺失 / 损坏 / 结构异常一律降级为空清单（不抛、不创建文件）。"""
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return _empty_manifest()
+    except (OSError, ValueError) as exc:
+        logger.warning("读取 widget manifest 失败（降级为空清单）：%s", exc)
+        return _empty_manifest()
+    if not isinstance(data, dict) or not isinstance(data.get("widgets"), list):
+        logger.warning("widget manifest 结构异常（降级为空清单）：%s", path)
+        return _empty_manifest()
+    return data
+
+
+def _atomic_write(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            tmp = Path(handle.name)
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+        os.replace(tmp, path)
+    except BaseException:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+        raise
+
+
+def _mutate_manifest(path: Path, mutate: Callable[[Dict[str, Any]], None]) -> Dict[str, Any]:
+    """在同一把文件锁内完成 read-modify-atomic-write，避免并发重跑丢写。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(path.name + ".lock")
+    with open(lock_path, "a", encoding="utf-8") as lock:
+        if fcntl is not None:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            data = load_manifest(path)
+            mutate(data)
+            _atomic_write(path, data)
+            return data
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def record_widgets(
+    path: Path, entries: List[Dict[str, Any]], project_id: str = ""
+) -> Dict[str, Any]:
+    """每次 create_widget 成功后立即追加写盘（先于 create_dashboard / add_placement）。"""
+    def mutate(data: Dict[str, Any]) -> None:
+        if not data.get("project_id") and project_id:
+            data["project_id"] = project_id
+        known = {w.get("id") for w in data["widgets"] if isinstance(w, dict)}
+        for item in entries:
+            if item["id"] not in known:
+                data["widgets"].append(item)
+                known.add(item["id"])
+
+    return _mutate_manifest(path, mutate)
+
+
+def remove_widgets(path: Path, widget_ids: Any) -> Dict[str, Any]:
+    """从 manifest 移除指定 ID（--force 删掉旧 widget 后同步）。"""
+    ids = set(widget_ids)
+
+    def mutate(data: Dict[str, Any]) -> None:
+        data["widgets"] = [
+            w for w in data["widgets"]
+            if not (isinstance(w, dict) and w.get("id") in ids)
+        ]
+
+    return _mutate_manifest(path, mutate)
+
+
+def _build_one(
+    builder: "DashboardBuilder",
+    spec: Dict[str, Any],
+    index: int,
+    manifest_path: Path,
+    width: int,
+    height: int,
+    project_id: str,
+) -> None:
+    name = spec["name"]
+    widget_ids: List[str] = []
+    for widget in spec["widgets"]:
+        widget_id = builder.create_widget(widget)
+        widget_ids.append(widget_id)
+        record_widgets(
+            manifest_path,
+            [{
+                "id": widget_id,
+                "name": widget["name"],
+                "dashboard": name,
+                "dashboard_index": index,
+                "created_at": _utc_now(),
+            }],
+            project_id=project_id,
+        )
+    dashboard_id = builder.create_dashboard(name, spec["description"])
+    for widget_id in widget_ids:
+        builder.add_placement(dashboard_id, widget_id, width, height)
+
+    print(f"[完成] {name} —— {len(widget_ids)} 个 widget")
+    print(f"       {builder.host}/project/local-proj/dashboards/{dashboard_id}")
+
+
+def run(
+    *,
+    force: bool,
+    builder: "DashboardBuilder",
+    manifest_path: Path,
+    width: int = 3,
+    height: int = 2,
+) -> int:
+    """创建 / 重建六组看板；manifest_path 可注入，便于契约测试用 tmp_path 隔离。"""
+    existing = {item["name"]: item["id"] for item in builder.list_dashboards()}
+    project_id = os.getenv("LANGFUSE_PROJECT_ID", "")
+    created = 0
+    skipped = 0
+
+    if force:
+        # 只读清单快照（fail-open），仅供备份 / 日志；绝不作为删除依据。
+        snapshot = builder.list_widgets()
+        print(f"[重建] 只读 widget 清单：{len(snapshot)} 个（仅备份，不用于删除）")
+        manifest = load_manifest(manifest_path)
+
+        # 阶段 1：先删同名 dashboard —— 清掉 placement，避免随后 DELETE widget 触发 409。
+        for spec in DASHBOARDS:
+            name = spec["name"]
+            if name in existing:
+                print(f"[重建] {name}")
+                builder.delete_dashboard(existing[name])
+
+        # 阶段 2：只按 manifest 内脚本自记录的 ID 删旧 widget（禁止按名称 / 全量删）。
+        old_ids = [
+            w["id"] for w in manifest.get("widgets", [])
+            if isinstance(w, dict) and w.get("id")
+        ]
+        for widget_id in old_ids:
+            builder.delete_widget(widget_id)
+        if old_ids:
+            remove_widgets(manifest_path, old_ids)
+
+        # 阶段 3：重建全部 6 组；成功创建 widget 后立即更新 manifest。
+        for index, spec in enumerate(DASHBOARDS):
+            _build_one(builder, spec, index, manifest_path, width, height, project_id)
+            created += 1
+    else:
+        for index, spec in enumerate(DASHBOARDS):
+            name = spec["name"]
+            if name in existing:
+                print(f"[跳过] {name}（已存在，用 --force 重建）")
+                skipped += 1
+                continue
+            _build_one(builder, spec, index, manifest_path, width, height, project_id)
+            created += 1
+
+    print(f"\n新建 {created} 个，跳过 {skipped} 个。")
+    print(
+        "提醒：思考占比 / 成功率 / 错误率依赖自定义 metadata，原生看板无法聚合；"
+        "真散点与阶段甘特图也无对应图表类型 —— 这些已列入任务 07 自研视图。"
+    )
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="创建 spec-013 任务 06 的六组原生 Dashboard")
     parser.add_argument("--force", action="store_true", help="同名 dashboard 先删除再重建")
     parser.add_argument("--width", type=int, default=3, help="widget 网格宽度")
     parser.add_argument("--height", type=int, default=2, help="widget 网格高度")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     host = os.getenv("LANGFUSE_HOST", "http://127.0.0.1:3000")
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "")
@@ -262,36 +527,13 @@ def main() -> int:
         return 1
 
     builder = DashboardBuilder(host, public_key, secret_key)
-    existing = {item["name"]: item["id"] for item in builder.list_dashboards()}
-
-    created = 0
-    skipped = 0
-    for spec in DASHBOARDS:
-        name = spec["name"]
-        if name in existing:
-            if args.force:
-                print(f"[重建] {name}")
-                builder.delete_dashboard(existing[name])
-            else:
-                print(f"[跳过] {name}（已存在，用 --force 重建）")
-                skipped += 1
-                continue
-
-        widget_ids = [builder.create_widget(widget) for widget in spec["widgets"]]
-        dashboard_id = builder.create_dashboard(name, spec["description"])
-        for widget_id in widget_ids:
-            builder.add_placement(dashboard_id, widget_id, args.width, args.height)
-
-        print(f"[完成] {name} —— {len(widget_ids)} 个 widget")
-        print(f"       {host}/project/local-proj/dashboards/{dashboard_id}")
-        created += 1
-
-    print(f"\n新建 {created} 个，跳过 {skipped} 个。")
-    print(
-        "提醒：思考占比 / 成功率 / 错误率依赖自定义 metadata，原生看板无法聚合；"
-        "真散点与阶段甘特图也无对应图表类型 —— 这些已列入任务 07 自研视图。"
+    return run(
+        force=args.force,
+        builder=builder,
+        manifest_path=DEFAULT_MANIFEST_PATH,
+        width=args.width,
+        height=args.height,
     )
-    return 0
 
 
 if __name__ == "__main__":

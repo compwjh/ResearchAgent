@@ -190,14 +190,19 @@ def _backdate_generation_start(generation: Any, base: datetime) -> None:
 _LF_OBSERVATION_TYPE = "langfuse.observation.type"
 
 
-def _set_phase_span_attributes(span, phase_name: str) -> None:
+def _set_phase_span_attributes(span, phase_name: str, metrics_available: bool) -> None:
     """给阶段子 span 打 Langfuse 约定属性（fail-open）。
 
     最小属性集始终打 `langfuse.observation.type=span`（硬编码字符串），保证私有
     helper 缺失时子 span 仍被识别为 observation。富化 metadata（phase 名）仅在
     `_create_span_attributes` 可用时进行；缺失时跳过，不影响 4 个子 span 的时间戳上报。
+
+    D3：额外打独立 OTel span attribute `metrics.available`（bool）。它与
+    `_build_metadata` 返回的 generation metadata dict 是**不同载体**，不触发
+    Spec024 allowlist 的 assertNotIn；4 个阶段子 span 统一携带该可用性标记。
     """
     span.set_attribute(_LF_OBSERVATION_TYPE, "span")
+    span.set_attribute("metrics.available", metrics_available)
     if _create_span_attributes is not None:
         span.set_attributes(
             _create_span_attributes(observation_type="span", metadata={"phase": phase_name})
@@ -259,6 +264,13 @@ def _report_phase_spans(
         ("phase:decode", timings.load_ms + timings.prompt_eval_ms, server_total_ms),
         ("phase:overhead", server_total_ms, end_ms),
     ]
+    # D3：timings 不可用（langchain 链路，Python 侧 False）时服务端三阶段全 0，
+    # server_total_ms=0、end_ms=client_wall_ms，上面 phase:overhead 会吃满整段墙钟，
+    # 与同名 score overhead_ms=0（derive_metrics 0 契约）自相矛盾。收敛为零长度
+    # (end_ms, end_ms)，明确标记「不可分解」；True 时四段边界公式逐字节不变。
+    metrics_available = result.timings_available is not False
+    if not metrics_available:
+        boundaries[-1] = ("phase:overhead", end_ms, end_ms)
     phases = []
     for phase_name, start_ms, stop_ms in boundaries:
         start_ms = max(start_ms, 0.0)
@@ -277,7 +289,7 @@ def _report_phase_spans(
                 phase_name, start_time=_to_ns(start_dt), end_on_exit=False
             ) as span:
                 try:
-                    _set_phase_span_attributes(span, phase_name)
+                    _set_phase_span_attributes(span, phase_name, metrics_available)
                 finally:
                     # end_on_exit=False，必须显式结束；即使 set_attributes 抛错也要结束，避免 span 泄漏
                     span.end(end_time=_to_ns(end_dt))
@@ -388,11 +400,20 @@ def record_ollama_generation(
                 update_fields["thinking"] = thinking_text
                 update_fields["metadata"] = {**metadata, "thinking": thinking_text}
             generation.update(**update_fields)
+            # D3：7 个 numeric score 的名字/数量/值全部不变（保 045 已签字 7-score
+            # 契约），仅各附一个稳定 comment 标记可用性。comment 是 Langfuse score
+            # 原生字段（非 metadata、非第 8 个 score），不触发 Spec024 allowlist /
+            # test_kb_trace_attribution.py 的 len(scores)==7。
+            score_comment = (
+                "metrics_available=true" if result.timings_available is not False
+                else "metrics_available=false"
+            )
             for metric_name in SCORE_METRICS:
                 generation.score(
                     name=metric_name,
                     value=metrics.get(metric_name, 0.0),
                     data_type="NUMERIC",
+                    comment=score_comment,
                 )
             # spec-041 T-E：反推 4 个阶段子 span（load/prefill/decode/overhead），
             # 带精确起止时间，让 Langfuse 瀑布图显示各阶段时间条。处于 safe_call 内，

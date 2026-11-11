@@ -1,11 +1,11 @@
 > 关联：[spec-045](../../specs/045-evaluation-observability-hardening.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 02；当前状态：`待执行`
+> 依赖：任务 02；当前状态：`已完成`（2026-11-08 接手机器只读核实）
 
 # Task 06 — 链路标识与脱敏统一
 
 ## 状态与一句话目标
 
-`待执行`。一次请求用一个 ID 串起三套观测记录；凭据不再明文进监控；
+`已完成`。一次请求用一个 ID 串起三套观测记录；凭据不再明文进监控；
 模型思考过程在瀑布图里可见。
 
 对应 spec 11 项中的 **07（能力补齐）**、**09（缺陷修复）**。
@@ -96,3 +96,18 @@ dual 模式属性映射冲突，须在真 SDK 冒烟中验证。
 
 初始写「待执行后填写」。执行后回填：红绿测试输出、三处落盘抽查样例（脱敏后）、
 真实 trace ID 与 thinking 字段截图、改动文件清单、`spec-status-changelog.md` 条目。
+
+## 接手机器执行结果（2026-11-08，只读核实）
+
+**状态：已完成。** 交接文档称「骨架在、未接入调用链」已过时：
+`backend/app/platform/observability/spans.py` 实际接线位置：
+
+- `:45-46` 导入 `redaction` 与 `ensure_request_id`；
+- `:356,470,535` 统一 `request_id` 写入三套观测记录；
+- `:378-389` thinking 正文与 content 分离上报（spec-013:101 承诺落地）；
+- `:425-431,469-482,511-514` 值级脱敏覆盖 prompt / payload / 路由观测；
+- `routes_conversations.py:80` 引入 `bind_request_id`，`:1259-1261` 在 SSE 入口绑定并跨 yield 复位。
+
+`tests/platform/test_task06_identity_redaction.py` 存在并通过；
+接手机器定向基线 `pytest tests/evaluation/ tests/observability/ tests/platform/ -q` → `214 passed, EXIT=0`。
+真实 trace `98b91aa3…` 的四段 phase span 已由 Langfuse public API 查证（`runs/task-02/evidence.md`）。

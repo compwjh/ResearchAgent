@@ -1,0 +1,306 @@
+data: {"type": "meta", "model": "qwen3.8:27b", "top_k": 3, "chunker": "v1", "project_id": null}
+
+data: {"type": "stage", "name": "retrieving", "message": "正在检索知识库"}
+
+data: {"type": "citations", "citations": [{"file_name": "2024-USENIX-Security-You-Cannot-Escape-Me-Detecting-Evasions-of-SIEM-Rules-in-Enterprise-Networks.pdf", "page": 4, "page_end": 4, "start_line": null, "end_line": null, "chunk_index": 22, "paper_id": "58fdc057d045489cb997b8434e3afff3", "document_id": "58fdc057d045489cb997b8434e3afff3", "chunk_id": "5d9ba871-545e-5c2c-9ee6-67c396482677", "source_url": "/api/kb/documents/58fdc057d045489cb997b8434e3afff3/source", "score": 0.016393, "text": "detection [6]. They comprise information on newly created processes and are generated either by Windows itself [57] or by the tool Sysmon [46,56]. The contained fields most often searched by the Sigmaprocess creation rules are CommandLine (the full command line of the process creation; 45 % of all search expressions in the considered rules), Image (the full path of the executed image; 29 % of search expressions), and ParentImage (the full path of the parent process image; 10 % of search expressions). There are ~20 more fields that are searched by only a few rules, e.g., Description, ParentCommandLine, and User."}, {"file_name": "2024-USENIX-Security-Query-Recovery-from-Easy-to-Hard-Jigsaw-Attack-against-SSE.pdf", "page": 3, "page_end": 3, "start_line": null, "end_line": null, "chunk_index": 12, "paper_id": "6c930cd2d2074485b8d29dbdafb5c462", "document_id": "6c930cd2d2074485b8d29dbdafb5c462", "chunk_id": "2d429547-2377-5f0a-9516-6178904d4406", "source_url": "/api/kb/documents/6c930cd2d2074485b8d29dbdafb5c462/source", "score": 0.016129, "text": "Contributions. We propose a new effective similar-data attack called Jigsaw providing a “granular and incremental” strategy, which comprises three core modules. 1) The first module uses the keyword’s volume and frequency information to locate and recover the most distinctive queries. 2) The second module further refines the recovered queries by matching the queries with the keywords according to the cooccurrence matrix. This module eliminates those incorrect query recoveries from the first module and tries to achieve near-perfect accuracy. 3) The last module is to recover the remaining queries using the outputs from the second module.\nWe generate scores for query-keyword combinations using the co-occurrence matrix, volume, and frequency information.\nWe optimize the score for queries to obtain matches between queries and keywords. We also provide comprehensive evaluations of Jigsaw. Concretely, our contributions are outlined as follows."}, {"file_name": "2024-USENIX-Security-CellularLint-A-Systematic-Approach-to-Identify-Inconsistent-Behavior-in-Cellular-Network-Specifications.pdf", "page": 10, "page_end": 10, "start_line": null, "end_line": null, "chunk_index": 58, "paper_id": "1e1613132f0346afb4b1a96602784813", "document_id": "1e1613132f0346afb4b1a96602784813", "chunk_id": "6393b851-46b7-5f8d-a363-b42d6efbe049", "source_url": "/api/kb/documents/1e1613132f0346afb4b1a96602784813/source", "score": 0.015873, "text": "We augment the dataset with Easy Data Augmentation (EDA) to gain these synthetic PoS [63]. For both pre-training and finetuning, Huggingface transformers standard pipeline based on PyTorch has been used [6].\nTo validate the inconsistencies in UE implementation, we prepared Software Defined Radio (SDR)-based testbeds. For details of the testbed preparation, we refer the reader to [13].\nTable 5 lists the devices we tested.\n6 Evaluation In this section, we evaluate the performance of CellularLint from multiple perspectives–starting from ML training performance, identifying inconsistent descriptions of different levels, and ending with security implications. On a high level, we aim to answer the following research questions:\n• RQ1. How does the choice of embedding affect the search space contraction?\n(a) (b) Figure 4: Embedding comparisons. Only 0.8% data were randomly sampled to generate the comparison for better visualization"}]}
+
+data: {"type": "token", "content": "提供的"}
+
+data: {"type": "token", "content": "上下文"}
+
+data: {"type": "token", "content": "信息"}
+
+data: {"type": "token", "content": "中"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "没有"}
+
+data: {"type": "token", "content": "包含"}
+
+data: {"type": "token", "content": "**"}
+
+data: {"type": "token", "content": "关于"}
+
+data: {"type": "token", "content": "“"}
+
+data: {"type": "token", "content": "检索"}
+
+data: {"type": "token", "content": "增强"}
+
+data: {"type": "token", "content": "生成"}
+
+data: {"type": "token", "content": "”"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "Ret"}
+
+data: {"type": "token", "content": "rie"}
+
+data: {"type": "token", "content": "val"}
+
+data: {"type": "token", "content": "-Aug"}
+
+data: {"type": "token", "content": "mented"}
+
+data: {"type": "token", "content": " Generation"}
+
+data: {"type": "token", "content": ","}
+
+data: {"type": "token", "content": " R"}
+
+data: {"type": "token", "content": "AG"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "的定义"}
+
+data: {"type": "token", "content": "或"}
+
+data: {"type": "token", "content": "解释"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "上下文"}
+
+data: {"type": "token", "content": "仅"}
+
+data: {"type": "token", "content": "提到了"}
+
+data: {"type": "token", "content": "以下"}
+
+data: {"type": "token", "content": "相关"}
+
+data: {"type": "token", "content": "但"}
+
+data: {"type": "token", "content": "不同的"}
+
+data: {"type": "token", "content": "概念"}
+
+data: {"type": "token", "content": "："}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "*"}
+
+data: {"type": "token", "content": "  "}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "1"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "描述了"}
+
+data: {"type": "token", "content": " SI"}
+
+data: {"type": "token", "content": "EM"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "规则"}
+
+data: {"type": "token", "content": "中"}
+
+data: {"type": "token", "content": "搜索"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "字段"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "如"}
+
+data: {"type": "token", "content": " CommandLine"}
+
+data: {"type": "token", "content": ","}
+
+data: {"type": "token", "content": " Image"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "等"}
+
+data: {"type": "token", "content": "）。"}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "*"}
+
+data: {"type": "token", "content": "  "}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "2"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "描述"}
+
+data: {"type": "token", "content": "了一种"}
+
+data: {"type": "token", "content": "名为"}
+
+data: {"type": "token", "content": " J"}
+
+data: {"type": "token", "content": "igsaw"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "类似"}
+
+data: {"type": "token", "content": "数据"}
+
+data: {"type": "token", "content": "攻击"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "利用"}
+
+data: {"type": "token", "content": "关键词"}
+
+data: {"type": "token", "content": "的"}
+
+data: {"type": "token", "content": "体积"}
+
+data: {"type": "token", "content": "、"}
+
+data: {"type": "token", "content": "频率"}
+
+data: {"type": "token", "content": "和"}
+
+data: {"type": "token", "content": "共"}
+
+data: {"type": "token", "content": "现"}
+
+data: {"type": "token", "content": "矩阵"}
+
+data: {"type": "token", "content": "来"}
+
+data: {"type": "token", "content": "恢复"}
+
+data: {"type": "token", "content": "查询"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n"}
+
+data: {"type": "token", "content": "*"}
+
+data: {"type": "token", "content": "  "}
+
+data: {"type": "token", "content": " ["}
+
+data: {"type": "token", "content": "3"}
+
+data: {"type": "token", "content": "]"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "描述了"}
+
+data: {"type": "token", "content": " Cellular"}
+
+data: {"type": "token", "content": "Lint"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "系统"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "使用"}
+
+data: {"type": "token", "content": "嵌入"}
+
+data: {"type": "token", "content": "（"}
+
+data: {"type": "token", "content": "embedding"}
+
+data: {"type": "token", "content": "）"}
+
+data: {"type": "token", "content": "来"}
+
+data: {"type": "token", "content": "收缩"}
+
+data: {"type": "token", "content": "搜索"}
+
+data: {"type": "token", "content": "空间"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "并"}
+
+data: {"type": "token", "content": "使用了"}
+
+data: {"type": "token", "content": " H"}
+
+data: {"type": "token", "content": "ugging"}
+
+data: {"type": "token", "content": "face"}
+
+data: {"type": "token", "content": " transformers"}
+
+data: {"type": "token", "content": " "}
+
+data: {"type": "token", "content": "进行"}
+
+data: {"type": "token", "content": "预"}
+
+data: {"type": "token", "content": "训练"}
+
+data: {"type": "token", "content": "和"}
+
+data: {"type": "token", "content": "微调"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "token", "content": "\n\n"}
+
+data: {"type": "token", "content": "因此"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "依据"}
+
+data: {"type": "token", "content": "现有"}
+
+data: {"type": "token", "content": "上下文"}
+
+data: {"type": "token", "content": "，"}
+
+data: {"type": "token", "content": "无法"}
+
+data: {"type": "token", "content": "回答"}
+
+data: {"type": "token", "content": "“"}
+
+data: {"type": "token", "content": "什么是"}
+
+data: {"type": "token", "content": "检索"}
+
+data: {"type": "token", "content": "增强"}
+
+data: {"type": "token", "content": "生成"}
+
+data: {"type": "token", "content": "？”"}
+
+data: {"type": "token", "content": "这一问题"}
+
+data: {"type": "token", "content": "。"}
+
+data: {"type": "debug", "debug": {"elapsed_ms": 37482.1, "hits": 3}}
+
+data: {"type": "done"}
+

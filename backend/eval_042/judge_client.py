@@ -151,13 +151,20 @@ def enum_to_score(task: str, label: str | None) -> float | None:
     return ENUM_MAPS.get(task, {}).get(label)
 
 
-def call_ollama(model: str, messages: list[dict], timeout: int = 180) -> str:
+def call_ollama(model: str, messages: list[dict], timeout: int = 180,
+                num_predict: int | None = None) -> str:
+    """唯一传输层。``num_predict`` 是 spec-047 §13.1 P1-3 允许的唯一例外：
+
+    不传时 body 的 ``options.num_predict`` **仍为 160**（默认行为逐字不变），
+    只有批量生成 / 批量判官调用才显式传入更大的输出上限，避免 B=20 的 JSON 被截断。
+    ``ENUM_MAPS`` / ``PROMPTS`` / ``judge_one`` / ``judge_majority`` 行为不变。
+    """
     body = {
         "model": model,
         "think": False,
         "seed": JUDGE_SEED,
         "messages": messages,
-        "options": {"temperature": 0, "num_predict": 160},
+        "options": {"temperature": 0, "num_predict": 160 if num_predict is None else num_predict},
         "stream": False,
     }
     data = http_post_json(

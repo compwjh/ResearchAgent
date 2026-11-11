@@ -93,6 +93,12 @@ curl -s -X POST "http://127.0.0.1:8000/api/research-sessions/<session_id>/comman
 | 多 spec 合并 | `artifacts/spec-NNN-MMM-api-sample.md` |
 | 配套请求体较大 | 同目录放 `artifacts/spec-NNN-<endpoint>-sample.json` 并用 `@` 引用 |
 
+> **目录契约**（详见 `artifacts/README.md`）：所有路径必须能反查到 spec —— 文件名以 `spec-NNN` 开头，
+> 或位于 `artifacts/spec-NNN/` 下；**禁止新建裸 `artifacts/task-NN/` 目录**（`task-06` 在仓内有多重含义，
+> 脱离上下文不可读）。同一 spec 下的多份交接物放 `artifacts/spec-NNN/task-TT/`；
+> 逐次运行证据（截图 / snapshot / 原始响应）优先放 `docs/sdd/plans/NNN/runs/task-TT/`。
+> 过程日志放 `.codebuddy/agent-logs/`（被 `.gitignore` 忽略，不是交付物）。
+
 用下面的**模板**填充（直接复制骨架，把真实值填进去）。
 
 ### Step 5 — 回写验收状态
