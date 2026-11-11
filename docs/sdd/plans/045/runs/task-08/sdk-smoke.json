@@ -1,0 +1,222 @@
+{
+  "artifact": "Q10 evidence ③ supplement — real-SDK smoke (non-mock)",
+  "spec": "045 / task-08 / hardening item 11",
+  "captured_at": "2026-11-08T09:40:51.273548+00:00",
+  "discipline": {
+    "mock_or_fake_transport": false,
+    "method": "real HTTP SSE to running service (uses real langfuse.Langfuse client internally) + real Langfuse public API read-back with Basic auth",
+    "not_reused_task02_trace": true,
+    "task02_reference": "docs/sdd/plans/045/runs/task-02/trace-summary.json (trace 98b91aa39d22b54a50f6dba1364eccdd) used only as shape reference"
+  },
+  "environment": {
+    "service_health_http": 200,
+    "langfuse_health_http": 200,
+    "langfuse_host": "http://127.0.0.1:3000",
+    "observability_mode": "dual",
+    "langfuse_enabled": true,
+    "sample_rate": 1.0,
+    "sdk": {
+      "version": "4.15.1",
+      "locked_in_requirements": "langfuse==4.15.1 (requirements.lock.txt)",
+      "client_class": "Langfuse",
+      "private_symbols": {
+        "langfuse._client.attributes.create_span_attributes": {
+          "importable": true,
+          "module": "langfuse._client.attributes",
+          "callable": true
+        },
+        "Langfuse._otel_tracer": {
+          "present": true,
+          "type": "Tracer"
+        },
+        "Langfuse._client (instance attr)": {
+          "present": false
+        },
+        "LangfuseObservationWrapper._otel_span": {
+          "source_module": "langfuse._client.span",
+          "shape": "instance attr `self._otel_span` set in __init__; `_start_time` written by sdk_compat.set_otel_span_start_time"
+        },
+        "create_trace_id": true,
+        "start_as_current_observation": true
+      }
+    }
+  },
+  "http_requests": [
+    {
+      "method": "POST",
+      "path": "/api/chat",
+      "http_status": 200,
+      "payload": {
+        "question": "用一句话说明什么是可观测性。",
+        "mode": "normal",
+        "model": "qwen3.8:27b"
+      },
+      "sse_frame_types": {
+        "meta": 1,
+        "token": 28,
+        "done": 1
+      },
+      "error_frames": 0,
+      "elapsed_s": 28.654
+    },
+    {
+      "method": "POST",
+      "path": "/api/kb/ask",
+      "http_status": 200,
+      "payload": {
+        "question": "什么是检索增强生成？",
+        "model": "qwen3.8:27b",
+        "top_k": 3,
+        "chunker": "v1"
+      },
+      "sse_frame_types": {
+        "meta": 1,
+        "stage": 1,
+        "citations": 1,
+        "token": 109,
+        "debug": 1,
+        "done": 1
+      },
+      "error_frames": 0,
+      "elapsed_s": 22.45
+    }
+  ],
+  "baseline": {
+    "traces_totalItems_before": 381,
+    "scores_totalItems_before": 1147,
+    "traces_totalItems_after": 384
+  },
+  "verification": {
+    "four_phase_spans": "PASS (both chat and kb.generation traces)",
+    "completion_start_time": "PASS (non-null on both GENERATION observations)",
+    "scores": "PASS (7 numeric scores per generation trace, observationId linked)",
+    "trace_attribution": "PARTIAL — see finding",
+    "http_status_codes": "all 200"
+  },
+  "traces": {
+    "chat": {
+      "trace_id": "2bc3846c1f70585de368a049c2e49ea3",
+      "name": "ollama-chat",
+      "http": {
+        "GET /api/public/traces/{id}": 200,
+        "GET /api/public/observations?traceId=": 200
+      },
+      "observation_count": 5,
+      "observation_names": [
+        "ollama-chat",
+        "phase:prefill",
+        "phase:load",
+        "phase:overhead",
+        "phase:decode"
+      ],
+      "phase_spans": [
+        "phase:decode",
+        "phase:load",
+        "phase:overhead",
+        "phase:prefill"
+      ],
+      "four_phase_spans_present": true,
+      "phase_spans_parented_to_generation": true,
+      "completion_start_time": "2026-11-08T17:33:44.057Z",
+      "score_count": 7,
+      "score_names": [
+        "eval_ms",
+        "is_cold_start",
+        "load_ms",
+        "overhead_ms",
+        "prompt_eval_ms",
+        "tokens_per_sec",
+        "ttft_ms"
+      ],
+      "metadata_request_id": "269c190e0a204edf8adeb3e411aae2a3"
+    },
+    "kb_generation": {
+      "trace_id": "b8e369741b1b44b3d8d4f7fe3b4b06e9",
+      "name": "kb.generation",
+      "http": {
+        "GET /api/public/traces/{id}": 200,
+        "GET /api/public/observations?traceId=": 200
+      },
+      "observation_count": 5,
+      "observation_names": [
+        "kb.generation",
+        "phase:load",
+        "phase:decode",
+        "phase:overhead",
+        "phase:prefill"
+      ],
+      "phase_spans": [
+        "phase:decode",
+        "phase:load",
+        "phase:overhead",
+        "phase:prefill"
+      ],
+      "four_phase_spans_present": true,
+      "phase_spans_parented_to_generation": true,
+      "completion_start_time": "2026-11-08T17:33:53.281Z",
+      "score_count": 7,
+      "score_names": [
+        "eval_ms",
+        "is_cold_start",
+        "load_ms",
+        "overhead_ms",
+        "prompt_eval_ms",
+        "tokens_per_sec",
+        "ttft_ms"
+      ],
+      "metadata_request_id": "16b2b490a82941fc8a1e26d696cc5283"
+    },
+    "kb_retrieval": {
+      "trace_id": "16b2b490a82941fc8a1e26d696cc5283",
+      "name": "kb.retrieval",
+      "http": {
+        "GET /api/public/traces/{id}": 200,
+        "GET /api/public/observations?traceId=": 200
+      },
+      "observation_count": 3,
+      "observation_names": [
+        "kb.retrieval",
+        "kb.rerank",
+        "kb.embedding"
+      ],
+      "phase_spans": [],
+      "four_phase_spans_present": false,
+      "phase_spans_parented_to_generation": false,
+      "completion_start_time": null,
+      "score_count": 0,
+      "score_names": [],
+      "metadata_request_id": "16b2b490a82941fc8a1e26d696cc5283"
+    }
+  },
+  "finding_trace_attribution": {
+    "status": "DEFECT (reported, not fixed — business code out of boundary)",
+    "summary": "kb-ask produced 2 distinct Langfuse traces for one request: retrieval spans in 16b2b490…, generation + 4 phase spans + 7 scores in b8e36974…. The kb.generation metadata.request_id equals the retrieval trace id (16b2b490…), so unified request_id is present but observations are NOT grouped into one trace.",
+    "expected": "one request -> one trace id (hardening item 07 / Q10 evidence ③)",
+    "suspected_root_cause": [
+      "backend/app/api/routes_kb.py:1032 start_trace('kb-ask') sets _current_trace_id; SSE generator crosses yield boundaries before record_ollama_generation at :1103",
+      "backend/app/platform/observability/request_id.py rebinds only _request_id across yields; _current_trace_id (trace.py:33) is not re-bound, so spans.py:79-88 _trace_context() returns None at generation time",
+      "backend/app/platform/observability/trace.py:111-120 _open_root calls start_as_current_observation without `with`, so the 'kb-ask' root observation is never ended/flushed (name=kb-ask returns 0 observations)"
+    ],
+    "reproduce": "POST /api/kb/ask {\"question\":\"什么是检索增强生成？\",\"model\":\"qwen3.8:27b\",\"top_k\":3,\"chunker\":\"v1\"}; then GET /api/public/traces?limit=12&orderBy=timestamp.desc and compare observation traceIds",
+    "evidence": "name=kb-ask observation query returns 0; kb.generation trace rid field above"
+  },
+  "privacy_real_chain": {
+    "probe": "real-chain privacy regression (synthetic credential in prompt)",
+    "http_status": 200,
+    "sse_frame_types": {
+      "meta": 1,
+      "token": 21,
+      "done": 1
+    },
+    "trace_id": "996036fece9680a39c4c9d9c16eea566",
+    "synthetic_credential": "sk-proj-FAKECRED1234567890abcdefXYZ",
+    "public_api_http": {
+      "trace_detail": 200,
+      "observations": 200
+    },
+    "plaintext_credential_in_stored_trace": false,
+    "input_is_redacted": true,
+    "trace_name": "ollama-chat",
+    "note": "checks stored Langfuse input/output/metadata only; raw_events checked by pytest chain test"
+  }
+}

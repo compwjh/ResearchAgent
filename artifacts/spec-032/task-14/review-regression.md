@@ -79,9 +79,9 @@
 ## 交接字段
 
 - 状态摘要：离线回归绿；P1 已修复；官方年度覆盖、外部来源与真实 smoke/deploy 证据仍阻塞收口。
-- 改动文件：仅新增 `artifacts/task-14/**`、`docs/sdd/reviews/032-*.md`、`docs/sdd/retro/2026-09-20-spec032-task14-review.md`、本 Agent 日志；未改业务代码。
+- 改动文件：仅新增 `artifacts/spec-032/task-14/**`、`docs/sdd/reviews/032-*.md`、`docs/sdd/retro/2026-09-20-spec032-task14-review.md`、本 Agent 日志；未改业务代码。
 - 测试命令/结果：见上表；765 passed，静态检查全通过；health/ready HTTP 200，IEEE 外站 degraded 已记录。
-- 产物路径：`artifacts/task-14/review-regression.md`、`artifacts/task-14/live-smoke-checklist.md`、`docs/sdd/reviews/032-requirement-review.md`、`docs/sdd/reviews/032-tech-review.md`、`docs/sdd/reviews/032-acceptance-review.md`。
+- 产物路径：`artifacts/spec-032/task-14/review-regression.md`、`artifacts/spec-032/task-14/live-smoke-checklist.md`、`docs/sdd/reviews/032-requirement-review.md`、`docs/sdd/reviews/032-tech-review.md`、`docs/sdd/reviews/032-acceptance-review.md`。
 - 评审结论：打回/阻塞，见三份 review。
 - 阻塞风险：官网年度覆盖不完整；真实外部来源、登录/导入、重启恢复及 API health 证据缺失；032.1 评审未闭环。
 - 主 Agent 后续动作：补齐可验证的官方来源覆盖或记录 NO-GO；在可用网络环境完成 source-selection、候选评估、导入、重启恢复 smoke；由独立 tech-lead/tester 复评；再更新 spec、状态台账和复盘。

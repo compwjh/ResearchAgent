@@ -44,7 +44,7 @@ GET https://api.crossref.org/works
 ## 官网目录审计（Spec032 Task07）
 
 本目录没有伪造的 CCS 官网 HTML fixture。2026-09-20 的受控只读审计记录在
-`artifacts/task-07/ccs-coverage.md`：2021、2022、2024 官方 accepted/proceedings
+`artifacts/spec-032/task-07/ccs-coverage.md`：2021、2022、2024 官方 accepted/proceedings
 页面能读到标题/作者，但缺少统一 DOI/详情身份键；2023 官方程序页显示动态数据库
 错误（`Something doesn't seem right?` / `Reload the Database`），2025 accepted 页
 要求 JavaScript 且 accepted sections 无正文。因 2021–2025 全年度官网身份合同未闭环，

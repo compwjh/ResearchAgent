@@ -1,0 +1,1930 @@
+{
+  "dataset_id": "rag-retrieval",
+  "schema_version": "builtin-evaluation-dataset-v1",
+  "source": "builtin-fixture",
+  "synthetic": true,
+  "label_source": "kb-derived:retrieval-rank",
+  "label_source_note": "非人工标注、非真实业务数据。相关片段身份取自当前 KB 的真实 Qdrant chunk，按冻结的 baseline 检索排名派生；仅用于机制回归与可复算指标，不代表业务真实相关性，也不冒充 014 的人工冻结标签。",
+  "derivation_rule": "保留追加范围二冻结的 8 条（含 kb_alignment 结论）逐字不变；新增条目在首次生成时对运行中的主服务以固定英文问题调用 POST /api/kb/ask(question, top_k=10, chunker='v1')，只读解析 SSE citations 事件（由 hybrid_search 生成），登记真实命中的 (paper_id, chunker='v1', chunk_index, page) 为 relevant_doc_ids，derived_chunk_excerpt 取自真实 Hit.text。不编造 paper_id / chunk_index。身份随 gold 冻结，复跑以只读 health/papers 校验仍属于当前 KB；derivation_rank 是脚本轮换的确定性派生序号（1..10），不是 hybrid_search 实时排名；打分时命中与否完全由 hybrid_search 真实检索决定，baseline(top_k=5) 与 topk-10(top_k=10) 因此产生真实可复算的 recall/precision/mrr 差异。",
+  "kb_alignment": {
+    "checked_at": "2026-11-09T17:51:52Z",
+    "verification_method": "只读 GET /api/kb/health、GET /api/kb/papers、GET /api/kb/documents/{id}/inspection、POST /api/kb/ask 的 citations 事件",
+    "current_kb": {
+      "source": "GET /api/kb/health",
+      "qdrant": true,
+      "embedding": true,
+      "reranker_available": false,
+      "reranker_reason": "connection",
+      "papers": 64,
+      "chunks": 19905
+    },
+    "reference_014": {
+      "source": "docs/sdd/reviews/014-reranker-benchmark.md:17-28",
+      "frozen_paper_ids": [
+        "a8caef6843134a2397cd5960864ae29e",
+        "f1ea7d6e35be4e73a26b0b2b247e0e36",
+        "628d96cc46bc48b5bb8c5e422f0ed8d0",
+        "d4dfd2a620384ad5bece27320661f8f0",
+        "1b11eaec883642c5a702a6d00565d5bd"
+      ],
+      "found_in_current_kb": [
+        "d4dfd2a620384ad5bece27320661f8f0"
+      ],
+      "found_count": 1,
+      "missing_count": 4,
+      "applicable_questions": 0,
+      "conclusion": "014 十题不适用：5 个冻结 paper_id 中 4 个在当前 KB 不存在（GET /api/kb/documents/{id}/inspection 返回 DOCUMENT_NOT_FOUND），且 10 题的目标片段 SHA256 绑定 2026-09-02 的历史 Qdrant 快照，未做逐 chunk 哈希复核，不复用其人工冻结标签。唯一仍存在的 d4dfd2a620384ad5bece27320661f8f0 也只作为当前 KB 真实文档参与派生，不登记 014 的 v1/20/4、v1/21/4 旧标签。"
+    },
+    "aligned_from_current_kb": {
+      "aligned_items": 8,
+      "aligned_paper_ids": [
+        "d4dfd2a620384ad5bece27320661f8f0",
+        "f3227d067b734e6cbc8fb3a9ce886191",
+        "7dfec772f919481aad9fc3bcbcf96041",
+        "88ef66bf9c7547148d843d6a1e8270bd",
+        "4aee4ac6675241ebabb70b60ddb6bb8c",
+        "388ff16ff0594a08ad30a35e9d4b59ea",
+        "1a3c542b31734c45a541896a01d71528",
+        "277758154feb492081ef84d33c5fcab3"
+      ],
+      "aligned_chunk_count": 8,
+      "identity_fields": [
+        "paper_id",
+        "chunker",
+        "chunk_index",
+        "page"
+      ],
+      "all_chunk_identities_from_current_kb": true
+    }
+  },
+  "items": [
+    {
+      "id": "rag-01",
+      "question": "How does the peel-chain heuristic identify change outputs in Bitcoin clustering?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "d4dfd2a620384ad5bece27320661f8f0",
+          "chunker": "v1",
+          "chunk_index": 11,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "2 Related Work 2.1 Bitcoin clustering The ability to cluster together the addresses used as an input to a tran"
+    },
+    {
+      "id": "rag-02",
+      "question": "Why are HTLC contracts vulnerable to bribing attacks and how does MAD-HTLC improve security?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "f3227d067b734e6cbc8fb3a9ce886191",
+          "chunker": "v1",
+          "chunk_index": 14,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "We then revisit the security of the prevalent HTLC implementation and reﬁne previous results [28] regarding it"
+    },
+    {
+      "id": "rag-03",
+      "question": "How does MAGIC detect advanced persistent threats via masked graph representation learning?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "7dfec772f919481aad9fc3bcbcf96041",
+          "chunker": "v1",
+          "chunk_index": 52,
+          "page": 9
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "ns (e.g. attack investigation and story recovery). Recent works address this issue by forgetting outdated data"
+    },
+    {
+      "id": "rag-04",
+      "question": "How do voice app developers juggle risks, liability and security on Alexa and Google Assistant?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "88ef66bf9c7547148d843d6a1e8270bd",
+          "chunker": "v1",
+          "chunk_index": 109,
+          "page": 15
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "7 Conclusion In this paper, we conducted a user study that sheds light on the experiences of voice app develop"
+    },
+    {
+      "id": "rag-05",
+      "question": "How does Atropos fuzz web applications to find server-side vulnerabilities?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "4aee4ac6675241ebabb70b60ddb6bb8c",
+          "chunker": "v1",
+          "chunk_index": 82,
+          "page": 12
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "likely explanation is that ATROPOS does not need to perform taint analysis to track input across multiple exec"
+    },
+    {
+      "id": "rag-06",
+      "question": "How do fraud and data availability proofs detect invalid blocks in light clients?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "388ff16ff0594a08ad30a35e9d4b59ea",
+          "chunker": "v1",
+          "chunk_index": 6,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "We also implement and evaluate the security and eﬃciency of our overall design, and show in Section 5.4 that l"
+    },
+    {
+      "id": "rag-07",
+      "question": "What is RowHammer and how does ABACuS track all-bank activation counters?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1a3c542b31734c45a541896a01d71528",
+          "chunker": "v1",
+          "chunk_index": 39,
+          "page": 7
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "ounts of all sibling rows, can reasonably accurately represent the activation count of all sibling rows. This "
+    },
+    {
+      "id": "rag-08",
+      "question": "How does neural network semantic backdoor detection use causality?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 80,
+          "page": 14
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "6 Discussion Layer selection. In SODA, we apply causality analysis on the last dense layer of the neural netwo"
+    },
+    {
+      "id": "rag-009",
+      "question": "In the paper '2024-USENIX-Security-Single-Pass-Client-Preprocessing-Private-Information-Retrieval', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "0791f677d9e4458ebe3aafa71ebce9f3",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-010",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Single-Pass-Client-Preprocessing-Private-Information-Retrieval'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e32d733688f240b69a8f2e4357b03c1f",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "ectively splitting each class into two classes: “clean” and “adversarial.” This split doubles the nu"
+    },
+    {
+      "id": "rag-011",
+      "question": "In the paper '2022-USENIX-Security-Under-the-Hood-of-DANE-Mismanagement-in-SMTP', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "0b37796f02fd448f86b59f4a6b4b255d",
+          "chunker": "v1",
+          "chunk_index": 31,
+          "page": 6
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": " servers and domains are shown as of February 12th, 2021.\ndaily basis [52,53]. Also, there are web-b"
+    },
+    {
+      "id": "rag-012",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Under-the-Hood-of-DANE-Mismanagement-in-SMTP'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-013",
+      "question": "In the paper '2024-USENIX-Security-AttackGNN-Red-Teaming-GNNs-in-Hardware-Security-Using-Reinforcement-Learning', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "0df41f1cc9964f1fa14eebd61ffdef2b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "In this work, we propose AttackGNN, the first red-team attack on GNN-based techniques in hardware se"
+    },
+    {
+      "id": "rag-014",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-AttackGNN-Red-Teaming-GNNs-in-Hardware-Security-Using-Reinforcement-Learning'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-015",
+      "question": "In the paper '2024-USENIX-Security-Web-Platform-Threats-Automated-Detection-of-Web-Security-Issues-With-WPT', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "d9ba37cf3cef4f8dba3a61222b21e6c2",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-016",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Web-Platform-Threats-Automated-Detection-of-Web-Security-Issues-With-WPT'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-017",
+      "question": "In the paper '2024-USENIX-Security-ABACuS-All-Bank-Activation-Counters-for-Scalable-and-Low-Overhead-RowHammer-Mitigation', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1a3c542b31734c45a541896a01d71528",
+          "chunker": "v1",
+          "chunk_index": 14,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "ossible to leverage benign workload access patterns to prevent RowHammer bitflips at low overhead in"
+    },
+    {
+      "id": "rag-018",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-ABACuS-All-Bank-Activation-Counters-for-Scalable-and-Low-Overhead-RowHammer-Mitigation'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-019",
+      "question": "In the paper '2021-Conference-End-to-End-Spectro-Temporal-Graph-Attention-Networks-for-Speaker-Verification-Anti-Spoofing-and-Speech-D', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1b967ed8638e46569d36e3f6565c51eb",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "End-to-End Spectro-Temporal Graph Attention Networks for Speaker Veriﬁcation Anti-Spooﬁng and Speech"
+    },
+    {
+      "id": "rag-020",
+      "question": "Summarize the main contribution and method of '2021-Conference-End-to-End-Spectro-Temporal-Graph-Attention-Networks-for-Speaker-Verification-Anti-Spoofing-and-Speech-D'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1b967ed8638e46569d36e3f6565c51eb",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "End-to-End Spectro-Temporal Graph Attention Networks for Speaker Veriﬁcation Anti-Spooﬁng and Speech"
+    },
+    {
+      "id": "rag-021",
+      "question": "In the paper '2024-USENIX-Security-CellularLint-A-Systematic-Approach-to-Identify-Inconsistent-Behavior-in-Cellular-Network-Specificat', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1e1613132f0346afb4b1a96602784813",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "CellularLint: A Systematic Approach to Identify Inconsistent Behavior in Cellular Network Specificat"
+    },
+    {
+      "id": "rag-022",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-CellularLint-A-Systematic-Approach-to-Identify-Inconsistent-Behavior-in-Cellular-Network-Specificat'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1e1613132f0346afb4b1a96602784813",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "CellularLint: A Systematic Approach to Identify Inconsistent Behavior in Cellular Network Specificat"
+    },
+    {
+      "id": "rag-023",
+      "question": "In the paper '2024-USENIX-Security-Neural-Network-Semantic-Backdoor-Detection-and-Mitigation-A-Causality-Based-Approach', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 39,
+          "page": 7
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "nd mitigation approach described in the following sections.\nOn the other hand, influence estimation "
+    },
+    {
+      "id": "rag-024",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Neural-Network-Semantic-Backdoor-Detection-and-Mitigation-A-Causality-Based-Approach'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-025",
+      "question": "In the paper '2022-USENIX-Security-Web-Cache-Deception-Escalates', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "2b891eb6ee0a450ea34aa7b2ad4cd873",
+          "chunker": "v1",
+          "chunk_index": 21,
+          "page": 5
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "2.3 Cached and Confused In their USENIX Security 2020 paper titled “Cached and Confused: Web Cache D"
+    },
+    {
+      "id": "rag-026",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Web-Cache-Deception-Escalates'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-027",
+      "question": "In the paper '2024-USENIX-Security-Batch-PIR-and-Labeled-PSI-with-Oblivious-Ciphertext-Compression', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "9f7fe03d513941798a808270c0992ba6",
+          "chunker": "v1",
+          "chunk_index": 105,
+          "page": 17
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "vacy, 14:40–46, 2016.\n[22] Harry Halpin. SoK: Why johnny can’t fix PGP standardization. In Proceedin"
+    },
+    {
+      "id": "rag-028",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Batch-PIR-and-Labeled-PSI-with-Oblivious-Ciphertext-Compression'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "2f002c403d4e49e79b4d2781fea38fc6",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "Batch PIR and Labeled PSI with Oblivious Ciphertext Compression Alexander Bienstock∗ Sarvar Patel† J"
+    },
+    {
+      "id": "rag-029",
+      "question": "In the paper 'Fraud and Data Availability Proofs- Detecting Invalid Blocks in Light Clients', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "388ff16ff0594a08ad30a35e9d4b59ea",
+          "chunker": "v1",
+          "chunk_index": 5,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "ct this as they do not verify the chain.\nThis increases the incentive for conducting a 51% attack. O"
+    },
+    {
+      "id": "rag-030",
+      "question": "Summarize the main contribution and method of 'Fraud and Data Availability Proofs- Detecting Invalid Blocks in Light Clients'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "388ff16ff0594a08ad30a35e9d4b59ea",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "Detecting Invalid Blocks in Light Clients Mustafa Al-Bassam1, Alberto Sonnino1, Vitalik Buterin2, an"
+    },
+    {
+      "id": "rag-031",
+      "question": "In the paper '2024-USENIX-Security-With-Great-Power-Come-Great-Side-Channels-Statistical-Timing-Side-Channel-Analyses-with-Bounded-Typ', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e4af3a4ecfe84f98b515b0cac1e28aa6",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-032",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-With-Great-Power-Come-Great-Side-Channels-Statistical-Timing-Side-Channel-Analyses-with-Bounded-Typ'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e4af3a4ecfe84f98b515b0cac1e28aa6",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-033",
+      "question": "In the paper '2022-USENIX-Security-Increasing-Adversarial-Uncertainty-to-Scale-Private-Similarity-Testing', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "413008cc2b8f47b18a0d53c8a7399b02",
+          "chunker": "v1",
+          "chunk_index": 110,
+          "page": 15
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "less, we consider the empirical results presented in this initial work as a proofof-concept of the S"
+    },
+    {
+      "id": "rag-034",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Increasing-Adversarial-Uncertainty-to-Scale-Private-Similarity-Testing'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "413008cc2b8f47b18a0d53c8a7399b02",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "Increasing Adversarial Uncertainty to Scale Private Similarity Testing Yiqing Hua1,2, Armin Namavari"
+    },
+    {
+      "id": "rag-035",
+      "question": "In the paper '2024-USENIX-Security-Inference-of-Error-Specifications-and-Bug-Detection-Using-Structural-Similarities', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "149114d78c0e49728d798cfab5e51ed4",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-036",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Inference-of-Error-Specifications-and-Bug-Detection-Using-Structural-Similarities'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-037",
+      "question": "In the paper '2022-USENIX-Security-Phish-in-Sheep-s-Clothing-Exploring-the-Authentication-Pitfalls-of-Browser-Fingerprinting', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "441db9a35e5a4571aadef2af80b0d2e5",
+          "chunker": "v1",
+          "chunk_index": 132,
+          "page": 19
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "ngerprinting values back to the server. Some sites also include ﬁngerprinting values in the URLs of "
+    },
+    {
+      "id": "rag-038",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Phish-in-Sheep-s-Clothing-Exploring-the-Authentication-Pitfalls-of-Browser-Fingerprinting'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-039",
+      "question": "In the paper '2017-Conference-Predicting-multicellular-function-through-multi-layer-tissue-networks', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "46b3c182d14e46cabe6e23eb0b67793f",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "Bioinformatics, 33, 2017, i190-i198 doi: 10.1093/bioinformatics/btx252\nISMB/ECCB 2017 This is the Au"
+    },
+    {
+      "id": "rag-040",
+      "question": "Summarize the main contribution and method of '2017-Conference-Predicting-multicellular-function-through-multi-layer-tissue-networks'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e32d733688f240b69a8f2e4357b03c1f",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "ectively splitting each class into two classes: “clean” and “adversarial.” This split doubles the nu"
+    },
+    {
+      "id": "rag-041",
+      "question": "In the paper '2024-USENIX-Security-Atropos-Effective-Fuzzing-of-Web-Applications-for-Server-Side-Vulnerabilities', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "4aee4ac6675241ebabb70b60ddb6bb8c",
+          "chunker": "v1",
+          "chunk_index": 14,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "pes of server-side vulnerabilities, featuring high detection rates and few false positives. Moreover"
+    },
+    {
+      "id": "rag-042",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Atropos-Effective-Fuzzing-of-Web-Applications-for-Server-Side-Vulnerabilities'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-043",
+      "question": "In the paper '2024-USENIX-Security-DNN-GP-Diagnosing-and-Mitigating-Model-s-Faults-Using-Latent-Concepts', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "527fe0c1515d48c78adec8f4eb7f4979",
+          "chunker": "v1",
+          "chunk_index": 13,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "ious models and faults.\n(iii) Innovative Perspective. DNN-GP introduces a fresh lens to anchor probi"
+    },
+    {
+      "id": "rag-044",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-DNN-GP-Diagnosing-and-Mitigating-Model-s-Faults-Using-Latent-Concepts'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-045",
+      "question": "In the paper '2017-Conference-Graph-Attention-Networks', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "7dfec772f919481aad9fc3bcbcf96041",
+          "chunker": "v1",
+          "chunk_index": 101,
+          "page": 16
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "[34] Emaad Manzoor, Sadegh M Milajerdi, and Leman Akoglu. Fast memory-efficient anomaly detection in"
+    },
+    {
+      "id": "rag-046",
+      "question": "Summarize the main contribution and method of '2017-Conference-Graph-Attention-Networks'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-047",
+      "question": "In the paper '2024-USENIX-Security-Stop-Don-t-Click-Here-Anymore-Boosting-Website-Fingerprinting-By-Considering-Sets-of-Subpages', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "56fc315e952342158e5ae2f5ef6f01a0",
+          "chunker": "v1",
+          "chunk_index": 115,
+          "page": 17
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "[42] Vera Rimmer, Davy Preuveneers, Marc Juarez, Tom Van Goethem, and Wouter Joosen. Automated Websi"
+    },
+    {
+      "id": "rag-048",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Stop-Don-t-Click-Here-Anymore-Boosting-Website-Fingerprinting-By-Considering-Sets-of-Subpages'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-049",
+      "question": "In the paper '2024-USENIX-Security-You-Cannot-Escape-Me-Detecting-Evasions-of-SIEM-Rules-in-Enterprise-Networks', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "58fdc057d045489cb997b8434e3afff3",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-050",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-You-Cannot-Escape-Me-Detecting-Evasions-of-SIEM-Rules-in-Enterprise-Networks'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "58fdc057d045489cb997b8434e3afff3",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-051",
+      "question": "In the paper '2024-USENIX-Security-Fast-RS-IOP-Multivariate-Polynomial-Commitments-and-Verifiable-Secret-Sharing', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "59a5407cc44445f1ac3d258c19af296f",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "Fast RS-IOP Multivariate Polynomial Commitments and Verifiable Secret Sharing Zongyang Zhang∗† Weiha"
+    },
+    {
+      "id": "rag-052",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Fast-RS-IOP-Multivariate-Polynomial-Commitments-and-Verifiable-Secret-Sharing'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "59a5407cc44445f1ac3d258c19af296f",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "Fast RS-IOP Multivariate Polynomial Commitments and Verifiable Secret Sharing Zongyang Zhang∗† Weiha"
+    },
+    {
+      "id": "rag-053",
+      "question": "In the paper '2022-USENIX-Security-Stalloris-RPKI-Downgrade-Attack', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "6001a8eb6538470bb7d8fc9900b91cf0",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "Stalloris:\nRPKI Downgrade Attack Tomas Hlavacek*§, Philipp Jeitner*§, Donika Mirdita*§‡, Haya Shulma"
+    },
+    {
+      "id": "rag-054",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Stalloris-RPKI-Downgrade-Attack'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-055",
+      "question": "In the paper '2024-USENIX-Security-Formalizing-Soundness-Proofs-of-Linear-PCP-SNARKs', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-056",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Formalizing-Soundness-Proofs-of-Linear-PCP-SNARKs'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "To increase the rigor of these proofs, we create a formal framework in the Lean theorem prover for r"
+    },
+    {
+      "id": "rag-057",
+      "question": "In the paper '2024-USENIX-Security-Understanding-the-Security-and-Privacy-Implications-of-Online-Toxic-Content-on-Refugees', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "cacd8936bc074af7a8eb0b2fc9c5df30",
+          "chunker": "v1",
+          "chunk_index": 124,
+          "page": 19
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "6.1. If yes, how do your job activities interact with the technical measures? Can you give an exampl"
+    },
+    {
+      "id": "rag-058",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Understanding-the-Security-and-Privacy-Implications-of-Online-Toxic-Content-on-Refugees'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-059",
+      "question": "In the paper '2024-USENIX-Security-Can-Virtual-Reality-Protect-Users-from-Keystroke-Inference-Attacks', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "6a23687c44704d68a0af8f9ab0972ab6",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-060",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Can-Virtual-Reality-Protect-Users-from-Keystroke-Inference-Attacks'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e32d733688f240b69a8f2e4357b03c1f",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "ectively splitting each class into two classes: “clean” and “adversarial.” This split doubles the nu"
+    },
+    {
+      "id": "rag-061",
+      "question": "In the paper '2024-USENIX-Security-Query-Recovery-from-Easy-to-Hard-Jigsaw-Attack-against-SSE', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "6c930cd2d2074485b8d29dbdafb5c462",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "Query Recovery from Easy to Hard: Jigsaw Attack against SSE Hao Nie1, Wei Wang1,B, Peng Xu1,2,3,4,B,"
+    },
+    {
+      "id": "rag-062",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Query-Recovery-from-Easy-to-Hard-Jigsaw-Attack-against-SSE'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-063",
+      "question": "In the paper '2024-USENIX-Security-SoK-or-SoLK-On-the-Quantitative-Study-of-Sociodemographic-Factors-and-Computer-Security-Behaviors', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "732fa292155e40c3b2cc35a3050d298b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "to synthesize what is currently known and identify open questions for future research. Second, by in"
+    },
+    {
+      "id": "rag-064",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-SoK-or-SoLK-On-the-Quantitative-Study-of-Sociodemographic-Factors-and-Computer-Security-Behaviors'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-065",
+      "question": "In the paper '2024-USENIX-Security-How-WEIRD-is-Usable-Privacy-and-Security-Research', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "73b95a2a776c4ee7a681fc42710c5ec9",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "How WEIRD is Usable Privacy and Security Research?\nAyako A. Hasegawa\nNICT Daisuke Inoue\nNICT Mitsuak"
+    },
+    {
+      "id": "rag-066",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-How-WEIRD-is-Usable-Privacy-and-Security-Research'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "73b95a2a776c4ee7a681fc42710c5ec9",
+          "chunker": "v1",
+          "chunk_index": 13,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "ns, and support technologies that are proposed on the basis of the findings of conventional WEIRD-sk"
+    },
+    {
+      "id": "rag-067",
+      "question": "In the paper '2024-USENIX-Security-MAGIC-Detecting-Advanced-Persistent-Threats-via-Masked-Graph-Representation-Learning', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "7dfec772f919481aad9fc3bcbcf96041",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "• We propose MAGIC, a universal APT detection approach based on masked graph representation learning"
+    },
+    {
+      "id": "rag-068",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-MAGIC-Detecting-Advanced-Persistent-Threats-via-Masked-Graph-Representation-Learning'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-069",
+      "question": "In the paper '2024-USENIX-Security-Voice-App-Developer-Experiences-with-Alexa-and-Google-Assistant-Juggling-Risks-Liability-and-Securi', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "88ef66bf9c7547148d843d6a1e8270bd",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-070",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Voice-App-Developer-Experiences-with-Alexa-and-Google-Assistant-Juggling-Risks-Liability-and-Securi'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e32d733688f240b69a8f2e4357b03c1f",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "ectively splitting each class into two classes: “clean” and “adversarial.” This split doubles the nu"
+    },
+    {
+      "id": "rag-071",
+      "question": "In the paper '2105.07447', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+          "chunker": "v1",
+          "chunk_index": 120,
+          "page": 18
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "7 Appendices 7.1 Appendix 1: List of participants Participants and their organisations are listed in"
+    },
+    {
+      "id": "rag-072",
+      "question": "Summarize the main contribution and method of '2105.07447'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "149114d78c0e49728d798cfab5e51ed4",
+          "chunker": "v1",
+          "chunk_index": 94,
+          "page": 16
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "theorem prover against Web security invariants. We formalized and encoded a total of 9 Web invariant"
+    },
+    {
+      "id": "rag-073",
+      "question": "In the paper '2024-USENIX-Security-Accelerating-Secure-Collaborative-Machine-Learning-with-Protocol-Aware-RDMA', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "8cd741ab309f49aab79da46cc348d0f2",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "Accelerating Secure Collaborative Machine Learning with Protocol-Aware RDMA Zhenghang Ren1, Mingxuan"
+    },
+    {
+      "id": "rag-074",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Accelerating-Secure-Collaborative-Machine-Learning-with-Protocol-Aware-RDMA'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-075",
+      "question": "In the paper '2024-USENIX-Security-Relation-Mining-Under-Local-Differential-Privacy', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "73b95a2a776c4ee7a681fc42710c5ec9",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-076",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Relation-Mining-Under-Local-Differential-Privacy'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-077",
+      "question": "In the paper '2024-USENIX-Security-Cascade-CPU-Fuzzing-via-Intricate-Program-Generation', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "a151fcff09944e7cbd1f4086376ae914",
+          "chunker": "v1",
+          "chunk_index": 93,
+          "page": 16
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "inxing Xue, Yuekang Li, Bihuan Chen, Xiaofei Xie, Xiuheng Wu, and Yang Liu. Hawkeye: Towards a desir"
+    },
+    {
+      "id": "rag-078",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Cascade-CPU-Fuzzing-via-Intricate-Program-Generation'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-079",
+      "question": "In the paper '2024-USENIX-Security-The-Challenges-of-Bringing-Cryptography-from-Research-Papers-to-Products-Results-from-an-Interview-', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "9f7fe03d513941798a808270c0992ba6",
+          "chunker": "v1",
+          "chunk_index": 22,
+          "page": 4
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "ssional networks—researchers with a strong publication record in cryptography and security who had c"
+    },
+    {
+      "id": "rag-080",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-The-Challenges-of-Bringing-Cryptography-from-Research-Papers-to-Products-Results-from-an-Interview-'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "73b95a2a776c4ee7a681fc42710c5ec9",
+          "chunker": "v1",
+          "chunk_index": 28,
+          "page": 5
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "rs2. Table 3 lists the numbers of identified UPS papers in each publication year. The number of UPS "
+    },
+    {
+      "id": "rag-081",
+      "question": "In the paper '2024-USENIX-Security-GhostRace-Exploiting-and-Mitigating-Speculative-Race-Conditions', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "a151fcff09944e7cbd1f4086376ae914",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "GhostRace: Exploiting and Mitigating Speculative Race Conditions Hany Ragab†∗ hany.ragab@vu.nl Andre"
+    },
+    {
+      "id": "rag-082",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-GhostRace-Exploiting-and-Mitigating-Speculative-Race-Conditions'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-083",
+      "question": "In the paper '2024-USENIX-Security-When-the-User-Is-Inside-the-User-Interface-An-Empirical-Study-of-UI-Security-Properties-in-Augmente', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "a773435cc0634e40b8a52770631738ee",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "1 Introduction Extensive past research and practice have considered user interface (UI) security for"
+    },
+    {
+      "id": "rag-084",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-When-the-User-Is-Inside-the-User-Interface-An-Empirical-Study-of-UI-Security-Properties-in-Augmente'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-085",
+      "question": "In the paper '2024-USENIX-Security-SoK-Security-of-Programmable-Logic-Controllers', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "9f7fe03d513941798a808270c0992ba6",
+          "chunker": "v1",
+          "chunk_index": 105,
+          "page": 17
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "vacy, 14:40–46, 2016.\n[22] Harry Halpin. SoK: Why johnny can’t fix PGP standardization. In Proceedin"
+    },
+    {
+      "id": "rag-086",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-SoK-Security-of-Programmable-Logic-Controllers'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-087",
+      "question": "In the paper 'spec018-upload-acceptance-20261006', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "cacd8936bc074af7a8eb0b2fc9c5df30",
+          "chunker": "v1",
+          "chunk_index": 126,
+          "page": 19
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "resources do you have for Security Awareness? Do your resources change or stay the same over time? R"
+    },
+    {
+      "id": "rag-088",
+      "question": "Summarize the main contribution and method of 'spec018-upload-acceptance-20261006'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-089",
+      "question": "In the paper '2018-Conference-Exploring-Visual-Relationship-for-Image-Captioning', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "ae3a1c3f7ee746bba031b06306ff3230",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "Exploring Visual Relationship for Image Captioning Ting Yao1, Yingwei Pan1, Yehao Li2, and Tao Mei1 "
+    },
+    {
+      "id": "rag-090",
+      "question": "Summarize the main contribution and method of '2018-Conference-Exploring-Visual-Relationship-for-Image-Captioning'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "ae3a1c3f7ee746bba031b06306ff3230",
+          "chunker": "v1",
+          "chunk_index": 58,
+          "page": 15
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "Exploring Visual Relationship for Image Captioning 15 two kinds of visual relationships, i.e., seman"
+    },
+    {
+      "id": "rag-091",
+      "question": "In the paper '2024-USENIX-Security-On-Data-Fabrication-in-Collaborative-Vehicular-Perception-Attacks-and-Countermeasures', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "b840e35b5cd24d7794f47c92aa6b65e4",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "Attacks and Countermeasures Qingzhao Zhang1, Shuowei Jin1, Ruiyang Zhu1, Jiachen Sun1, Xumiao Zhang1"
+    },
+    {
+      "id": "rag-092",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-On-Data-Fabrication-in-Collaborative-Vehicular-Perception-Attacks-and-Countermeasures'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-093",
+      "question": "In the paper '2022-USENIX-Security-SecSMT-Securing-SMT-Processors-against-Contention-Based-Covert-Channels', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "b9bc53732fd6440697caa4b8dd1640a4",
+          "chunker": "v1",
+          "chunk_index": 33,
+          "page": 6
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "4 Covert Channel Characterization The goal of this paper is to make SMT processors more secure again"
+    },
+    {
+      "id": "rag-094",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-SecSMT-Securing-SMT-Processors-against-Contention-Based-Covert-Channels'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "b9bc53732fd6440697caa4b8dd1640a4",
+          "chunker": "v1",
+          "chunk_index": 108,
+          "page": 15
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "This work also examines some novel, uniﬁed approaches to mitigation that can be applied throughout t"
+    },
+    {
+      "id": "rag-095",
+      "question": "In the paper '2024-USENIX-Security-RECORD-A-RECeption-Only-Region-Determination-Attack-on-LEO-Satellite-Users', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "bc763528f6444ad6af88513347cc0927",
+          "chunker": "v1",
+          "chunk_index": 8,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "y, even if the targeted satellite user never sends anything but solely receives (possibly unwanted) "
+    },
+    {
+      "id": "rag-096",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-RECORD-A-RECeption-Only-Region-Determination-Attack-on-LEO-Satellite-Users'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-097",
+      "question": "In the paper '2023-USENIX-Security-Improving-Logging-to-Reduce-Permission-Over-Granting-Mistakes', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "d9ba37cf3cef4f8dba3a61222b21e6c2",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-098",
+      "question": "Summarize the main contribution and method of '2023-USENIX-Security-Improving-Logging-to-Reduce-Permission-Over-Granting-Mistakes'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-099",
+      "question": "In the paper '2022-USENIX-Security-Networks-of-Care-Tech-Abuse-Advocates-Digital-Security-Practices', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-100",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Networks-of-Care-Tech-Abuse-Advocates-Digital-Security-Practices'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e32d733688f240b69a8f2e4357b03c1f",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "ectively splitting each class into two classes: “clean” and “adversarial.” This split doubles the nu"
+    },
+    {
+      "id": "rag-101",
+      "question": "In the paper '2022-USENIX-Security-Playing-for-K-H-eaps-Understanding-and-Improving-Linux-Kernel-Exploit-Reliability', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "c429661f059e459fb688d9b458c6259f",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "Playing for K(H)eaps:\nUnderstanding and Improving Linux Kernel Exploit Reliability Kyle Zeng∗,†, Yue"
+    },
+    {
+      "id": "rag-102",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Playing-for-K-H-eaps-Understanding-and-Improving-Linux-Kernel-Exploit-Reliability'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-103",
+      "question": "In the paper 'Optimal Strategic Mining Against Cryptographic Self-Selection in Proof-of-Stake', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "ca08f540ff2040308cafef4af270ec83",
+          "chunker": "v1",
+          "chunk_index": 13,
+          "page": 4
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "in spirit to ours, is [19], who nail down the optimal achievable reward for a miner who has an α-fra"
+    },
+    {
+      "id": "rag-104",
+      "question": "Summarize the main contribution and method of 'Optimal Strategic Mining Against Cryptographic Self-Selection in Proof-of-Stake'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "ca08f540ff2040308cafef4af270ec83",
+          "chunker": "v1",
+          "chunk_index": 11,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "• In this game, it is a priori possible that an extremely strong strategy exists that lets a player "
+    },
+    {
+      "id": "rag-105",
+      "question": "In the paper '2024-USENIX-Security-What-Keeps-People-Secure-is-That-They-Met-The-Security-Team-Deconstructing-Drivers-And-Goals-of-Org', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "73b95a2a776c4ee7a681fc42710c5ec9",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-106",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-What-Keeps-People-Secure-is-That-They-Met-The-Security-Team-Deconstructing-Drivers-And-Goals-of-Org'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-107",
+      "question": "In the paper 'How to Peel a Million- Validating and Expanding Bitcoin Clusters', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "d4dfd2a620384ad5bece27320661f8f0",
+          "chunker": "v1",
+          "chunk_index": 46,
+          "page": 8
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "We experimentally evaluate the accuracy of ﬁndNext in Section 7.2, where we see it produces a very l"
+    },
+    {
+      "id": "rag-108",
+      "question": "Summarize the main contribution and method of 'How to Peel a Million- Validating and Expanding Bitcoin Clusters'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "d4dfd2a620384ad5bece27320661f8f0",
+          "chunker": "v1",
+          "chunk_index": 65,
+          "page": 11
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "After obtaining the set {PchainV(tx)}tx ∈Ctx of all such peel chains, we noticed that some peel chai"
+    },
+    {
+      "id": "rag-109",
+      "question": "In the paper '2022-USENIX-Security-On-the-Security-Risks-of-AutoML', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "d9ba37cf3cef4f8dba3a61222b21e6c2",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-110",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-On-the-Security-Risks-of-AutoML'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e32d733688f240b69a8f2e4357b03c1f",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "ectively splitting each class into two classes: “clean” and “adversarial.” This split doubles the nu"
+    },
+    {
+      "id": "rag-111",
+      "question": "In the paper '2022-USENIX-Security-How-Do-You-Not-Lose-Friends-Synthesizing-a-Design-Space-of-Social-Controls-for-Securing-Shared-Digi', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "“How Do You Not Lose Friends?”: Synthesizing a Design Space of Social Controls for Securing Shared D"
+    },
+    {
+      "id": "rag-112",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-How-Do-You-Not-Lose-Friends-Synthesizing-a-Design-Space-of-Social-Controls-for-Securing-Shared-Digi'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "“How Do You Not Lose Friends?”: Synthesizing a Design Space of Social Controls for Securing Shared D"
+    },
+    {
+      "id": "rag-113",
+      "question": "In the paper 'T-REC-X.509-201910-I!!PDF-E', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "f9cd6db37ef841c7a25b217b5d537d71",
+          "chunker": "v1",
+          "chunk_index": 54,
+          "page": 9
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "use a ﬁve-point Likert scale for each question that ranges from strongly disagree to strongly agree."
+    },
+    {
+      "id": "rag-114",
+      "question": "Summarize the main contribution and method of 'T-REC-X.509-201910-I!!PDF-E'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dd1e53bd30724ee895aba23dd77926c6",
+          "chunker": "v1",
+          "chunk_index": 20,
+          "page": 6
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "iv Rec. ITU-T X.509 (10/2019) Page 11.2 The authorizer ............................................."
+    },
+    {
+      "id": "rag-115",
+      "question": "In the paper '2024-USENIX-Security-Splitting-the-Difference-on-Adversarial-Training', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "cacd8936bc074af7a8eb0b2fc9c5df30",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 7,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-116",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Splitting-the-Difference-on-Adversarial-Training'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "dc06fda1ab6d4a2d96e93f4d62228b9d",
+          "chunker": "v1",
+          "chunk_index": 70,
+          "page": 13
+        }
+      ],
+      "derivation_rank": 8,
+      "derived_chunk_excerpt": "users reject security solutions that impose signiﬁcant time delays [19]. While it is unclear how tha"
+    },
+    {
+      "id": "rag-117",
+      "question": "In the paper '2024-USENIX-Security-LaKey-Efficient-Lattice-Based-Distributed-PRFs-Enable-Scalable-Distributed-Key-Management', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "527fe0c1515d48c78adec8f4eb7f4979",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 33rd USENIX Security Symposium.\nAugust 14–16, 2024 "
+    },
+    {
+      "id": "rag-118",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-LaKey-Efficient-Lattice-Based-Distributed-PRFs-Enable-Scalable-Distributed-Key-Management'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    },
+    {
+      "id": "rag-119",
+      "question": "In the paper '2022-USENIX-Security-Hiding-in-Plain-Sight-On-the-Efficacy-of-Power-Side-Channel-Based-Control-Flow-Monitoring', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e4af3a4ecfe84f98b515b0cac1e28aa6",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 1,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-120",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Hiding-in-Plain-Sight-On-the-Efficacy-of-Power-Side-Channel-Based-Control-Flow-Monitoring'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "e4af3a4ecfe84f98b515b0cac1e28aa6",
+          "chunker": "v1",
+          "chunk_index": 0,
+          "page": 1
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "This paper is included in the Proceedings of the 31st USENIX Security Symposium.\nAugust 10–12, 2022 "
+    },
+    {
+      "id": "rag-121",
+      "question": "In the paper '2022-USENIX-Security-Like-Lesbians-Walking-the-Perimeter-Experiences-of-U-S-LGBTQ-Folks-With-Online-Security-Safety-and-', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "eb060bb32f0a44aaa398f98e629c9fef",
+          "chunker": "v1",
+          "chunk_index": 1,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "“Like Lesbians Walking the Perimeter”: Experiences of U.S. LGBTQ+ Folks With Online Security, Safety"
+    },
+    {
+      "id": "rag-122",
+      "question": "Summarize the main contribution and method of '2022-USENIX-Security-Like-Lesbians-Walking-the-Perimeter-Experiences-of-U-S-LGBTQ-Folks-With-Online-Security-Safety-and-'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "60831e8617294117b7be73d43a1140f7",
+          "chunker": "v1",
+          "chunk_index": 4,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 4,
+      "derived_chunk_excerpt": "ially very serious – Compromising the soundness can lead to a total breakdown of the security assump"
+    },
+    {
+      "id": "rag-123",
+      "question": "In the paper 'MAD-HTLC_Because_HTLC_is_Crazy-Cheap_to_Attack', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "f3227d067b734e6cbc8fb3a9ce886191",
+          "chunker": "v1",
+          "chunk_index": 15,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 5,
+      "derived_chunk_excerpt": "In our Bitcoin-compatible attack variation, miners only have to be non-myopic for the attack to succ"
+    },
+    {
+      "id": "rag-124",
+      "question": "Summarize the main contribution and method of 'MAD-HTLC_Because_HTLC_is_Crazy-Cheap_to_Attack'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 6,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-125",
+      "question": "In the paper 'spec018-upload-acceptance-pdf-20261006', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+          "chunker": "v1",
+          "chunk_index": 120,
+          "page": 18
+        }
+      ],
+      "derivation_rank": 2,
+      "derived_chunk_excerpt": "7 Appendices 7.1 Appendix 1: List of participants Participants and their organisations are listed in"
+    },
+    {
+      "id": "rag-126",
+      "question": "Summarize the main contribution and method of 'spec018-upload-acceptance-pdf-20261006'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "91c878c2c086420c85e637354040807b",
+          "chunker": "v1",
+          "chunk_index": 2,
+          "page": 2
+        }
+      ],
+      "derivation_rank": 3,
+      "derived_chunk_excerpt": "y very simple data mining tasks on distributed private data, including statistical estimation and fr"
+    },
+    {
+      "id": "rag-127",
+      "question": "In the paper '2024-USENIX-Security-Logic-Gone-Astray-A-Security-Analysis-Framework-for-the-Control-Plane-Protocols-of-5G-Basebands', what problem do the authors address?",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "1e1613132f0346afb4b1a96602784813",
+          "chunker": "v1",
+          "chunk_index": 66,
+          "page": 11
+        }
+      ],
+      "derivation_rank": 9,
+      "derived_chunk_excerpt": "4G Integrity & ciphering 26 Security context handling 2 Bearer context 1 GUTI related 41 State trans"
+    },
+    {
+      "id": "rag-128",
+      "question": "Summarize the main contribution and method of '2024-USENIX-Security-Logic-Gone-Astray-A-Security-Analysis-Framework-for-the-Control-Plane-Protocols-of-5G-Basebands'.",
+      "relevant_doc_ids": [
+        {
+          "paper_id": "277758154feb492081ef84d33c5fcab3",
+          "chunker": "v1",
+          "chunk_index": 10,
+          "page": 3
+        }
+      ],
+      "derivation_rank": 10,
+      "derived_chunk_excerpt": "SODA is evaluated with 21 neural networks trained on standard benchmark datasets and 2 kinds of sema"
+    }
+  ],
+  "item_count": 128,
+  "generated_at": "2026-10-06T13:38:17Z",
+  "generator": "scripts/generate_evaluation_samples.py",
+  "kb_snapshot": {
+    "source": "首次生成 POST /api/kb/ask 的 citations 事件；复跑只读 GET /api/kb/health + GET /api/kb/papers 校验冻结身份",
+    "papers": 64,
+    "chunks": 19905,
+    "qdrant": true,
+    "embedding": true,
+    "paper_ids": [
+      "0791f677d9e4458ebe3aafa71ebce9f3",
+      "0b37796f02fd448f86b59f4a6b4b255d",
+      "0df41f1cc9964f1fa14eebd61ffdef2b",
+      "149114d78c0e49728d798cfab5e51ed4",
+      "1a3c542b31734c45a541896a01d71528",
+      "1b967ed8638e46569d36e3f6565c51eb",
+      "1e1613132f0346afb4b1a96602784813",
+      "277758154feb492081ef84d33c5fcab3",
+      "2b891eb6ee0a450ea34aa7b2ad4cd873",
+      "2f002c403d4e49e79b4d2781fea38fc6",
+      "388ff16ff0594a08ad30a35e9d4b59ea",
+      "3f7139602d224bcfa0ae531e4b0bbb07",
+      "413008cc2b8f47b18a0d53c8a7399b02",
+      "43c668ed80f5433892c691c4c9fb5045",
+      "441db9a35e5a4571aadef2af80b0d2e5",
+      "46b3c182d14e46cabe6e23eb0b67793f",
+      "4aee4ac6675241ebabb70b60ddb6bb8c",
+      "527fe0c1515d48c78adec8f4eb7f4979",
+      "55afc3b8f01445429462fe78ed0d4c98",
+      "56fc315e952342158e5ae2f5ef6f01a0",
+      "58fdc057d045489cb997b8434e3afff3",
+      "59a5407cc44445f1ac3d258c19af296f",
+      "6001a8eb6538470bb7d8fc9900b91cf0",
+      "60831e8617294117b7be73d43a1140f7",
+      "6430164d996e495291c2d8ebf02c949e",
+      "6a23687c44704d68a0af8f9ab0972ab6",
+      "6c930cd2d2074485b8d29dbdafb5c462",
+      "732fa292155e40c3b2cc35a3050d298b",
+      "73b95a2a776c4ee7a681fc42710c5ec9",
+      "7dfec772f919481aad9fc3bcbcf96041",
+      "88ef66bf9c7547148d843d6a1e8270bd",
+      "891dc846633846a08ca4be4530415170",
+      "8cd741ab309f49aab79da46cc348d0f2",
+      "91c878c2c086420c85e637354040807b",
+      "929a342c0b8d4c8283198751cae9b327",
+      "9f7fe03d513941798a808270c0992ba6",
+      "a151fcff09944e7cbd1f4086376ae914",
+      "a773435cc0634e40b8a52770631738ee",
+      "a94ba3a045164915ab2153cc0b9807e5",
+      "a95357cf37344160859a812852f7863f",
+      "ae3a1c3f7ee746bba031b06306ff3230",
+      "b840e35b5cd24d7794f47c92aa6b65e4",
+      "b9bc53732fd6440697caa4b8dd1640a4",
+      "bc763528f6444ad6af88513347cc0927",
+      "bfaf307d22a145b88fbf9e200df869b5",
+      "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+      "c429661f059e459fb688d9b458c6259f",
+      "ca08f540ff2040308cafef4af270ec83",
+      "cacd8936bc074af7a8eb0b2fc9c5df30",
+      "d4dfd2a620384ad5bece27320661f8f0",
+      "d9ba37cf3cef4f8dba3a61222b21e6c2",
+      "dc06fda1ab6d4a2d96e93f4d62228b9d",
+      "dd1e53bd30724ee895aba23dd77926c6",
+      "e32d733688f240b69a8f2e4357b03c1f",
+      "e3b0d5ec6e974d73a42c027792094e34",
+      "e4af3a4ecfe84f98b515b0cac1e28aa6",
+      "eb060bb32f0a44aaa398f98e629c9fef",
+      "f3227d067b734e6cbc8fb3a9ce886191",
+      "f51024342ecd46a7a0c17adefbd67abd",
+      "f72aa1f1a2fb4a308ddc26de9aa739d6",
+      "f997ae8a711e4ab2be4d01882e9d277a",
+      "f9cd6db37ef841c7a25b217b5d537d71",
+      "fa82faf63802431da803e1a99ce1411b",
+      "fba37001e7c448eea75b3e85977d9fe8"
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "constructed_gold_note": "Task-03 gold is constructed gold only; human annotation was not run.",
+  "constructed_gold_only": true,
+  "errors": [],
+  "finished_at": "2026-11-08T06:05:37.421141+00:00",
+  "human_agree_rate": null,
+  "items": [
+    {
+      "skip_reason": "empty_output",
+      "status": "skipped",
+      "synthetic": false,
+      "task": "chat_quality",
+      "trace_id": "0639caa627e3d6d09d8db08214edc486"
+    },
+    {
+      "expected_value": 1.0,
+      "explanation": "reason_code=judge_explanation_source_echo_redacted",
+      "judge_model": "qwen3.5:9b",
+      "label": "good",
+      "post_status": "written",
+      "requested": true,
+      "score": 1.0,
+      "score_id": "eval042-24ab881c34306f2953a5fb8a71cae8b4",
+      "status": "scored",
+      "synthetic": false,
+      "task": "chat_quality",
+      "trace_id": "0b654de23faadce42fc3efdc07de0ccf",
+      "verification_status": "verified",
+      "verified": true,
+      "verified_value": 1.0,
+      "written": true
+    },
+    {
+      "expected_value": 0.0,
+      "explanation": "The answer is irrelevant because it fails to address the empty input context provided in the question.",
+      "judge_model": "qwen3.5:9b",
+      "label": "poor",
+      "post_status": "written",
+      "requested": true,
+      "score": 0.0,
+      "score_id": "eval042-688cb81c7eb36537f91fe9c93a4ea161",
+      "status": "scored",
+      "synthetic": false,
+      "task": "chat_quality",
+      "trace_id": "0f62b5e18f6fd83287e371a19b4aa373",
+      "verification_status": "verified",
+      "verified": true,
+      "verified_value": 0.0,
+      "written": true
+    }
+  ],
+  "metadata": {
+    "dataset_sha256": "19f49906f5e105ff255f641eab3c0380354689e58150e453fdaf668664977bfb",
+    "fallback_judge": "qwen3.8:27b",
+    "judge_model": "qwen3.5:9b",
+    "judge_model_digest": "888f03bdc66326065533f76c1b66ea0878331d271f3f8179ee2df54ccf791db8",
+    "max_items": 3,
+    "prompt_sha256": "c77ee587c9fb237d0c14bbd63a266036ce458dba7d8800926a21dda6d1d272d8",
+    "repeats": 3,
+    "seed": 42,
+    "source": "export",
+    "task": "chat_quality",
+    "tie_break_rule": "majority_label: among labels tied at the top count, prefer the label with the highest mapped score (per task ENUM_MAPS); ties broken alphabetically"
+  },
+  "schema_version": "agent-evaluation-report-v1",
+  "started_at": "2026-11-08T06:05:31.045802+00:00",
+  "status": "completed",
+  "summary": {
+    "failed": 0,
+    "no_prior_context": 0,
+    "scored": 2,
+    "skipped": 1,
+    "unavailable": 0,
+    "verified": 2,
+    "written": 2
+  }
+}

@@ -232,9 +232,77 @@ class ReportingContentTests(unittest.TestCase):
         score_names = {item["name"] for item in captured.get("scores", [])}
         for expected in ("ttft_ms", "load_ms", "eval_ms", "tokens_per_sec", "is_cold_start"):
             self.assertIn(expected, score_names)
+        # D3：7 个 numeric score 名字/数量/值不变（7-score 契约），仅各附稳定 comment 标记
+        scores = captured.get("scores", [])
+        self.assertEqual(len(scores), 7, f"score 数量须保持 7，实际 {len(scores)}")
+        self.assertTrue(
+            all(item.get("comment") == "metrics_available=true" for item in scores),
+            f"可用样本 7 个 score 均须带 metrics_available=true comment，实际：{scores}",
+        )
 
         outputs = captured.get("update", [])
         self.assertTrue(any("答案" in str(item.get("output", "")) for item in outputs))
+
+    def test_unavailable_scores_carry_metrics_unavailable_comment(self):
+        """D3：timings_available=False 时 7 个 score 仍全上报（数量/名字/值不变，
+        保 7-score 契约），各自带稳定 comment=metrics_available=false；可用性
+        标记不写进 metadata，也不新增第 8 个 numeric score。"""
+        captured = {}
+
+        class _FakeObservation:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def update(self, **kwargs):
+                captured.setdefault("update", []).append(kwargs)
+
+            def score(self, **kwargs):
+                captured.setdefault("scores", []).append(kwargs)
+
+        class _FakeClient:
+            def start_as_current_observation(self, **kwargs):
+                captured["start"] = kwargs
+                return _FakeObservation()
+
+        unavailable = _result(
+            timings=OllamaTimings(),
+            timings_available=False,
+            first_token_ms=0.0,
+            client_wall_ms=39490.0,
+        )
+        with mock.patch.object(config, "LANGFUSE_ENABLED", True), \
+             mock.patch.object(config, "LANGFUSE_PUBLIC_KEY", "pk"), \
+             mock.patch.object(config, "LANGFUSE_SECRET_KEY", "sk"), \
+             mock.patch.object(obs_client, "get_client", return_value=_FakeClient()):
+            record_ollama_generation(
+                model="m",
+                prompt_messages=[{"role": "user", "content": "问题"}],
+                result=unavailable,
+                route="langchain",
+            )
+
+        # 反向守门：可用性标记不写进 metadata（撞 :227 的 assertNotIn allowlist）
+        metadata = captured.get("start", {}).get("metadata", {})
+        self.assertNotIn("timings_available", metadata)
+        self.assertNotIn("metrics_available", metadata)
+
+        scores = captured.get("scores", [])
+        self.assertEqual(len(scores), 7, f"不可用样本仍须 7 个 score，实际 {len(scores)}")
+        self.assertEqual(
+            {item["name"] for item in scores},
+            {
+                "ttft_ms", "load_ms", "prompt_eval_ms", "eval_ms",
+                "overhead_ms", "tokens_per_sec", "is_cold_start",
+            },
+            "不可用样本 7 个 score 名字集合不得变化",
+        )
+        self.assertTrue(
+            all(item.get("comment") == "metrics_available=false" for item in scores),
+            f"不可用样本 7 个 score 均须带 metrics_available=false comment，实际：{scores}",
+        )
 
     def test_long_output_is_truncated(self):
         captured = {}

@@ -1,0 +1,6 @@
+POST /api/evaluation/score body={"strategy_id": "baseline", "model": "qwen3.5:9b", "dataset_id": "chat-quality", "max_items": 100}
+INFO 非 computed 维度（如实标注，未隐藏）: ['recall@k', 'precision@k', 'mrr@k', 'intent_accuracy', 'memory_correctness', 'hit_rate@k', 'ndcg@k', 'retrieval_relevance', 'intent_macro_f1', 'intent_confusion_count']
+HTTP 200 run_id=eval-16eaa80954264138b46a40822980d61f elapsed=671.261s computed=12/22
+VERDICT: GO
+WROTE docs/sdd/plans/047/runs/task-14/go-no-go-retry-9b.json
+WROTE docs/sdd/plans/047/runs/task-14/go-no-go-retry-9b.log

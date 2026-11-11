@@ -1,0 +1,462 @@
+{
+  "run_id": "eval-9f2896c5609e464eba5817bf107a770b",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "group": "intent",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "group": "answer_quality",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "generation_model_used": true,
+        "answer_source_note": "评分对象由所选被测模型实时生成（按批 B=20），判官固定 qwen3.5:9b 打分",
+        "score_mapping": "backend/eval_042/config.py::ENUM_MAPS[chat_quality]",
+        "judge_mode": "batch-enumeration-single-pass",
+        "judge_mode_note": "按批判官枚举 + ENUM_MAPS[chat_quality]/enum_to_score 映射，每样本单次判定，非多数投票",
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "unavailable_calls": 0,
+        "trace_count": 1,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 chat 集 1 条全部为 chat_quality 且无 prior_context / memory_correctness 标注，缺少可判定的记忆真值",
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b"
+      }
+    },
+    {
+      "key": "hit_rate@k",
+      "label": "命中率@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "ndcg@k",
+      "label": "nDCG@k（二值相关性）",
+      "group": "retrieval",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "retrieval_relevance",
+      "label": "检索片段相关性",
+      "group": "retrieval",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "intent_macro_f1",
+      "label": "意图宏平均 F1",
+      "group": "intent",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "intent_confusion_count",
+      "label": "意图误判样本数",
+      "group": "intent",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "answer_relevance",
+      "label": "回答切题度",
+      "group": "answer_quality",
+      "value": 0.5,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "conciseness",
+      "label": "回答简洁度",
+      "group": "answer_quality",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "helpfulness",
+      "label": "回答有用性",
+      "group": "answer_quality",
+      "value": 0.5,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "groundedness",
+      "label": "回答有据性",
+      "group": "answer_quality",
+      "value": 0.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1,
+        "context_source": "hybrid_search(Hit.text)"
+      }
+    },
+    {
+      "key": "hallucination_free",
+      "label": "无幻觉比例",
+      "group": "answer_quality",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "answer_exact_match",
+      "label": "回答字面完全一致率",
+      "group": "answer_quality",
+      "value": 0.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1,
+        "reference": "frozen-042-output",
+        "note": "字面一致性，不代表回答质量",
+        "reference_note": "042 冻结参考输出仅作字面比对基线，不是质量真值",
+        "evaluated_count": 1
+      }
+    },
+    {
+      "key": "levenshtein_similarity",
+      "label": "回答编辑相似度",
+      "group": "answer_quality",
+      "value": 0.06237623762376243,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1,
+        "reference": "frozen-042-output",
+        "note": "字面一致性，不代表回答质量",
+        "reference_note": "042 冻结参考输出仅作字面比对基线，不是质量真值",
+        "evaluated_count": 1
+      }
+    },
+    {
+      "key": "generation_success_rate",
+      "label": "实时生成成功率",
+      "group": "generation",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "answer_length_avg",
+      "label": "实时回答平均字符数",
+      "group": "generation",
+      "value": 543.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "toxicity_free",
+      "label": "无有害内容比例",
+      "group": "safety",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    },
+    {
+      "key": "pii_leakage_free",
+      "label": "无个人信息泄漏比例",
+      "group": "safety",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "live_generation",
+        "rubric": "batch-joint-rubric-json",
+        "judge_mode": "batch-rubric-enumeration",
+        "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+        "reference_fixture": "builtin-042-chat-traces",
+        "trace_count": 1,
+        "generated_count": 1,
+        "generation_failures": 0,
+        "generation_failure_types": [],
+        "judge_failures": 0,
+        "context_failures": 0,
+        "question_max_chars": 600,
+        "judge_sample_count": 1,
+        "batch_count": 1,
+        "total_items": 1
+      }
+    }
+  ],
+  "strategy": {
+    "id": "baseline",
+    "label": "基线（v1 / top_k=5 / reranker=off）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "off"
+  },
+  "model": "qwen3.5:9b",
+  "dataset": "chat-quality",
+  "created_at": "2026-11-10T20:11:00.946814Z",
+  "judge_model": "qwen3.5:9b"
+}

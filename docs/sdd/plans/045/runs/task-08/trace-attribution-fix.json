@@ -1,0 +1,107 @@
+{
+  "artifact": "kb-ask trace attribution P1 fix — real-chain verification (spec-045 item 07)",
+  "captured_at": "2026-11-08T19:52:00Z",
+  "discipline": {
+    "mock_or_fake_transport": false,
+    "method": "FastAPI TestClient loading the fixed in-tree code + real Ollama (qwen3.8:27b / bge-m3) + real Langfuse 4.15.1; attribution read back through /api/public/{traces,observations,scores} with Basic auth",
+    "no_service_restart": true,
+    "note_8000_service": "the already-running 8000 process holds the local Qdrant file lock and still runs pre-fix code; it was NOT restarted. The TestClient process instead pointed QDRANT_PATH at a byte-for-byte copy of the real indexed collection (19905 chunks), i.e. real vector retrieval, not a stub.",
+    "reranker": "RERANKER_ENABLED=false for the TestClient process, matching the running service (11435 unavailable); optional external dependency, unrelated to trace identity.",
+    "public_api_quirk": "GET /api/public/traces/{id} returns empty scores/observations arrays for the kb trace; verification therefore used the dedicated GET /api/public/observations?traceId= and GET /api/public/scores endpoints (both filtered/verified by traceId)."
+  },
+  "before_fix": {
+    "source": "docs/sdd/plans/045/runs/task-08/sdk-smoke.json#finding_trace_attribution (real SDK smoke by backend-tester)",
+    "status": "DEFECT: one POST /api/kb/ask produced 2 distinct Langfuse traces",
+    "retrieval_trace_id": "16b2b490a82941fc8a1e26d696cc5283",
+    "generation_trace_id": "b8e369741b1b44b3d8d4f7fe3b4b06e9",
+    "retrieval_observation_names": ["kb.retrieval", "kb.rerank", "kb.embedding"],
+    "generation_observation_names": ["kb.generation", "phase:decode", "phase:load", "phase:overhead", "phase:prefill"],
+    "generation_score_count": 7,
+    "kb_generation_metadata_request_id": "16b2b490a82941fc8a1e26d696cc5283",
+    "name_kb_ask_root_observation_total_items": 0,
+    "symptom": "unified request_id present in metadata but observations not grouped into one trace; name=kb-ask root observation query returns 0"
+  },
+  "after_fix": {
+    "kb_ask": {
+      "request": {"method": "POST", "path": "/api/kb/ask", "payload": {"question": "什么是检索增强生成？", "model": "qwen3.8:27b", "top_k": 3, "chunker": "v1"}},
+      "http_status": 200,
+      "elapsed_s": 39.45,
+      "sse_frame_counts": {"meta": 1, "stage": 1, "citations": 1, "token": 163, "debug": 1, "done": 1},
+      "error_frames": 0,
+      "trace_id": "1979780db30c4349b843af34346bd296",
+      "distinct_trace_ids_in_request_window": 1,
+      "one_trace": true,
+      "observation_count": 9,
+      "observation_names": ["kb-ask", "kb.embedding", "kb.retrieval", "kb.rerank", "kb.generation", "phase:load", "phase:prefill", "phase:decode", "phase:overhead"],
+      "all_observations_trace_ids": ["1979780db30c4349b843af34346bd296"],
+      "four_phase_spans": ["phase:decode", "phase:load", "phase:overhead", "phase:prefill"],
+      "four_phase_spans_present": true,
+      "phase_spans_parented_to_generation": true,
+      "phase_span_parent_observation_id": "e5c589c8b60916ab",
+      "kb_generation_observation_id": "e5c589c8b60916ab",
+      "root_observation": {
+        "name": "kb-ask",
+        "id": "c1a09ee4397f2d57",
+        "type": "SPAN",
+        "trace_id": "1979780db30c4349b843af34346bd296",
+        "start_time": "2026-11-08T19:47:38.929Z",
+        "end_time": "2026-11-08T19:47:38.929Z",
+        "ended": true,
+        "queryable_by_name": true
+      },
+      "score_count": 7,
+      "score_names": ["eval_ms", "is_cold_start", "load_ms", "overhead_ms", "prompt_eval_ms", "tokens_per_sec", "ttft_ms"],
+      "all_scores_trace_ids": ["1979780db30c4349b843af34346bd296"],
+      "scores_observation_id": "e5c589c8b60916ab",
+      "kb_generation_metadata_request_id": "1979780db30c4349b843af34346bd296",
+      "request_id_equals_trace_id": true,
+      "attribution_check": "for each of kb-ask / kb.embedding / kb.retrieval / kb.rerank / kb.generation, the observation carrying metadata.request_id=1979780db30c4349b843af34346bd296 resolves to traceId=1979780db30c4349b843af34346bd296; no second trace exists in the request window"
+    },
+    "chat_non_regression": {
+      "request": {"method": "POST", "path": "/api/chat", "payload": {"question": "用一句话说明什么是可观测性。", "mode": "normal", "model": "qwen3.8:27b"}},
+      "http_status": 200,
+      "elapsed_s": 5.37,
+      "sse_frame_counts": {"meta": 1, "token": 23, "done": 1},
+      "error_frames": 0,
+      "trace_id": "29276e570a19cd0c413468a1ea92bfe7",
+      "trace_count": 1,
+      "observation_count": 5,
+      "observation_names": ["ollama-chat", "phase:load", "phase:prefill", "phase:decode", "phase:overhead"],
+      "four_phase_spans": ["phase:decode", "phase:load", "phase:overhead", "phase:prefill"],
+      "score_count": 7,
+      "has_kb_ask_root": false,
+      "metadata_request_id": "df36a4d2e875477bb6ff9c5e28f3c6f4",
+      "trace_id_differs_from_request_id": true,
+      "verdict": "chat chain unchanged: one SDK-generated trace, 4 phase spans + 7 scores, no kb-ask root, trace_id still independent of request_id (matches task-02/trace-summary.json and sdk-smoke.json baseline)",
+      "note": "a second id seen in the recent-traces diff, be5db42490a8ddba5f558d0bdf6ee81a, is a pre-existing spec013-task06-fixture trace from 2026-11-08T14:01:59Z that merely shifted into the recent-100 window; it is not part of this chat request."
+    }
+  },
+  "before_after_comparison": {
+    "traces_per_kb_ask_request": {"before": 2, "after": 1},
+    "name_kb_ask_root_observation": {"before": "0 items / never created or ended", "after": "queryable, type SPAN, endTime set, ended=true"},
+    "retrieval_and_generation_same_trace": {"before": false, "after": true},
+    "four_phase_spans_and_7_scores_on_same_trace": {"before": "only on the second (generation) trace", "after": true},
+    "chat_chain_shape": {"before": "1 trace + 4 phase spans + 7 scores", "after": "1 trace + 4 phase spans + 7 scores (unchanged)"},
+    "sse_event_frames": {"before": "meta/stage/citations/token/debug/done", "after": "meta/stage/citations/token/debug/done (unchanged)"}
+  },
+  "environment": {
+    "langfuse_host": "http://127.0.0.1:3000",
+    "langfuse_health_http": 200,
+    "ollama_health_http": 200,
+    "app_8000_health_http": 200,
+    "langfuse_enabled": true,
+    "sample_rate": 1.0,
+    "sdk_version": "4.15.1"
+  },
+  "scope_confirmation": {
+    "not_touched": [
+      "redaction.py key-name filtering (declared design trade-off to avoid damaging academic text)",
+      "setup_langfuse_dashboards.py --force non-idempotency (requires vendor unstable API, out of scope)",
+      "P2 three items",
+      "public interfaces / __init__.py exports",
+      "SSE event frames",
+      "request_id external semantics",
+      "SDK integration shape, reported fields, waterfall phase-span semantics"
+    ]
+  }
+}

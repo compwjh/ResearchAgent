@@ -20,7 +20,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-12/frontend-report.md`，给出界面状态截图/路径、命令/退出码、改动文件和后端接口契约核对。主 Agent 已完成静态/契约复核；真实服务来源切换、登录及 PDF 上传 smoke 留 Task14。执行结果：`229 passed`，Node syntax、diff-check 通过。
+写 `artifacts/spec-032/task-12/frontend-report.md`，给出界面状态截图/路径、命令/退出码、改动文件和后端接口契约核对。主 Agent 已完成静态/契约复核；真实服务来源切换、登录及 PDF 上传 smoke 留 Task14。执行结果：`229 passed`，Node syntax、diff-check 通过。
 
 ## 变更日志
 

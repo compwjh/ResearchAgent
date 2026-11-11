@@ -49,6 +49,29 @@ def _env_positive_number(name: str, default, cast):
         return default
 
 
+def _env_unit_interval(name: str, default: float) -> float:
+    """读取 [0,1] 区间采样率；非数字/NaN/越界一律回退默认并告警。
+
+    与 observability/config.py:sample_rate() 的「越界回退 + 告警」纪律对齐，
+    但默认值由调用方给定（在线评测默认 0.0 = 不触发，离线优先）。
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            raise ValueError
+        return value
+    except (TypeError, ValueError, OverflowError):
+        warnings.warn(
+            f"{name} must be a number in [0,1]; using {default}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return default
+
+
 # ---------- 知识库 / RAG（spec-011）----------
 KB_DIR = Path(os.getenv("KB_DIR", str(BASE_DIR / "data" / "kb")))
 KB_PAPERS_DIR = KB_DIR / "papers"
@@ -225,3 +248,28 @@ ONLINE_MODELS = os.getenv("ONLINE_MODELS", "")
 # Research Runtime 的线上 Provider 回退必须显式授权；默认关闭，避免本地
 # 模型故障时在用户不知情的情况下外发研究上下文。
 RESEARCH_ONLINE_FALLBACK_ENABLED = _env_bool("RESEARCH_ONLINE_FALLBACK_ENABLED", False)
+
+# ---------- 事件表 retention（F14/F15：面向未来增长的保守清理，非现有故障）----------
+# 实测 raw_events 12 / processing_steps 74 / research_events 66 行，数据量很小；
+# 这里只限制**未来增长**：不迁移、不主动删除现有历史数据。
+# 触发时机复用 main.lifespan 启动钩子（低峰、未接流量）；清理与 VACUUM 均 fail-open，
+# 不与长跑任务争锁（memory 连接 5s / research 连接 30s busy_timeout）。
+EVENT_RETENTION_ENABLED = _env_bool("EVENT_RETENTION_ENABLED", True)
+# 时间阈值：超过该天数的事件行可被清理（默认 90 天，保守）。
+EVENT_RETENTION_MAX_AGE_DAYS = _env_positive_number("EVENT_RETENTION_MAX_AGE_DAYS", 90, int)
+# 行数阈值：每张事件表超过该行数时，从最旧的行开始裁到上限（默认 10 万行）。
+EVENT_RETENTION_MAX_ROWS = _env_positive_number("EVENT_RETENTION_MAX_ROWS", 100_000, int)
+# 仅在确实删除了行之后才 VACUUM；关闭后完全不触碰 VACUUM，进一步降低争锁风险。
+EVENT_RETENTION_VACUUM = _env_bool("EVENT_RETENTION_VACUUM", True)
+
+# ---------- 在线实时评测（spec-047 P2③；离线优先 + 显式开关默认关闭）----------
+# 独立开关与独立采样率：绝不复用/改动 LANGFUSE_SAMPLE_RATE（那是观测上报采样率）。
+# 默认关闭：未显式打开时同步链路零调用、不进 SSE 关键路径、不新增端点/SSE 事件类型。
+# 只有 EVAL_ONLINE_ENABLED=true 且独立采样命中「已完成 trace」时，才在后台有界队列
+# 异步复用 eval_042 runner/judge/report/post_score 评分；判官不可用标 UNAVAILABLE 不记 0 分。
+# 均为只读配置，越界/非法回退安全默认并告警。
+EVAL_ONLINE_ENABLED = _env_bool("EVAL_ONLINE_ENABLED", False)
+EVAL_ONLINE_SAMPLE_RATE = _env_unit_interval("EVAL_ONLINE_SAMPLE_RATE", 0.0)
+EVAL_ONLINE_JUDGE_TIMEOUT_S = _env_positive_number("EVAL_ONLINE_JUDGE_TIMEOUT_S", 30.0, float)
+EVAL_ONLINE_MAX_TRACES_PER_TICK = _env_positive_number("EVAL_ONLINE_MAX_TRACES_PER_TICK", 20, int)
+EVAL_ONLINE_CIRCUIT_THRESHOLD = _env_positive_number("EVAL_ONLINE_CIRCUIT_THRESHOLD", 3, int)

@@ -62,7 +62,13 @@ from backend.app.memory.markdown_store import (
     PendingChangedError,
     read_user_memory_or_empty,
 )
-from backend.app.memory.repository import OWNER_ID, MemoryRepository, SystemRuleUnavailableError
+from backend.app.memory.repository import (
+    OWNER_ID,
+    PROCESSING_STEPS_DEFAULT_LIMIT,
+    PROCESSING_STEPS_PAGE_MAX_LIMIT,
+    MemoryRepository,
+    SystemRuleUnavailableError,
+)
 from backend.app.memory.session_search import search_sessions
 from backend.app.platform.bootstrap import get_provider, register_provider
 from backend.app.platform.config import (
@@ -2516,14 +2522,47 @@ def remove_conversation(conversation_id: str):
 
 
 @router.get("/messages/{message_id}/processing-steps")
-def get_processing_steps(message_id: str):
-    steps = _repo().list_processing_steps(message_id, OWNER_ID)
-    if not steps and not _repo().get_message(message_id, OWNER_ID):
+def get_processing_steps(message_id: str, cursor: str | None = None, limit: str | None = None):
+    # 无参调用必须保持历史扁平形状 {"steps": [...]}：现有前端拉取路径不带查询参数，
+    # 旧客户端也会忽略未知键。只有显式带 cursor/limit 才进入分页分支。
+    if cursor is None and limit is None:
+        steps = _repo().list_processing_steps(message_id, OWNER_ID)
+        if not steps and not _repo().get_message(message_id, OWNER_ID):
+            raise HTTPException(status_code=404, detail="消息不存在")
+        # Keep the historical flat shape and append the v2 adjacency fields.  Old
+        # clients ignore unknown keys; tree-capable clients use parent_step_id and
+        # stable node_key/source_event_id for incremental upserts.
+        return {"steps": [s.to_dict() for s in steps]}
+
+    # limit 以 str 接收并手工校验：Query(ge/le) 会被 FastAPI 转成 422，而契约要求
+    # 参数越界/非法统一返回 400 + 稳定错误体。
+    page_size = PROCESSING_STEPS_DEFAULT_LIMIT
+    if limit is not None:
+        try:
+            page_size = int(limit)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_LIMIT", "message": "limit 必须是整数", "retryable": False},
+            ) from None
+        if not 1 <= page_size <= PROCESSING_STEPS_PAGE_MAX_LIMIT:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_LIMIT", "message": "limit 越界", "retryable": False},
+            )
+    repo = _repo()
+    try:
+        steps, next_cursor, has_more = repo.list_processing_steps_page(
+            message_id, OWNER_ID, cursor=cursor, limit=page_size
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_CURSOR", "message": str(error), "retryable": False},
+        ) from error
+    if not steps and not repo.get_message(message_id, OWNER_ID):
         raise HTTPException(status_code=404, detail="消息不存在")
-    # Keep the historical flat shape and append the v2 adjacency fields.  Old
-    # clients ignore unknown keys; tree-capable clients use parent_step_id and
-    # stable node_key/source_event_id for incremental upserts.
-    return {"steps": [s.to_dict() for s in steps]}
+    return {"steps": [s.to_dict() for s in steps], "next_cursor": next_cursor, "has_more": has_more}
 
 
 def _analysis_job_payload(job):

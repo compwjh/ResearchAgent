@@ -1,0 +1,14 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ TraceSamplingConsistencyTests.test_same_trace_decisions_consistent_at_low_rate _
+tests/observability/test_task05_decoupling.py:67: in test_same_trace_decisions_consistent_at_low_rate
+    self.assertEqual(
+E   AssertionError: 2 != 1 : 同一 trace 内采样决策必须一致，实际 [False, True, False, True, False, True, False, True]
+_ TraceSamplingConsistencyTests.test_start_trace_caches_decision_for_whole_trace _
+tests/observability/test_task05_decoupling.py:94: in test_start_trace_caches_decision_for_whole_trace
+    self.assertFalse(
+E   AssertionError: True is not false : start_trace 后应缓存同一采样决策，record_* 不得重新随机
+=========================== short test summary info ============================
+FAILED tests/observability/test_task05_decoupling.py::TraceSamplingConsistencyTests::test_same_trace_decisions_consistent_at_low_rate
+FAILED tests/observability/test_task05_decoupling.py::TraceSamplingConsistencyTests::test_start_trace_caches_decision_for_whole_trace
+2 failed in 0.38s

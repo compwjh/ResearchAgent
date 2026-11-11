@@ -1,0 +1,77 @@
+FFFF..F.FF...F.                                                          [100%]
+=================================== FAILURES ===================================
+_______________ test_langfuse_input_has_no_plaintext_credentials _______________
+tests/platform/test_task06_identity_redaction.py:143: in test_langfuse_input_has_no_plaintext_credentials
+    assert marker not in reported, f"Langfuse input 仍含明文 {marker!r}"
+E   AssertionError: Langfuse input 仍含明文 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+E   assert 'sk-proj-AbC...Yz0123456789' not in '[1] user（16...v1/data 完成调研'
+E     
+E     'sk-proj-AbCdEfGhIj...rStUvWxYz0123456789' is contained here:
+E       [1] user（162 字符）:
+E       请用 sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 与 Bearer eyJhbGciOiJIUzI1NiJ9.abcdefghijklmnopqrstuvwxyz 访问 https://alice:s3cr3t-pass@api.example.com/v1/data 完成调研
+E     ?    ++++++++++++++++++++++++++++++++++++++++++++
+------------------------------ Captured log call -------------------------------
+WARNING  backend.app.platform.observability.sdk_compat:sdk_compat.py:74 generation 底层 _otel_span 缺失：无法回填起点（退化为起点≈上报时刻）。修复点唯一：backend/app/platform/observability/sdk_compat.py
+WARNING  backend.app.platform.observability.sdk_compat:sdk_compat.py:61 Langfuse 私有符号 _otel_tracer 缺失：无法反推阶段子 span（退化为不创建子 span）。修复点唯一：backend/app/platform/observability/sdk_compat.py
+_____________ test_raw_events_payload_has_no_plaintext_credentials _____________
+tests/platform/test_task06_identity_redaction.py:156: in test_raw_events_payload_has_no_plaintext_credentials
+    assert marker not in stored, f"raw_events.payload 仍含明文 {marker!r}"
+E   AssertionError: raw_events.payload 仍含明文 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+E   assert 'sk-proj-AbC...Yz0123456789' not in '{"content":...te": "普通文本"}'
+E     
+E     'sk-proj-AbCdEfGhIj...rStUvWxYz0123456789' is contained here:
+E       {"content": "请用 sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 与 Bearer eyJhbGciOiJIUzI1NiJ9.abcdefghijklmnopqrstuvwxyz 访问 https://alice:s3cr3t-pass@api.example.com/v1/data 完成调研", "note": "普通文本"}
+E     ?                 ++++++++++++++++++++++++++++++++++++++++++++
+___________ test_route_layer_redaction_has_no_plaintext_credentials ____________
+tests/platform/test_task06_identity_redaction.py:166: in test_route_layer_redaction_has_no_plaintext_credentials
+    assert marker not in out, f"路由层脱敏输出仍含明文 {marker!r}"
+E   AssertionError: 路由层脱敏输出仍含明文 'sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+E   assert 'sk-proj-AbC...Yz0123456789' not in '请用 sk-proj-...v1/data 完成调研'
+E     
+E     'sk-proj-AbCdEfGhIj...rStUvWxYz0123456789' is contained here:
+E       请用 sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 与 Bearer [REDACTED] 访问 https://alice:s3cr3t-pass@api.example.com/v1/data 完成调研
+E     ?    ++++++++++++++++++++++++++++++++++++++++++++
+____________ test_redact_prompt_messages_keeps_non_credential_text _____________
+tests/platform/test_task06_identity_redaction.py:173: in test_redact_prompt_messages_keeps_non_credential_text
+    assert marker not in out[0]["content"]
+E   AssertionError: assert 'sk-proj-AbC...Yz0123456789' not in '请用 sk-proj-...v1/data 完成调研'
+E     
+E     'sk-proj-AbCdEfGhIj...rStUvWxYz0123456789' is contained here:
+E       请用 sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 与 Bearer eyJhbGciOiJIUzI1NiJ9.abcdefghijklmnopqrstuvwxyz 访问 https://alice:s3cr3t-pass@api.example.com/v1/data 完成调研
+E     ?    ++++++++++++++++++++++++++++++++++++++++++++
+__________ test_oversized_raw_event_payload_is_truncated_and_flagged ___________
+tests/platform/test_task06_identity_redaction.py:218: in test_oversized_raw_event_payload_is_truncated_and_flagged
+    assert len(encoded) <= MAX_RAW_EVENT_PAYLOAD_CHARS
+E   assert 50031 <= 4000
+E    +  where 50031 = len('{"content": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "kind": "long"}')
+_______________ test_oversized_payload_still_carries_request_id ________________
+tests/platform/test_task06_identity_redaction.py:237: in test_oversized_payload_still_carries_request_id
+    assert event.payload.get("request_id") == rid
+E   AssertionError: assert None == '248063a1d4e246089fabc1b140c8bda9'
+E    +  where None = <built-in method get of dict object at 0x13684dc40>('request_id')
+E    +    where <built-in method get of dict object at 0x13684dc40> = {'content': 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'}.get
+E    +      where {'content': 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'} = RawEvent(event_id='7cd2f0bdd74240a0b4108d5eb1a0fba3', owner_id='local-user', conversation_id='e29b2e652e3c42499f2ff159...AA'}, idempotency_key=None, created_at=datetime.datetime(2026, 11, 8, 9, 59, 18, 758767, tzinfo=datetime.timezone.utc)).payload
+___________ test_same_request_id_in_langfuse_raw_events_and_routing ____________
+tests/platform/test_task06_identity_redaction.py:249: in test_same_request_id_in_langfuse_raw_events_and_routing
+    assert raw.payload.get("request_id") == rid
+E   AssertionError: assert None == '9c8d6742b40241649657616a9dbce423'
+E    +  where None = <built-in method get of dict object at 0x136757280>('request_id')
+E    +    where <built-in method get of dict object at 0x136757280> = {'content': 'hi'}.get
+E    +      where {'content': 'hi'} = RawEvent(event_id='886d30650750463b87ca1c8098f0a2cf', owner_id='local-user', conversation_id='f78d1494cf7a4cb3b191e7a8...hi'}, idempotency_key=None, created_at=datetime.datetime(2026, 11, 8, 9, 59, 18, 769748, tzinfo=datetime.timezone.utc)).payload
+_____________ test_thinking_text_is_reported_in_independent_field ______________
+tests/platform/test_task06_identity_redaction.py:334: in test_thinking_text_is_reported_in_independent_field
+    assert independent == THINKING_TEXT
+E   AssertionError: assert None == '先检索再推理，最后汇总证据'
+------------------------------ Captured log call -------------------------------
+WARNING  backend.app.platform.observability.sdk_compat:sdk_compat.py:74 generation 底层 _otel_span 缺失：无法回填起点（退化为起点≈上报时刻）。修复点唯一：backend/app/platform/observability/sdk_compat.py
+WARNING  backend.app.platform.observability.sdk_compat:sdk_compat.py:61 Langfuse 私有符号 _otel_tracer 缺失：无法反推阶段子 span（退化为不创建子 span）。修复点唯一：backend/app/platform/observability/sdk_compat.py
+=========================== short test summary info ============================
+FAILED tests/platform/test_task06_identity_redaction.py::test_langfuse_input_has_no_plaintext_credentials
+FAILED tests/platform/test_task06_identity_redaction.py::test_raw_events_payload_has_no_plaintext_credentials
+FAILED tests/platform/test_task06_identity_redaction.py::test_route_layer_redaction_has_no_plaintext_credentials
+FAILED tests/platform/test_task06_identity_redaction.py::test_redact_prompt_messages_keeps_non_credential_text
+FAILED tests/platform/test_task06_identity_redaction.py::test_oversized_raw_event_payload_is_truncated_and_flagged
+FAILED tests/platform/test_task06_identity_redaction.py::test_oversized_payload_still_carries_request_id
+FAILED tests/platform/test_task06_identity_redaction.py::test_same_request_id_in_langfuse_raw_events_and_routing
+FAILED tests/platform/test_task06_identity_redaction.py::test_thinking_text_is_reported_in_independent_field
+8 failed, 7 passed in 1.18s

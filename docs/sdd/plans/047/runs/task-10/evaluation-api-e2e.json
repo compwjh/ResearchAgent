@@ -1,0 +1,172 @@
+{
+  "captured_at": "2026-11-09T18:40:55.617946+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "score_requests": [
+    {
+      "strategy_id": "baseline",
+      "model": "qwen3.5:9b",
+      "dataset_id": "rag-retrieval"
+    },
+    {
+      "strategy_id": "topk-10",
+      "model": "qwen3.5:9b",
+      "dataset_id": "rag-retrieval"
+    },
+    {
+      "strategy_id": "baseline",
+      "model": "qwen3.5:9b",
+      "dataset_id": "intent-classification"
+    }
+  ],
+  "http_status": [
+    200,
+    200,
+    200
+  ],
+  "run_ids": [
+    "eval-2dfc6775b59b4587a66f2b7478382174",
+    "eval-069122d56ac84fe1ace765e3359095c5",
+    "eval-49e1ea0a1a46490898801b805c9392b5"
+  ],
+  "rag_baseline_metrics": {
+    "recall@k": {
+      "value": 0.3333333333333333,
+      "status": "computed"
+    },
+    "precision@k": {
+      "value": 0.06666666666666667,
+      "status": "computed"
+    },
+    "mrr@k": {
+      "value": 0.3333333333333333,
+      "status": "computed"
+    },
+    "intent_accuracy": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "chat_quality": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "memory_correctness": {
+      "value": null,
+      "status": "needs_ground_truth"
+    }
+  },
+  "rag_topk10_metrics": {
+    "recall@k": {
+      "value": 1.0,
+      "status": "computed"
+    },
+    "precision@k": {
+      "value": 0.10000000000000002,
+      "status": "computed"
+    },
+    "mrr@k": {
+      "value": 0.4305555555555556,
+      "status": "computed"
+    },
+    "intent_accuracy": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "chat_quality": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "memory_correctness": {
+      "value": null,
+      "status": "needs_ground_truth"
+    }
+  },
+  "intent_metrics": {
+    "recall@k": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "precision@k": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "mrr@k": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "intent_accuracy": {
+      "value": 1.0,
+      "status": "computed"
+    },
+    "chat_quality": {
+      "value": null,
+      "status": "needs_ground_truth"
+    },
+    "memory_correctness": {
+      "value": null,
+      "status": "needs_ground_truth"
+    }
+  },
+  "compare_http": 200,
+  "compare_response": {
+    "a": "eval-2dfc6775b59b4587a66f2b7478382174",
+    "b": "eval-069122d56ac84fe1ace765e3359095c5",
+    "dataset": "rag-retrieval",
+    "judge_model": "qwen3.5:9b",
+    "deltas": [
+      {
+        "key": "recall@k",
+        "label": "召回率@k",
+        "value_a": 0.3333333333333333,
+        "value_b": 1.0,
+        "delta": 0.6666666666666667,
+        "status_a": "computed",
+        "status_b": "computed"
+      },
+      {
+        "key": "precision@k",
+        "label": "准确率@k",
+        "value_a": 0.06666666666666667,
+        "value_b": 0.10000000000000002,
+        "delta": 0.033333333333333354,
+        "status_a": "computed",
+        "status_b": "computed"
+      },
+      {
+        "key": "mrr@k",
+        "label": "MRR@k",
+        "value_a": 0.3333333333333333,
+        "value_b": 0.4305555555555556,
+        "delta": 0.09722222222222227,
+        "status_a": "computed",
+        "status_b": "computed"
+      },
+      {
+        "key": "intent_accuracy",
+        "label": "意图识别准确率",
+        "value_a": null,
+        "value_b": null,
+        "delta": null,
+        "status_a": "needs_ground_truth",
+        "status_b": "needs_ground_truth"
+      },
+      {
+        "key": "chat_quality",
+        "label": "回答质量（判官均分）",
+        "value_a": null,
+        "value_b": null,
+        "delta": null,
+        "status_a": "needs_ground_truth",
+        "status_b": "needs_ground_truth"
+      },
+      {
+        "key": "memory_correctness",
+        "label": "记忆正确性（判官均分）",
+        "value_a": null,
+        "value_b": null,
+        "delta": null,
+        "status_a": "needs_ground_truth",
+        "status_b": "needs_ground_truth"
+      }
+    ]
+  }
+}

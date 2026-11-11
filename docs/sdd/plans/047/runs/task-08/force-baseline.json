@@ -1,0 +1,1527 @@
+{
+  "captured_at": "2026-11-09T01:56:44.958536+00:00",
+  "host": "http://127.0.0.1:3000",
+  "list_widgets_http": 200,
+  "meta": {
+    "page": 1,
+    "limit": 100,
+    "totalItems": 40,
+    "totalPages": 1
+  },
+  "dashboards": [
+    {
+      "id": "cmtl0016t006d8oevj0rskbev",
+      "createdAt": "2026-09-03T04:01:29.093Z",
+      "updatedAt": "2026-09-03T04:01:29.355Z",
+      "name": "06 调用量与延迟趋势",
+      "description": "调用量、延迟与 TTFT 随时间的变化。注：成功率/错误率依赖我们自定义 metadata 里的 success / error_type，原生 widget 无法聚合自定义 metadata，属已知缺口（见任务 07）。",
+      "definition": {
+        "widgets": [
+          {
+            "type": "widget",
+            "id": "4582583b-f513-4eab-b6c9-4b1bb0ded460",
+            "widgetId": "cmtl0012u005v8oev8ta46c2f",
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "26e16539-99c7-4e36-acb8-798c008bdd92",
+            "widgetId": "cmtl0013i005y8oev14lbrmsz",
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "56789c9d-848d-473e-9155-d5331fc5d64c",
+            "widgetId": "cmtl0014500618oev7cfwvj3c",
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "24755b92-8035-4b99-9ec1-ba86d3744f17",
+            "widgetId": "cmtl0014u00648oevykej7fyn",
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "18cf8584-7c58-4787-9ee5-639a5eaca502",
+            "widgetId": "cmtl0015g00678oevwvlff30t",
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "58abe8bd-99c4-442d-8d96-118acd57c26b",
+            "widgetId": "cmtl00165006a8oevjw4cotlq",
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 2
+          }
+        ]
+      },
+      "filters": []
+    },
+    {
+      "id": "cmtl000wh005m8oevbtxcwvy1",
+      "createdAt": "2026-09-03T04:01:28.722Z",
+      "updatedAt": "2026-09-03T04:01:28.920Z",
+      "name": "05 耗时构成占比",
+      "description": "一次调用的耗时由哪几段构成：load / prompt_eval / eval / overhead。注：堆叠占比图需要维度支持，原生只能并列展示各段均值（缺口见任务 07）。",
+      "definition": {
+        "widgets": [
+          {
+            "type": "widget",
+            "id": "b0fcc0d2-b6ad-4591-a2d6-2b5adfe368b0",
+            "widgetId": "cmtl000se00548oevji0g301h",
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "bfcada67-46fa-4337-bf4c-0ccaaa58d16b",
+            "widgetId": "cmtl000t100578oevajcseedu",
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "79de0583-742e-4523-969e-d44e5434a2e1",
+            "widgetId": "cmtl000tq005a8oevmojrqrjj",
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "36afd2bd-8df9-47c1-b55b-ebbc9d880412",
+            "widgetId": "cmtl000uh005d8oevvnum7o2a",
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "853e6163-3e19-41e4-981e-10f8908a2590",
+            "widgetId": "cmtl000v6005g8oevzae5hkf0",
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "6c7cef19-58a8-4965-9266-7a46b0dd6989",
+            "widgetId": "cmtl000vu005j8oevenf79z36",
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 2
+          }
+        ]
+      },
+      "filters": []
+    },
+    {
+      "id": "cmtl000m6004v8oevwm3yb32t",
+      "createdAt": "2026-09-03T04:01:28.350Z",
+      "updatedAt": "2026-09-03T04:01:28.549Z",
+      "name": "04 输入规模与延迟相关性",
+      "description": "输入多长会变慢：对比输入 token 规模与预填充/TTFT。注：真散点图原生不支持（缺口，见任务 07），这里用分位数侧面观察。",
+      "definition": {
+        "widgets": [
+          {
+            "type": "widget",
+            "id": "05503ccd-7125-42e4-b530-039793db0192",
+            "widgetId": "cmtl000hr004d8oevuhg33zl1",
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "902287b6-7671-436c-a16d-a1a4ebd9f98e",
+            "widgetId": "cmtl000ih004g8oevo3ipi105",
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "70edf77f-db37-4a2d-9149-f800b796ddb6",
+            "widgetId": "cmtl000j6004j8oev076v0nze",
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "c42d007f-9a6f-4e02-8e48-682063c0a42c",
+            "widgetId": "cmtl000jy004m8oevsychcmd6",
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "9bd89ccd-cd96-43ff-b7fc-9a7782493af7",
+            "widgetId": "cmtl000ks004p8oevdetz5dme",
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "b50bb7a1-e89a-41d0-8535-a57ed0b4f8c2",
+            "widgetId": "cmtl000li004s8oev47km5jlu",
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 2
+          }
+        ]
+      },
+      "filters": []
+    },
+    {
+      "id": "cmtl000bd00448oevu838qmsv",
+      "createdAt": "2026-09-03T04:01:27.961Z",
+      "updatedAt": "2026-09-03T04:01:28.166Z",
+      "name": "03 吞吐与生成速度",
+      "description": "每秒生成 token 数、解码耗时与输出规模，用于判断生成速度是否成为瓶颈。",
+      "definition": {
+        "widgets": [
+          {
+            "type": "widget",
+            "id": "f2d47b44-1cd3-4c69-8f91-483ebf524224",
+            "widgetId": "cmtl0006z003m8oevwko248oi",
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "6cd633cf-dd9a-48c1-8e25-d39bf6dd8c76",
+            "widgetId": "cmtl0007u003p8oevzgi7o9xf",
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "27881e77-04e7-4f62-aac1-5c8b58e6133a",
+            "widgetId": "cmtl0008j003s8oevmzc5ghdd",
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "5d96caa5-5acb-4284-9067-474ee5bf215f",
+            "widgetId": "cmtl00098003v8oevza24meq7",
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "158a894d-9c15-4ffe-b5ce-fdf2e9756620",
+            "widgetId": "cmtl0009x003y8oevkwfas2i1",
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "67c078b2-abfc-4980-a2ed-431986476a48",
+            "widgetId": "cmtl000an00418oevaxx8r550",
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 2
+          }
+        ]
+      },
+      "filters": []
+    },
+    {
+      "id": "cmtkzzzz3003b8oev4zy4bk0l",
+      "createdAt": "2026-09-03T04:01:27.519Z",
+      "updatedAt": "2026-09-03T04:01:27.778Z",
+      "name": "02 分位数与慢请求",
+      "description": "TTFT 与各阶段的 P50/P95/P99 与最慢值，用于判断长尾有多长。注：排序榜单需要维度支持，原生 widget 只能给聚合值；慢请求排行见任务 07。",
+      "definition": {
+        "widgets": [
+          {
+            "type": "widget",
+            "id": "e10242db-afc4-41a1-b685-d4da22494a8d",
+            "widgetId": "cmtkzzzt1002n8oev529zotjv",
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "32496210-3f3f-4777-85b0-c48f2debb36d",
+            "widgetId": "cmtkzzztu002q8oevp6zewq52",
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "f68d711d-cef5-472a-83b0-a1e940f1e0be",
+            "widgetId": "cmtkzzzuk002t8oev0ahrv0al",
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "213a2025-b39e-406b-a8e9-54f19aa59016",
+            "widgetId": "cmtkzzzvb002w8oev503mefv3",
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "f7bc2c68-a1fd-4ea2-b9d4-2e548f045234",
+            "widgetId": "cmtkzzzw1002z8oevhe1vgat3",
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "af3bcf4c-d901-428f-953c-75c49b60ca35",
+            "widgetId": "cmtkzzzwu00328oev9d7wjhr2",
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "537cb00d-e77e-45b8-b0ec-4b1fb2b2686f",
+            "widgetId": "cmtkzzzxj00358oevn3w1ht8i",
+            "x": 0,
+            "y": 12,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "38fdc502-c298-4aaa-ace2-1445768b67a2",
+            "widgetId": "cmtkzzzyc00388oevb0hismni",
+            "x": 0,
+            "y": 14,
+            "width": 3,
+            "height": 2
+          }
+        ]
+      },
+      "filters": []
+    },
+    {
+      "id": "cmtkzzz8p002c8oevjw24gjod",
+      "createdAt": "2026-09-03T04:01:26.569Z",
+      "updatedAt": "2026-09-03T04:01:27.268Z",
+      "name": "01 TTFT 分解与冷启动对比",
+      "description": "首 token 慢到底慢在哪：拆成模型加载(load)、输入预填充(prompt_eval)、解码(eval) 三段，并用 is_cold_start 的均值表示冷启动占比。冷/热对比看 load_ms：热调用通常 <20ms，冷启动可达数千毫秒。",
+      "definition": {
+        "widgets": [
+          {
+            "type": "widget",
+            "id": "df5f614c-a392-4421-9973-1fef22e4402b",
+            "widgetId": "cmtkzzz1b001o8oevsg4etrka",
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "9daf13a2-d67e-4ec9-8013-3b904a17d289",
+            "widgetId": "cmtkzzz27001r8oevvbihfbo8",
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "64676c60-f7bc-403f-9c6b-b0cdd910f8de",
+            "widgetId": "cmtkzzz31001u8oevgcehplbj",
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "4ee301c9-8ec7-45a5-971c-71e5ccfc5b2d",
+            "widgetId": "cmtkzzz3x001x8oevsn1j9lj1",
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "a10260ba-f82e-4060-91a2-241b30128684",
+            "widgetId": "cmtkzzz4t00208oevzzioccim",
+            "x": 0,
+            "y": 8,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "5c9a4869-2998-4361-b038-c7131cc53fab",
+            "widgetId": "cmtkzzz5n00238oevfwz7pha2",
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "c7c76487-17da-4fed-abea-8b0afdec8c47",
+            "widgetId": "cmtkzzz6r00268oevdo230szm",
+            "x": 0,
+            "y": 12,
+            "width": 3,
+            "height": 2
+          },
+          {
+            "type": "widget",
+            "id": "99f308a3-6e21-4941-8273-dce50780a3cc",
+            "widgetId": "cmtkzzz7n00298oev1vgbdyjw",
+            "x": 0,
+            "y": 14,
+            "width": 3,
+            "height": 2
+          }
+        ]
+      },
+      "filters": []
+    }
+  ],
+  "widgets": [
+    {
+      "id": "cmtl00165006a8oevjw4cotlq",
+      "createdAt": "2026-09-03T04:01:29.069Z",
+      "updatedAt": "2026-09-03T04:01:29.069Z",
+      "name": "输出 token 趋势",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "outputTokens",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl0015g00678oevwvlff30t",
+      "createdAt": "2026-09-03T04:01:29.045Z",
+      "updatedAt": "2026-09-03T04:01:29.045Z",
+      "name": "输入 token 趋势",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "inputTokens",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl0014u00648oevykej7fyn",
+      "createdAt": "2026-09-03T04:01:29.022Z",
+      "updatedAt": "2026-09-03T04:01:29.022Z",
+      "name": "TTFT 平均趋势（原生）",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "timeToFirstToken",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl0014500618oev7cfwvj3c",
+      "createdAt": "2026-09-03T04:01:28.997Z",
+      "updatedAt": "2026-09-03T04:01:28.997Z",
+      "name": "延迟 P95 趋势",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "latency",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl0013i005y8oev14lbrmsz",
+      "createdAt": "2026-09-03T04:01:28.974Z",
+      "updatedAt": "2026-09-03T04:01:28.974Z",
+      "name": "延迟 平均趋势",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "latency",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl0012u005v8oev8ta46c2f",
+      "createdAt": "2026-09-03T04:01:28.950Z",
+      "updatedAt": "2026-09-03T04:01:28.950Z",
+      "name": "调用量趋势",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "count",
+          "agg": "sum"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl000vu005j8oevenf79z36",
+      "createdAt": "2026-09-03T04:01:28.698Z",
+      "updatedAt": "2026-09-03T04:01:28.698Z",
+      "name": "TTFT 时间趋势",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl000v6005g8oevzae5hkf0",
+      "createdAt": "2026-09-03T04:01:28.675Z",
+      "updatedAt": "2026-09-03T04:01:28.675Z",
+      "name": "解码 时间趋势",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtl000uh005d8oevvnum7o2a",
+      "createdAt": "2026-09-03T04:01:28.650Z",
+      "updatedAt": "2026-09-03T04:01:28.650Z",
+      "name": "构成-网络与框架开销",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "overhead_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000tq005a8oevmojrqrjj",
+      "createdAt": "2026-09-03T04:01:28.622Z",
+      "updatedAt": "2026-09-03T04:01:28.622Z",
+      "name": "构成-解码",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000t100578oevajcseedu",
+      "createdAt": "2026-09-03T04:01:28.597Z",
+      "updatedAt": "2026-09-03T04:01:28.597Z",
+      "name": "构成-输入预填充",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "prompt_eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000se00548oevji0g301h",
+      "createdAt": "2026-09-03T04:01:28.574Z",
+      "updatedAt": "2026-09-03T04:01:28.574Z",
+      "name": "构成-模型加载",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "load_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000li004s8oev47km5jlu",
+      "createdAt": "2026-09-03T04:01:28.326Z",
+      "updatedAt": "2026-09-03T04:01:28.326Z",
+      "name": "预填充 P95",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "prompt_eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000ks004p8oevdetz5dme",
+      "createdAt": "2026-09-03T04:01:28.301Z",
+      "updatedAt": "2026-09-03T04:01:28.301Z",
+      "name": "预填充 平均",
+      "description": "预填充随输入规模增长最明显",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "prompt_eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000jy004m8oevsychcmd6",
+      "createdAt": "2026-09-03T04:01:28.270Z",
+      "updatedAt": "2026-09-03T04:01:28.270Z",
+      "name": "TTFT P95（原生）",
+      "description": "Langfuse 原生 TTFT：依据埋点传的 completion_start_time 计算",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "timeToFirstToken",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000j6004j8oev076v0nze",
+      "createdAt": "2026-09-03T04:01:28.242Z",
+      "updatedAt": "2026-09-03T04:01:28.242Z",
+      "name": "整体延迟 P95（原生）",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "latency",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000ih004g8oevo3ipi105",
+      "createdAt": "2026-09-03T04:01:28.217Z",
+      "updatedAt": "2026-09-03T04:01:28.217Z",
+      "name": "输入 token P95",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "inputTokens",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000hr004d8oevuhg33zl1",
+      "createdAt": "2026-09-03T04:01:28.192Z",
+      "updatedAt": "2026-09-03T04:01:28.192Z",
+      "name": "输入 token 平均",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "inputTokens",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl000an00418oevaxx8r550",
+      "createdAt": "2026-09-03T04:01:27.936Z",
+      "updatedAt": "2026-09-03T04:01:27.936Z",
+      "name": "解码耗时 平均",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl0009x003y8oevkwfas2i1",
+      "createdAt": "2026-09-03T04:01:27.910Z",
+      "updatedAt": "2026-09-03T04:01:27.910Z",
+      "name": "输出 token P95",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "outputTokens",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl00098003v8oevza24meq7",
+      "createdAt": "2026-09-03T04:01:27.885Z",
+      "updatedAt": "2026-09-03T04:01:27.885Z",
+      "name": "输出 token 平均",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "outputTokens",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl0008j003s8oevmzc5ghdd",
+      "createdAt": "2026-09-03T04:01:27.859Z",
+      "updatedAt": "2026-09-03T04:01:27.859Z",
+      "name": "tokens/s 平均（原生）",
+      "description": "",
+      "view": "observations",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "tokensPerSecond",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "type",
+          "operator": "=",
+          "value": "GENERATION",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl0007u003p8oevzgi7o9xf",
+      "createdAt": "2026-09-03T04:01:27.834Z",
+      "updatedAt": "2026-09-03T04:01:27.834Z",
+      "name": "tokens/s P95（自报）",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "tokens_per_sec",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtl0006z003m8oevwko248oi",
+      "createdAt": "2026-09-03T04:01:27.804Z",
+      "updatedAt": "2026-09-03T04:01:27.804Z",
+      "name": "tokens/s 平均（自报）",
+      "description": "completion tokens / eval 秒",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "tokens_per_sec",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzyc00388oevb0hismni",
+      "createdAt": "2026-09-03T04:01:27.493Z",
+      "updatedAt": "2026-09-03T04:01:27.493Z",
+      "name": "网络+框架开销 P95",
+      "description": "客户端墙钟 - 服务端总耗时；langchain 链路无原生 timings 时记为 0",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "overhead_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzxj00358oevn3w1ht8i",
+      "createdAt": "2026-09-03T04:01:27.464Z",
+      "updatedAt": "2026-09-03T04:01:27.464Z",
+      "name": "解码 P95",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzwu00328oev9d7wjhr2",
+      "createdAt": "2026-09-03T04:01:27.438Z",
+      "updatedAt": "2026-09-03T04:01:27.438Z",
+      "name": "预填充 P95",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "prompt_eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzw1002z8oevhe1vgat3",
+      "createdAt": "2026-09-03T04:01:27.409Z",
+      "updatedAt": "2026-09-03T04:01:27.409Z",
+      "name": "加载 P95",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "load_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzvb002w8oev503mefv3",
+      "createdAt": "2026-09-03T04:01:27.383Z",
+      "updatedAt": "2026-09-03T04:01:27.383Z",
+      "name": "TTFT 最慢",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "max"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzuk002t8oev0ahrv0al",
+      "createdAt": "2026-09-03T04:01:27.356Z",
+      "updatedAt": "2026-09-03T04:01:27.356Z",
+      "name": "TTFT P99",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p99"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzztu002q8oevp6zewq52",
+      "createdAt": "2026-09-03T04:01:27.330Z",
+      "updatedAt": "2026-09-03T04:01:27.330Z",
+      "name": "TTFT P95",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzzt1002n8oev529zotjv",
+      "createdAt": "2026-09-03T04:01:27.301Z",
+      "updatedAt": "2026-09-03T04:01:27.301Z",
+      "name": "TTFT P50",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p50"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz7n00298oev1vgbdyjw",
+      "createdAt": "2026-09-03T04:01:26.531Z",
+      "updatedAt": "2026-09-03T04:01:26.531Z",
+      "name": "模型加载 时间趋势",
+      "description": "",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "load_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "LINE_TIME_SERIES",
+      "chartConfig": {
+        "type": "LINE_TIME_SERIES"
+      }
+    },
+    {
+      "id": "cmtkzzz6r00268oevdo230szm",
+      "createdAt": "2026-09-03T04:01:26.499Z",
+      "updatedAt": "2026-09-03T04:01:26.499Z",
+      "name": "冷启动占比",
+      "description": "is_cold_start 的均值即冷启动比例（0~1）",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "is_cold_start",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz5n00238oevfwz7pha2",
+      "createdAt": "2026-09-03T04:01:26.459Z",
+      "updatedAt": "2026-09-03T04:01:26.459Z",
+      "name": "解码 eval 平均",
+      "description": "含思考过程时的耗时",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz4t00208oevzzioccim",
+      "createdAt": "2026-09-03T04:01:26.429Z",
+      "updatedAt": "2026-09-03T04:01:26.429Z",
+      "name": "输入预填充 平均",
+      "description": "与输入长度强相关",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "prompt_eval_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz3x001x8oevsn1j9lj1",
+      "createdAt": "2026-09-03T04:01:26.397Z",
+      "updatedAt": "2026-09-03T04:01:26.397Z",
+      "name": "模型加载 load 最大",
+      "description": "最慢一次模型加载",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "max"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "load_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz31001u8oevgcehplbj",
+      "createdAt": "2026-09-03T04:01:26.366Z",
+      "updatedAt": "2026-09-03T04:01:26.366Z",
+      "name": "模型加载 load 平均",
+      "description": "冷启动主要来源",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "load_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz27001r8oevvbihfbo8",
+      "createdAt": "2026-09-03T04:01:26.335Z",
+      "updatedAt": "2026-09-03T04:01:26.335Z",
+      "name": "TTFT P95",
+      "description": "首 token 延迟 95 分位",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "p95"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    },
+    {
+      "id": "cmtkzzz1b001o8oevsg4etrka",
+      "createdAt": "2026-09-03T04:01:26.303Z",
+      "updatedAt": "2026-09-03T04:01:26.303Z",
+      "name": "TTFT 平均",
+      "description": "首 token 延迟均值",
+      "view": "scores-numeric",
+      "dimensions": [],
+      "metrics": [
+        {
+          "measure": "value",
+          "agg": "avg"
+        }
+      ],
+      "filters": [
+        {
+          "column": "name",
+          "operator": "=",
+          "value": "ttft_ms",
+          "type": "string"
+        }
+      ],
+      "chartType": "NUMBER",
+      "chartConfig": {
+        "type": "NUMBER"
+      }
+    }
+  ]
+}

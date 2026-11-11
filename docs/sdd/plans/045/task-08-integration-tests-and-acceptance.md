@@ -1,11 +1,11 @@
 > 关联：[spec-045](../../specs/045-evaluation-observability-hardening.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 03、04、05、06、07；当前状态：`待执行`
+> 依赖：任务 03、04、05、06、07；当前状态：`已完成`（2026-11-08 收口，见「执行结果」）
 
 # Task 08 — 真实集成测试与验收
 
 ## 状态与一句话目标
 
-`待执行`。用真实 SDK、真实 Ollama、真实 Langfuse 收口全部 11 项加固，
+`已完成`。用真实 SDK、真实 Ollama、真实 Langfuse 收口全部 11 项加固，
 产出 Q10 四类证据集，并按 `AGENTS.md` 三道门禁完成评审、签字、部署验证与状态台账。
 
 ## 背景与前置条件
@@ -92,9 +92,24 @@ spec-045 状态字段。若发现需改业务代码，回对应 task 修复，�
 `spec-041:93` 的私有属性升版风险虽经封装缓解，仍需在结论中保留升版回归要求。
 任一硬前置或证据缺失 → spec 保持 `实施中`，退回对应 task，不转 `已完成`。
 
-## 产出物、执行结果与变更日志
+## 产出物、执行结果与变更日志（2026-11-08）
 
-初始写「待执行后填写」。执行后回填：真实命令与 HTTP 状态码、trace ID、
-四类证据路径、全量回归数字与覆盖率、三份评审结论与签字、
-准备度十项打分、部署验证记录、复盘路径、commit hash（仅本地）、
-changelog 条目。
+**结论：已完成，验收通过。** 证据索引：[`runs/task-08/q10-evidence-index.md`](./runs/task-08/q10-evidence-index.md)。
+
+| 项 | 真实结果 |
+|---|---|
+| 真 SDK 冒烟 | `langfuse==4.15.1` 真 client；chat / kb-ask 真实 HTTP 200；`sdk-smoke.json` 含私有符号形状与 trace ID。发现 kb-ask 双 trace 缺陷 → 已修，见 `trace-attribution-fix.json`（单条 trace `1979780d…`，9 observations、四段 phase span、7 scores、根已结束），chat 链路未回归 |
+| 并发 / 流中断 / 隐私 | `tests/observability/` 三个新测试（不含编号）；精确 `49 passed, EXIT=0`；`--send` 真重跑 traces 385→405、scores +140；dashboard 默认重建幂等「新建 0 跳过 6」 |
+| Q10 四类证据 | ① `q10-red-green-summary.md` + 4 份 RED/GREEN 日志（GREEN `21 passed`）；② `runs/task-02/eval-baseline/report.{json,md}` 五类指纹；③ `runs/task-02/trace-summary.json` + `sdk-smoke.json` + `trace-attribution-fix.json` + `deploy-verification.json`；④ `waterfall.png`（四段 phase span 可见、`hasSecret=false`） |
+| 最终全量回归 | `.venv/bin/python -m pytest -q` → `4112 passed, 2 skipped, 5 warnings, 67 subtests passed in 779.30s`，`PYTEST_EXIT=0`；日志 `runs/task-08/full-regression.txt`。项目无覆盖率采集/阈值配置，未宣称覆盖率门禁通过 |
+| 部署验证 | 重启后 `/api/health` 200、PID 65665；当前版本 `deploy-chat-sse.txt` `status=completed` 无 error、`deploy-kb-sse.txt` `done` 无 error；kb 单条 trace `220f5fb2…` 9 obs / `root_ended=true`；`deploy-verification.json` |
+| 三份评审 | `045-requirement-review.md` 通过、`045-tech-review.md` 通过、`045-acceptance-review.md` 通过且架构师已签字；准备度 **9/10**、P0=0/P1=0 |
+| 复盘 / 台账 | `docs/sdd/retro/2026-11-08-spec045-evaluation-observability-closure.md`；`spec-status-changelog.md` 末条 `实施中 → 已完成` |
+
+**commit**：收口 commit 与本文档同一提交，hash 在提交后由 `git log -1` 查得
+（同一提交内无法自引用），见最终交付说明。**不 push、不合 main**。
+
+**如实保留的边界**：P2 三项、`human_agree_rate=null`、两套分数口径、值级脱敏不按 key 名、
+`--force` 非幂等（默认重建幂等已验证）、`018` revision `8b0cde1`、并列 `started_at` 行序差异、
+retention 启动期同步、Langfuse 读回怪癖与 scores `limit=100` 截断、`spec-041:93` 升版回归要求、
+无覆盖率配置。见验收评审与复盘。

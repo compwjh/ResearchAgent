@@ -41,6 +41,38 @@ def get_current_trace_id() -> Optional[str]:
     return _current_trace_id.get()
 
 
+def bind_trace_context(request_id: Optional[str] = None) -> str:
+    """跨 yield 的 ContextVar 一致性绑定（spec-045 第 07 项）。
+
+    starlette 的 ``iterate_in_threadpool`` 每次 ``next()`` 都从父 context
+    ``copy_context()``，因此 ``start_trace()`` 写入的 ``_current_trace_id`` 在
+    SSE 后续段会丢失；而 ``request_id.bind_request_id(rid)`` 只重绑
+    ``_request_id``。生成阶段的 ``spans._trace_context()`` 于是返回 None，
+    observation 另起一条 trace —— 一次请求出现两条 trace。
+
+    本函数按**同一个**统一 ID 把 ``_request_id`` 与 ``_current_trace_id``
+    （及复位 token）一起重绑，使 retrieval / generation / phase span / score
+    全部归入同一 trace。幂等：同 ID 重复绑定不覆盖已有的 reset token。
+
+    不改变 ``bind_request_id`` 的对外语义，也不触碰采样决策；仅供**已调用
+    ``start_trace`` 的链路**（kb-ask）在跨段写入点使用。chat / article /
+    conversations 未开 trace，不调用本函数，观测行为完全不变。
+    """
+    rid = bind_request_id(request_id)
+    # 未启用观测时 start_trace 是 no-op；此处也必须退化为纯 request_id 重绑，
+    # 绝不凭空制造一个活动 trace（保持开关关闭态的既有行为不变）。
+    if not obs_config.enabled():
+        return rid
+    if _current_trace_id.get() == rid:
+        return rid
+    token = _current_trace_id.set(rid)
+    # 同 context 内不覆盖 start_trace 保存的复位 token；SSE 复制段里原 token
+    # 已丢失，此处补记，保证 end_trace() 的复位语义与入口一致。
+    if _trace_token.get() is None:
+        _trace_token.set(token)
+    return rid
+
+
 def create_trace_id() -> str:
     """生成一个合法的 32 位小写 hex trace id。
 
@@ -110,12 +142,16 @@ def start_trace(
 
     def _open_root() -> None:
         # 把根 observation 显式挂到本 trace；as_type=span 作为入口容器。
-        client.start_as_current_observation(
+        # SDK 的 start_as_current_observation 返回惰性 context manager：只有进入
+        # with 才会真正创建 observation，退出才会 end/flush。此前只调用不 enter，
+        # name=kb-ask 的根 observation 从未落库（public API 查询 0 条）。
+        with client.start_as_current_observation(
             name=name,
             as_type="span",
             trace_context={"trace_id": trace_id},
             metadata=extra_meta or None,
-        )
+        ):
+            pass
 
     safe_call(_open_root)
     return trace_id

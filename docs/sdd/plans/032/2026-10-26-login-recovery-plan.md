@@ -86,7 +86,7 @@
 
 - 真实登录请求说明：`docs/sdd/plans/032/artifacts/20261026-login-recovery/request.md`。
 - 真实响应：`docs/sdd/plans/032/artifacts/20261026-login-recovery/login-response.json`。
-- 前端 issue/login/recovery 交接与标签契约：`artifacts/task-12/frontend-report.md`。
+- 前端 issue/login/recovery 交接与标签契约：`artifacts/spec-032/task-12/frontend-report.md`。
 - 实现、独立复审与后端定向回归：`2026-10-26-login-recovery-implementation.md`、`2026-10-26-login-recovery-review.md`、`2026-10-26-login-recovery-test.md`。
 - 2026-10-26 同步边界：本次窄修已完成“过期 search + 完整 durable snapshot → 受控 ACM login 打开”路径，HTTP 200、`status=opened`、`site=acm` 仍不代表下载完成、publisher 已认证或后续入库。认证后 resume、PDF 下载/校验、KB 入库和其它 Spec032 范围没有在本次验证，Spec032 整体继续保持暂停，不能标为整体完成。
 

@@ -1,0 +1,8 @@
+{
+  "warm": {
+    "median_ttft_ms": 38478.927,
+    "throughput_completion_tokens_per_s": 19.735,
+    "peak_memory_bytes": 106070016,
+    "failure_rate": 0.0
+  }
+}

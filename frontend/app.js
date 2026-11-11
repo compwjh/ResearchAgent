@@ -5796,6 +5796,7 @@ const MAIN_AREA_VIEW_IDS = Object.freeze([
   'papers-view',
   'literature-maps-view',
   'skill-tool-view',
+  'evaluation-view',
 ]);
 
 function hideAllMainAreas() {
@@ -5821,6 +5822,8 @@ function showView(view) {
   if (paperView) paperView.hidden = nextView !== 'papers' || !paperState.enabled;
   if (literatureMapsView) literatureMapsView.hidden = nextView !== 'literature-maps';
   if (stView) stView.hidden = nextView !== 'skill-tool';
+  const evaluationView = document.querySelector('#evaluation-view');
+  if (evaluationView) evaluationView.hidden = nextView !== 'evaluation';
   document.querySelectorAll('.nav-item').forEach((item) => {
     const isCurrent = item.dataset.view === nextView;
     item.classList.toggle('active', isCurrent);
@@ -5879,6 +5882,7 @@ const HASH_VIEW_MAP = Object.freeze({
   '#papers-view': 'papers',
   '#literature-maps-view': 'literature-maps',
   '#skill-tool-view': 'skill-tool',
+  '#evaluation-view': 'evaluation',
 });
 
 function viewForLocationHash(hash) {
@@ -7588,3 +7592,540 @@ if (kbQuestion && kbForm) {
 // Literature-map analysis bridges into the existing conversation navigator;
 // the map module never creates a second chat UI or invents conversation IDs.
 window.openConversationFromWorkspace = openConversationFromWorkspace;
+
+// ===== 评测视图（追加范围 D11）：第 9 个视图，纯 SVG/CSS 自绘、不复用任何图表库 =====
+// 后端文本（策略名 / 模型名 / detail / reason / label）一律 createElement + textContent，
+// 绝不拼接 HTML 字符串。每个 status 都如实出卡片，value=null 显示为「—」，绝不静默记 0。
+const EVALUATION_STATUS_LABELS = Object.freeze({
+  computed: '已计算',
+  degraded: '降级',
+  needs_ground_truth: '缺少标注',
+  unavailable: '不可用',
+});
+
+const EVALUATION_ERROR_TEXT = Object.freeze({
+  EVAL_OPTION_NOT_FOUND: '所选策略、模型或评测集不存在，请重新选择后重试。',
+  EVAL_DATASET_INVALID: '评测集无效或不在允许范围内，请重新选择后重试。',
+  EVAL_BACKEND_UNAVAILABLE: '评测后端暂不可用，请稍后重试。',
+  EVAL_SCORE_TIMEOUT: '评分超时，请减少样本数或稍后重试。',
+  EVAL_NOT_COMPARABLE: '不可比：两次运行的评测集或判官不同，不能计算差值，请换同口径运行后重试。',
+});
+
+const evaluationState = {
+  optionsLoaded: false,
+  scoring: false,
+  runs: [],
+  lastRun: null,
+};
+
+function evaluationErrorText(code) {
+  return EVALUATION_ERROR_TEXT[code] || '请求失败，请重试。';
+}
+
+function evaluationStatusLabel(status) {
+  return EVALUATION_STATUS_LABELS[status] || `未知状态（${String(status)}）`;
+}
+
+// created_at 由后端以 UTC 落盘，展示层按本地时间呈现（无时区后缀时按 UTC 解析）。
+function formatEvaluationCreatedAt(value) {
+  if (!value) return '—';
+  const raw = String(value);
+  const normalized = !/(Z|[+-]\d{2}:?\d{2})$/.test(raw) ? `${raw}Z` : raw;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString();
+}
+
+// 后端 strategy 是对象 {id, label, ...}，历史/详情/对比只展示可读名称。
+// 绝不把对象直接转成字符串或塞进数组插值，否则会渲染成 [object Object]。
+function formatEvaluationStrategy(value) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    if (typeof value.label === 'string' && value.label) return value.label;
+    if (typeof value.id === 'string' && value.id) return value.id;
+    return '—';
+  }
+  return '—';
+}
+
+async function evaluationRequest(url, options = {}, timeoutMs = 0) {
+  const controller = new AbortController();
+  let timer = null;
+  if (timeoutMs > 0) timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    let data = null;
+    try { data = await response.json(); } catch (_) { data = null; }
+    if (!response.ok) {
+      const code = data?.detail?.code || data?.error?.code || data?.code || 'EVAL_BACKEND_UNAVAILABLE';
+      const error = new Error(evaluationErrorText(code));
+      error.code = code;
+      error.payload = data;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      const timeoutError = new Error(evaluationErrorText('EVAL_SCORE_TIMEOUT'));
+      timeoutError.code = 'EVAL_SCORE_TIMEOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function fillEvaluationSelect(select, items, fallbackLabel) {
+  if (!select) return;
+  select.replaceChildren();
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = `请选择${fallbackLabel}`;
+  select.appendChild(placeholder);
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const option = document.createElement('option');
+    if (typeof item === 'string') {
+      option.value = item;
+      option.textContent = item;
+    } else if (item && typeof item === 'object') {
+      option.value = String(item.id ?? item.key ?? item.name ?? '');
+      option.textContent = String(item.label ?? item.name ?? item.id ?? '');
+      if (Number.isInteger(item.item_count) && item.item_count >= 0) {
+        option.textContent += `（${item.item_count} 条样本）`;
+      }
+    }
+    select.appendChild(option);
+  });
+}
+
+async function loadEvaluationOptions() {
+  const status = document.getElementById('evaluation-status');
+  try {
+    const data = await evaluationRequest('/api/evaluation/options');
+    fillEvaluationSelect(document.getElementById('evaluation-strategy-select'), data?.strategies, '策略');
+    fillEvaluationSelect(document.getElementById('evaluation-model-select'), data?.models, '模型');
+    fillEvaluationSelect(document.getElementById('evaluation-dataset-select'), data?.datasets, '评测集');
+    evaluationState.optionsLoaded = true;
+    if (status) status.textContent = '选项已加载：请选择策略、模型与评测集后点击「开始评分」。';
+  } catch (error) {
+    if (status) status.textContent = `选项加载失败：${evaluationErrorText(error.code)}`;
+  }
+}
+
+function setEvaluationBusy(busy) {
+  const button = document.getElementById('evaluation-score-button');
+  const spinner = document.getElementById('evaluation-spinner');
+  const status = document.getElementById('evaluation-status');
+  evaluationState.scoring = busy;
+  if (button) {
+    if (busy) {
+      button.disabled = true;
+      button.textContent = '评分中…';
+    } else {
+      button.disabled = false;
+      button.textContent = '开始评分';
+    }
+  }
+  if (spinner) spinner.hidden = !busy;
+  if (busy && status) status.textContent = '正在对 100 条样本真实打分（批量生成 + 批量判官，多维打分可能耗时数分钟），请稍候；期间仍可查看已有运行历史…';
+}
+
+function formatEvaluationMetricValue(metric) {
+  // value 仅在 status=computed 时是真实数值；其余一律 null，绝不占位、绝不静默记 0
+  if (metric.status !== 'computed' || metric.value === null || metric.value === undefined) {
+    return '—';
+  }
+  const numeric = Number(metric.value);
+  if (!Number.isFinite(numeric)) {
+    return '—';
+  }
+  return numeric.toFixed(4);
+}
+
+function renderEvaluationMetricCard(metric) {
+  const card = document.createElement('article');
+  card.className = 'evaluation-metric-card';
+  card.dataset.status = String(metric.status || 'unavailable');
+  card.setAttribute('role', 'listitem');
+
+  const label = document.createElement('h3');
+  label.className = 'evaluation-metric-label';
+  label.textContent = String(metric.label ?? metric.key ?? '未命名维度');
+  card.appendChild(label);
+
+  const value = document.createElement('p');
+  value.className = 'evaluation-metric-value';
+  value.textContent = formatEvaluationMetricValue(metric);
+  card.appendChild(value);
+
+  // 纯 SVG 自绘：仅 computed 且数值真实存在时画分数条；null 不画条、不伪造 0
+  if (card.dataset.status === 'computed' && formatEvaluationMetricValue(metric) !== '—') {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.classList.add('evaluation-metric-bar');
+    svg.setAttribute('viewBox', '0 0 100 8');
+    svg.setAttribute('aria-hidden', 'true');
+    const track = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    track.setAttribute('x', '0');
+    track.setAttribute('y', '0');
+    track.setAttribute('width', '100');
+    track.setAttribute('height', '8');
+    track.setAttribute('rx', '4');
+    track.classList.add('evaluation-metric-bar-track');
+    const fill = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    fill.setAttribute('x', '0');
+    fill.setAttribute('y', '0');
+    fill.setAttribute('height', '8');
+    fill.setAttribute('rx', '4');
+    const ratio = Math.max(0, Math.min(1, Number(metric.value)));
+    fill.setAttribute('width', String((ratio * 100).toFixed(2)));
+    fill.classList.add('evaluation-metric-bar-fill');
+    svg.append(track, fill);
+    card.appendChild(svg);
+  }
+
+  const status = document.createElement('span');
+  status.className = 'evaluation-metric-status';
+  status.textContent = `${evaluationStatusLabel(metric.status)}（${String(metric.status ?? 'unavailable')}）`;
+  card.appendChild(status);
+
+  const samples = document.createElement('p');
+  samples.className = 'evaluation-metric-samples';
+  const sampleCount = Number.isFinite(Number(metric.sample_count)) ? Number(metric.sample_count) : 0;
+  samples.textContent = `样本数：${sampleCount}`;
+  card.appendChild(samples);
+
+  // 关键信息层（spec §2.3）：reason / judge_sample_count 差异始终可见，不随折叠收起。
+  // 所有后端文本一律 String(...) + textContent，含 <script> 的样本也只是纯文本。
+  const detailObject = metric.detail && typeof metric.detail === 'object' ? metric.detail : {};
+  const summaryLines = document.createElement('div');
+  summaryLines.className = 'evaluation-metric-detail';
+  if (typeof detailObject.reason === 'string' && detailObject.reason) {
+    const reasonLine = document.createElement('p');
+    reasonLine.className = 'evaluation-metric-detail-row';
+    reasonLine.textContent = `原因：${detailObject.reason}`;
+    summaryLines.appendChild(reasonLine);
+  }
+  const judgeSampleCount = detailObject.judge_sample_count;
+  if (judgeSampleCount !== undefined && judgeSampleCount !== null
+      && Number(judgeSampleCount) !== sampleCount) {
+    const judgeLine = document.createElement('p');
+    judgeLine.className = 'evaluation-metric-detail-row';
+    judgeLine.textContent = `判官样本数：${String(judgeSampleCount)}`;
+    summaryLines.appendChild(judgeLine);
+  }
+  if (summaryLines.childNodes.length) card.appendChild(summaryLines);
+
+  // 可折叠层（spec §2.3）：其余 detail 参数按后端实际返回 key 遍历，不白名单丢弃新增字段；
+  // 用原生 <details>/<summary>，默认收起（不设展开属性），无参数时不渲染空容器。
+  const paramEntries = Object.entries(detailObject).filter(([key]) => key !== 'reason');
+  if (paramEntries.length) {
+    const details = document.createElement('details');
+    details.className = 'evaluation-metric-params';
+    const summary = document.createElement('summary');
+    summary.textContent = '参数与明细';
+    details.appendChild(summary);
+    paramEntries.forEach(([key, entryValue]) => {
+      const line = document.createElement('div');
+      line.className = 'evaluation-metric-param-row';
+      line.textContent = `${String(key)}: ${typeof entryValue === 'object' && entryValue !== null ? JSON.stringify(entryValue) : String(entryValue)}`;
+      details.appendChild(line);
+    });
+    card.appendChild(details);
+  }
+  return card;
+}
+
+// 评测指标按 5 组 + other 兜底展示（追加范围二）：分组常量、兜底函数与统一分组渲染。
+// 后端 group / label / reason / per_class 等文本一律 String(...) 后 textContent，绝不拼接 HTML。
+const EVALUATION_GROUP_ORDER = Object.freeze([
+  'retrieval',
+  'intent',
+  'answer_quality',
+  'generation',
+  'safety',
+  'other',
+]);
+
+const EVALUATION_GROUP_LABELS = Object.freeze({
+  retrieval: '检索质量',
+  intent: '意图识别',
+  answer_quality: '回答质量',
+  generation: '生成可用性',
+  safety: '安全',
+  other: '其它维度',
+});
+
+// 历史 run 无 group、或 group 不在枚举内时兜底 other，不丢卡、不报错。
+function evaluationGroupOf(metric) {
+  const raw = metric && typeof metric === 'object' ? metric.group : null;
+  const group = raw === null || raw === undefined ? '' : String(raw);
+  return EVALUATION_GROUP_ORDER.includes(group) ? group : 'other';
+}
+
+// 卡片视图 / 运行回看 / 对比视图共用同一套分组逻辑，避免同一页面两套实现。
+function appendEvaluationGroupedRows(container, rows, renderRow) {
+  const list = Array.isArray(rows) ? rows : [];
+  EVALUATION_GROUP_ORDER.forEach((group) => {
+    const groupRows = list.filter((row) => evaluationGroupOf(row || {}) === group);
+    if (groupRows.length === 0) return;
+    const section = document.createElement('section');
+    section.className = 'evaluation-metric-group';
+    section.dataset.group = String(group);
+    const title = document.createElement('h3');
+    title.className = 'evaluation-metric-group-title';
+    title.textContent = String(EVALUATION_GROUP_LABELS[group] || EVALUATION_GROUP_LABELS.other);
+    section.appendChild(title);
+    const body = document.createElement('div');
+    body.className = 'evaluation-metric-group-cards';
+    body.setAttribute('role', 'list');
+    groupRows.forEach((row) => body.appendChild(renderRow(row || {})));
+    section.appendChild(body);
+    container.appendChild(section);
+  });
+}
+
+function renderEvaluationDeltaRow(row) {
+  const line = document.createElement('p');
+  line.className = 'evaluation-compare-delta';
+  const label = String(row?.label ?? row?.key ?? '未命名维度');
+  const delta = row?.delta;
+  const deltaText = delta === null || delta === undefined || !Number.isFinite(Number(delta))
+    ? '—'
+    : `${Number(delta) >= 0 ? '+' : ''}${Number(delta).toFixed(4)}`;
+  line.textContent = `${label}：delta ${deltaText}`;
+  return line;
+}
+
+function renderEvaluationMetrics(metrics) {
+  const container = document.getElementById('evaluation-metrics');
+  if (!container) return;
+  container.replaceChildren();
+  const list = Array.isArray(metrics) ? metrics : [];
+  const empty = document.getElementById('evaluation-metrics-empty');
+  if (empty) empty.hidden = list.length > 0;
+  // 任何 status 都如实渲染独立卡片，不跳过、不隐藏降级 / 缺标注 / 不可用的维度
+  appendEvaluationGroupedRows(container, list, renderEvaluationMetricCard);
+}
+
+function renderEvaluationRunHead(run) {
+  const head = document.getElementById('evaluation-run-head');
+  if (!head) return;
+  head.replaceChildren();
+  if (!run || !run.run_id) {
+    head.hidden = true;
+    return;
+  }
+  head.hidden = false;
+  const rows = [
+    ['运行 ID', run.run_id],
+    ['策略', formatEvaluationStrategy(run.strategy)],
+    ['模型', run.model],
+    ['评测集', run.dataset],
+    ['创建时间', formatEvaluationCreatedAt(run.created_at)],
+  ];
+  rows.forEach(([label, cell]) => {
+    const line = document.createElement('p');
+    line.className = 'evaluation-detail-row';
+    const key = document.createElement('span');
+    key.textContent = `${label}：`;
+    const val = document.createElement('span');
+    val.textContent = cell === null || cell === undefined || cell === '' ? '—' : String(cell);
+    line.append(key, val);
+    head.appendChild(line);
+  });
+}
+
+async function submitEvaluationScore(event) {
+  if (event) event.preventDefault();
+  if (evaluationState.scoring) return;
+  const strategyId = document.getElementById('evaluation-strategy-select')?.value || '';
+  const model = document.getElementById('evaluation-model-select')?.value || '';
+  const datasetId = document.getElementById('evaluation-dataset-select')?.value || '';
+  const status = document.getElementById('evaluation-status');
+  if (!strategyId || !model || !datasetId) {
+    if (status) status.textContent = evaluationErrorText('EVAL_OPTION_NOT_FOUND');
+    return;
+  }
+  setEvaluationBusy(true);
+  try {
+    const run = await evaluationRequest('/api/evaluation/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy_id: strategyId, model, dataset_id: datasetId }),
+    }, 900000);
+    evaluationState.lastRun = run;
+    renderEvaluationRunHead(run);
+    renderEvaluationMetrics(run?.metrics);
+    if (status) status.textContent = `评分完成：${String(run?.run_id ?? '未知运行')}`;
+    await loadEvaluationRuns();
+  } catch (error) {
+    if (status) status.textContent = `评分失败：${evaluationErrorText(error.code)}`;
+  } finally {
+    setEvaluationBusy(false);
+  }
+}
+
+async function loadEvaluationRuns() {
+  const list = document.getElementById('evaluation-runs-list');
+  const empty = document.getElementById('evaluation-runs-empty');
+  try {
+    const data = await evaluationRequest('/api/evaluation/runs');
+    const runs = Array.isArray(data) ? data : (Array.isArray(data?.runs) ? data.runs : []);
+    evaluationState.runs = runs;
+    if (list) {
+      list.replaceChildren();
+      runs.forEach((run) => {
+        const item = document.createElement('li');
+        item.className = 'evaluation-run-item';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'evaluation-run-item-title';
+        button.textContent = String(run?.run_id ?? '未知运行');
+        const runId = String(run?.run_id ?? '');
+        button.addEventListener('click', () => loadEvaluationRunDetail(runId));
+        const meta = document.createElement('span');
+        meta.className = 'evaluation-run-item-meta';
+        meta.textContent = [formatEvaluationStrategy(run?.strategy), run?.model, run?.dataset, formatEvaluationCreatedAt(run?.created_at)]
+          .map((part) => String(part ?? '—')).join(' · ');
+        item.append(button, meta);
+        list.appendChild(item);
+      });
+    }
+    if (empty) {
+      empty.hidden = runs.length > 0;
+      empty.textContent = '暂无运行记录。';
+    }
+    fillEvaluationCompareSelects(runs);
+  } catch (error) {
+    if (empty) {
+      empty.hidden = false;
+      empty.textContent = `运行历史加载失败：${evaluationErrorText(error.code)}`;
+    }
+  }
+}
+
+async function loadEvaluationRunDetail(runId) {
+  const detail = document.getElementById('evaluation-run-detail');
+  if (!detail || !runId) return;
+  detail.replaceChildren();
+  detail.hidden = false;
+  const title = document.createElement('h3');
+  title.className = 'evaluation-section-title';
+  title.textContent = `运行回看：${runId}`;
+  detail.appendChild(title);
+  try {
+    const run = await evaluationRequest(`/api/evaluation/runs/${encodeURIComponent(runId)}`);
+    const head = document.createElement('div');
+    head.className = 'evaluation-detail-head';
+    head.textContent = [formatEvaluationStrategy(run?.strategy), run?.model, run?.dataset, formatEvaluationCreatedAt(run?.created_at)]
+      .map((part) => String(part ?? '—')).join(' · ');
+    detail.appendChild(head);
+    const cards = document.createElement('div');
+    cards.className = 'evaluation-detail-metrics';
+    cards.setAttribute('role', 'list');
+    appendEvaluationGroupedRows(cards, Array.isArray(run?.metrics) ? run.metrics : [], renderEvaluationMetricCard);
+    detail.appendChild(cards);
+  } catch (error) {
+    const notice = document.createElement('p');
+    notice.className = 'evaluation-empty';
+    notice.textContent = `回看失败：${evaluationErrorText(error.code)}`;
+    detail.appendChild(notice);
+  }
+}
+
+function fillEvaluationCompareSelects(runs) {
+  ['evaluation-compare-a', 'evaluation-compare-b'].forEach((id, index) => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const previous = select.value;
+    select.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = index === 0 ? '选择运行 A' : '选择运行 B';
+    select.appendChild(placeholder);
+    runs.forEach((run) => {
+      const option = document.createElement('option');
+      option.value = String(run?.run_id ?? '');
+      option.textContent = `${String(run?.run_id ?? '')} · ${formatEvaluationStrategy(run?.strategy)} · ${String(run?.dataset ?? '—')}`;
+      select.appendChild(option);
+    });
+    if (runs.some((run) => String(run?.run_id ?? '') === previous)) select.value = previous;
+  });
+}
+
+function renderEvaluationCompare(payload, errorMessage) {
+  const container = document.getElementById('evaluation-compare-result');
+  if (!container) return;
+  container.replaceChildren();
+  const code = errorMessage?.code || payload?.error?.code || payload?.code;
+  const comparable = payload?.comparable !== false && payload?.not_comparable !== true;
+  if (code === 'EVAL_NOT_COMPARABLE' || !comparable) {
+    const reason = document.createElement('p');
+    reason.className = 'evaluation-compare-reason';
+    reason.textContent = `不可比：${String(payload?.reason || payload?.detail?.reason || evaluationErrorText('EVAL_NOT_COMPARABLE'))}；不渲染 delta。`;
+    container.appendChild(reason);
+    return;
+  }
+  const rows = Array.isArray(payload?.deltas) ? payload.deltas
+    : Array.isArray(payload?.metrics) ? payload.metrics
+      : Array.isArray(payload) ? payload : [];
+  if (!rows.length) {
+    const notice = document.createElement('p');
+    notice.className = 'evaluation-compare-reason';
+    notice.textContent = errorMessage ? `对比失败：${evaluationErrorText(errorMessage.code)}` : '没有可比较的维度，请重试。';
+    container.appendChild(notice);
+    return;
+  }
+  appendEvaluationGroupedRows(container, rows, renderEvaluationDeltaRow);
+}
+
+async function loadEvaluationCompare() {
+  const container = document.getElementById('evaluation-compare-result');
+  if (!container) return;
+  const a = document.getElementById('evaluation-compare-a')?.value || '';
+  const b = document.getElementById('evaluation-compare-b')?.value || '';
+  if (!a || !b) {
+    container.replaceChildren();
+    const notice = document.createElement('p');
+    notice.className = 'evaluation-compare-reason';
+    notice.textContent = '请选择两次运行后重试。';
+    container.appendChild(notice);
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ a, b });
+    const payload = await evaluationRequest(`/api/evaluation/compare?${params}`);
+    renderEvaluationCompare(payload, null);
+  } catch (error) {
+    renderEvaluationCompare(error?.payload || null, error);
+  }
+}
+
+// 数据加载由本模块自己的 nav click / hashchange 监听触发，不侵入既有 showView 控制流。
+function initEvaluationView() {
+  const form = document.getElementById('evaluation-score-form');
+  if (form) form.addEventListener('submit', submitEvaluationScore);
+  const refresh = document.getElementById('evaluation-runs-refresh');
+  if (refresh) refresh.addEventListener('click', () => loadEvaluationRuns());
+  const compareButton = document.getElementById('evaluation-compare-button');
+  if (compareButton) compareButton.addEventListener('click', () => loadEvaluationCompare());
+  const nav = document.querySelector('[data-view="evaluation"]');
+  if (nav) {
+    nav.addEventListener('click', () => {
+      if (!evaluationState.optionsLoaded) loadEvaluationOptions();
+      loadEvaluationRuns();
+    });
+  }
+  window.addEventListener('hashchange', () => {
+    if (String(window.location.hash).toLowerCase() === '#evaluation-view') {
+      if (!evaluationState.optionsLoaded) loadEvaluationOptions();
+      loadEvaluationRuns();
+    }
+  });
+  if (String(window.location.hash).toLowerCase() === '#evaluation-view') {
+    loadEvaluationOptions();
+    loadEvaluationRuns();
+  }
+}
+initEvaluationView();

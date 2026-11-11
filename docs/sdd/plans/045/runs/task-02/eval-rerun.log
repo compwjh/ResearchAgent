@@ -1,0 +1,1 @@
+{"exit_code": 0, "report_json": "docs/sdd/plans/045/runs/task-02/eval-rerun/report.json", "report_markdown": "docs/sdd/plans/045/runs/task-02/eval-rerun/report.md", "status": "completed", "summary": {"failed": 0, "no_prior_context": 0, "scored": 2, "skipped": 1, "unavailable": 0, "verified": 2, "written": 2}}

@@ -1,0 +1,16 @@
+{
+  "task_id": "2eb327f2cefb5fc7b5ac60e0454294f6",
+  "event_seq": 40,
+  "event_type": "task",
+  "status_before": "completed",
+  "status_after": "completed",
+  "payload_complete": true,
+  "benchmark_summary": {
+    "warm": {
+      "median_ttft_ms": 38478.927,
+      "throughput_completion_tokens_per_s": 19.735,
+      "peak_memory_bytes": 106070016,
+      "failure_rate": 0.0
+    }
+  }
+}

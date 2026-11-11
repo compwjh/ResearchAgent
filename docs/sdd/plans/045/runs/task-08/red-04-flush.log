@@ -1,0 +1,9 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ FlushQueueDecouplingTests.test_enqueue_flush_is_nonblocking_when_client_hangs _
+tests/observability/test_task05_decoupling.py:129: in test_enqueue_flush_is_nonblocking_when_client_hangs
+    self.assertLess(
+E   AssertionError: 10.001411125063896 not less than 0.1 : enqueue_flush 必须非阻塞，不应被 5s flush 拖慢（耗时 10.001s）
+=========================== short test summary info ============================
+FAILED tests/observability/test_task05_decoupling.py::FlushQueueDecouplingTests::test_enqueue_flush_is_nonblocking_when_client_hangs
+1 failed in 10.34s

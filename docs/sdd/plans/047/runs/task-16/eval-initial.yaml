@@ -1,0 +1,795 @@
+- main [ref=e2]:
+  - complementary "项目与会话导航" [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: R
+      - generic [ref=e6]: ResearchAgent
+    - button "+ 新建对话" [ref=e7] [cursor=pointer]:
+      - generic [ref=e8]: +
+      - text: 新建对话
+    - region "项目与会话" [ref=e9]:
+      - generic "项目树" [ref=e10]:
+        - generic [ref=e11]:
+          - button "项目" [expanded] [ref=e12] [cursor=pointer]:
+            - generic [aria-hidden] [ref=e14]: ⌄
+          - generic [ref=e15]:
+            - button "项目视图选项" [ref=e16] [cursor=pointer]: ⋯
+            - button "新建项目" [ref=e17] [cursor=pointer]: ＋
+        - list "项目列表" [ref=e18]:
+          - generic [ref=e20]:
+            - button "展开项目 文件记忆验收 20261026" [ref=e21] [cursor=pointer]:
+              - generic [ref=e24]: 文件记忆验收 20261026
+            - button "管理项目 文件记忆验收 20261026" [ref=e25] [cursor=pointer]: ⋯
+          - generic [ref=e27]:
+            - button "展开项目 Task08 live project 24134dce4api" [ref=e28] [cursor=pointer]:
+              - generic [ref=e31]: Task08 live project 24134dce4api
+            - button "管理项目 Task08 live project 24134dce4api" [ref=e32] [cursor=pointer]: ⋯
+          - generic [ref=e34]:
+            - button "展开项目 AI Agent" [ref=e35] [cursor=pointer]:
+              - generic [ref=e38]: AI Agent
+            - button "管理项目 AI Agent" [ref=e39] [cursor=pointer]: ⋯
+      - status [ref=e40]
+      - generic [ref=e41]:
+        - generic [ref=e42]: 最近会话
+        - button "最近会话选项" [ref=e43] [cursor=pointer]: ⋯
+      - listbox "项目会话列表" [ref=e44]: 暂无已保存会话
+      - status [ref=e45]
+    - navigation "主导航" [ref=e46]:
+      - paragraph [ref=e47]: 工作区
+      - button "◌ 对话" [ref=e48]:
+        - generic [ref=e49]: ◌
+        - text: 对话
+      - link "✦ 深度研究" [ref=e50] [cursor=pointer]:
+        - /url: "#research-view"
+        - generic [ref=e51]: ✦
+        - text: 深度研究
+      - button "◈ 模型库" [ref=e52]:
+        - generic [ref=e53]: ◈
+        - text: 模型库
+      - button "▤ 知识库 64" [ref=e56]:
+        - generic [ref=e57]: ▤
+        - text: 知识库
+        - generic [ref=e58]: "64"
+      - button "✧ 记忆治理" [ref=e59]:
+        - generic [ref=e60]: ✧
+        - text: 记忆治理
+      - link "⌕ 论文检索" [ref=e61] [cursor=pointer]:
+        - /url: "#papers-view"
+        - generic [ref=e62]: ⌕
+        - text: 论文检索
+      - link "⌘ 文献地图" [ref=e63] [cursor=pointer]:
+        - /url: "#literature-maps-view"
+        - generic [ref=e64]: ⌘
+        - text: 文献地图
+      - button "❖ Skills 与 Tools" [ref=e65]:
+        - generic [ref=e66]: ❖
+        - text: Skills 与 Tools
+      - link "▦ 评测" [ref=e67] [cursor=pointer]:
+        - /url: "#evaluation-view"
+        - generic [ref=e68]: ▦
+        - text: 评测
+    - region [ref=e69]:
+      - generic [ref=e70]:
+        - heading "研究通知" [level=2] [ref=e71]
+        - generic "未读通知数" [ref=e72]: "94"
+        - button "刷新研究通知" [ref=e73] [cursor=pointer]: ↻
+      - status [ref=e74]: 共 100 条通知
+      - list "研究通知列表" [ref=e75]:
+        - listitem [ref=e76]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e77] [cursor=pointer]:
+            - strong [ref=e78]: 研究失败
+            - generic [ref=e79]: 研究失败 · 报告 v1
+            - generic [ref=e80]: "#100 · 2026-09-19T18:30:11Z · 未读"
+        - listitem [ref=e81]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e82] [cursor=pointer]:
+            - strong [ref=e83]: 研究部分完成
+            - generic [ref=e84]: 研究部分完成 · 报告 v1
+            - generic [ref=e85]: "#99 · 2026-09-19T18:20:36Z · 已读"
+        - listitem [ref=e86]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e87] [cursor=pointer]:
+            - strong [ref=e88]: 研究失败
+            - generic [ref=e89]: 研究失败 · 报告 v1
+            - generic [ref=e90]: "#98 · 2026-09-19T18:20:36Z · 未读"
+        - listitem [ref=e91]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e92] [cursor=pointer]:
+            - strong [ref=e93]: 研究部分完成
+            - generic [ref=e94]: 研究部分完成 · 报告 v1
+            - generic [ref=e95]: "#97 · 2026-09-19T18:06:45Z · 未读"
+        - listitem [ref=e96]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e97] [cursor=pointer]:
+            - strong [ref=e98]: 研究失败
+            - generic [ref=e99]: 研究失败 · 报告 v1
+            - generic [ref=e100]: "#96 · 2026-09-19T18:06:45Z · 未读"
+        - listitem [ref=e101]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e102] [cursor=pointer]:
+            - strong [ref=e103]: 研究部分完成
+            - generic [ref=e104]: 研究部分完成 · 报告 v1
+            - generic [ref=e105]: "#95 · 2026-09-19T18:03:20Z · 未读"
+        - listitem [ref=e106]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e107] [cursor=pointer]:
+            - strong [ref=e108]: 研究失败
+            - generic [ref=e109]: 研究失败 · 报告 v1
+            - generic [ref=e110]: "#94 · 2026-09-19T18:03:20Z · 未读"
+        - listitem [ref=e111]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e112] [cursor=pointer]:
+            - strong [ref=e113]: 研究部分完成
+            - generic [ref=e114]: 研究部分完成 · 报告 v1
+            - generic [ref=e115]: "#93 · 2026-09-19T17:43:12Z · 未读"
+        - listitem [ref=e116]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e117] [cursor=pointer]:
+            - strong [ref=e118]: 研究失败
+            - generic [ref=e119]: 研究失败 · 报告 v1
+            - generic [ref=e120]: "#92 · 2026-09-19T17:43:12Z · 未读"
+        - listitem [ref=e121]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e122] [cursor=pointer]:
+            - strong [ref=e123]: 研究部分完成
+            - generic [ref=e124]: 研究部分完成 · 报告 v1
+            - generic [ref=e125]: "#91 · 2026-09-19T05:54:53Z · 未读"
+        - listitem [ref=e126]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e127] [cursor=pointer]:
+            - strong [ref=e128]: 研究失败
+            - generic [ref=e129]: 研究失败 · 报告 v1
+            - generic [ref=e130]: "#90 · 2026-09-19T05:54:53Z · 未读"
+        - listitem [ref=e131]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e132] [cursor=pointer]:
+            - strong [ref=e133]: 研究部分完成
+            - generic [ref=e134]: 研究部分完成 · 报告 v1
+            - generic [ref=e135]: "#89 · 2026-09-19T05:48:18Z · 未读"
+        - listitem [ref=e136]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e137] [cursor=pointer]:
+            - strong [ref=e138]: 研究失败
+            - generic [ref=e139]: 研究失败 · 报告 v1
+            - generic [ref=e140]: "#88 · 2026-09-19T05:48:18Z · 未读"
+        - listitem [ref=e141]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e142] [cursor=pointer]:
+            - strong [ref=e143]: 研究部分完成
+            - generic [ref=e144]: 研究部分完成 · 报告 v1
+            - generic [ref=e145]: "#87 · 2026-09-19T05:46:54Z · 未读"
+        - listitem [ref=e146]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e147] [cursor=pointer]:
+            - strong [ref=e148]: 研究失败
+            - generic [ref=e149]: 研究失败 · 报告 v1
+            - generic [ref=e150]: "#86 · 2026-09-19T05:46:54Z · 未读"
+        - listitem [ref=e151]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e152] [cursor=pointer]:
+            - strong [ref=e153]: 研究部分完成
+            - generic [ref=e154]: 研究部分完成 · 报告 v1
+            - generic [ref=e155]: "#85 · 2026-09-19T05:43:38Z · 未读"
+        - listitem [ref=e156]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e157] [cursor=pointer]:
+            - strong [ref=e158]: 研究失败
+            - generic [ref=e159]: 研究失败 · 报告 v1
+            - generic [ref=e160]: "#84 · 2026-09-19T05:43:38Z · 未读"
+        - listitem [ref=e161]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e162] [cursor=pointer]:
+            - strong [ref=e163]: 研究部分完成
+            - generic [ref=e164]: 研究部分完成 · 报告 v1
+            - generic [ref=e165]: "#83 · 2026-09-19T05:36:11Z · 未读"
+        - listitem [ref=e166]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e167] [cursor=pointer]:
+            - strong [ref=e168]: 研究失败
+            - generic [ref=e169]: 研究失败 · 报告 v1
+            - generic [ref=e170]: "#82 · 2026-09-19T05:36:11Z · 未读"
+        - listitem [ref=e171]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e172] [cursor=pointer]:
+            - strong [ref=e173]: 研究部分完成
+            - generic [ref=e174]: 研究部分完成 · 报告 v1
+            - generic [ref=e175]: "#81 · 2026-09-18T19:48:27Z · 未读"
+        - listitem [ref=e176]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e177] [cursor=pointer]:
+            - strong [ref=e178]: 研究失败
+            - generic [ref=e179]: 研究失败 · 报告 v1
+            - generic [ref=e180]: "#80 · 2026-09-18T19:48:27Z · 未读"
+        - listitem [ref=e181]:
+          - button "研究已完成：研究已完成 · 报告 v1" [ref=e182] [cursor=pointer]:
+            - strong [ref=e183]: 研究已完成
+            - generic [ref=e184]: 研究已完成 · 报告 v1
+            - generic [ref=e185]: "#79 · 2026-09-17T20:11:24Z · 未读"
+        - listitem [ref=e186]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e187] [cursor=pointer]:
+            - strong [ref=e188]: 研究部分完成
+            - generic [ref=e189]: 研究部分完成 · 报告 v1
+            - generic [ref=e190]: "#78 · 2026-09-17T19:37:22Z · 未读"
+        - listitem [ref=e191]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e192] [cursor=pointer]:
+            - strong [ref=e193]: 研究失败
+            - generic [ref=e194]: 研究失败 · 报告 v1
+            - generic [ref=e195]: "#77 · 2026-09-17T19:37:22Z · 未读"
+        - listitem [ref=e196]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e197] [cursor=pointer]:
+            - strong [ref=e198]: 研究部分完成
+            - generic [ref=e199]: 研究部分完成 · 报告 v1
+            - generic [ref=e200]: "#76 · 2026-09-17T19:29:56Z · 未读"
+        - listitem [ref=e201]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e202] [cursor=pointer]:
+            - strong [ref=e203]: 研究失败
+            - generic [ref=e204]: 研究失败 · 报告 v1
+            - generic [ref=e205]: "#75 · 2026-09-17T19:29:56Z · 未读"
+        - listitem [ref=e206]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e207] [cursor=pointer]:
+            - strong [ref=e208]: 研究部分完成
+            - generic [ref=e209]: 研究部分完成 · 报告 v1
+            - generic [ref=e210]: "#74 · 2026-09-17T19:02:25Z · 未读"
+        - listitem [ref=e211]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e212] [cursor=pointer]:
+            - strong [ref=e213]: 研究失败
+            - generic [ref=e214]: 研究失败 · 报告 v1
+            - generic [ref=e215]: "#73 · 2026-09-17T19:02:25Z · 未读"
+        - listitem [ref=e216]:
+          - button "研究失败：研究失败，可重试（第 3 次） · 报告 v1" [ref=e217] [cursor=pointer]:
+            - strong [ref=e218]: 研究失败
+            - generic [ref=e219]: 研究失败，可重试（第 3 次） · 报告 v1
+            - generic [ref=e220]: "#72 · 2026-09-17T08:45:17Z · 未读"
+        - listitem [ref=e221]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e222] [cursor=pointer]:
+            - strong [ref=e223]: 研究部分完成
+            - generic [ref=e224]: 研究部分完成 · 报告 v1
+            - generic [ref=e225]: "#71 · 2026-09-17T08:45:17Z · 未读"
+        - listitem [ref=e226]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e227] [cursor=pointer]:
+            - strong [ref=e228]: 研究失败
+            - generic [ref=e229]: 研究失败 · 报告 v1
+            - generic [ref=e230]: "#70 · 2026-09-17T08:45:17Z · 未读"
+        - listitem [ref=e231]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e232] [cursor=pointer]:
+            - strong [ref=e233]: 研究部分完成
+            - generic [ref=e234]: 研究部分完成 · 报告 v1
+            - generic [ref=e235]: "#69 · 2026-09-16T16:28:16Z · 未读"
+        - listitem [ref=e236]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e237] [cursor=pointer]:
+            - strong [ref=e238]: 研究失败
+            - generic [ref=e239]: 研究失败 · 报告 v1
+            - generic [ref=e240]: "#68 · 2026-09-16T16:28:16Z · 未读"
+        - listitem [ref=e241]:
+          - button "研究已完成：研究已完成 · 报告 v1" [ref=e242] [cursor=pointer]:
+            - strong [ref=e243]: 研究已完成
+            - generic [ref=e244]: 研究已完成 · 报告 v1
+            - generic [ref=e245]: "#67 · 2026-09-16T16:06:52Z · 未读"
+        - listitem [ref=e246]:
+          - button "研究已完成：研究已完成 · 报告 v1" [ref=e247] [cursor=pointer]:
+            - strong [ref=e248]: 研究已完成
+            - generic [ref=e249]: 研究已完成 · 报告 v1
+            - generic [ref=e250]: "#66 · 2026-09-16T13:09:14Z · 未读"
+        - listitem [ref=e251]:
+          - button "研究已完成：研究已完成 · 报告 v1" [ref=e252] [cursor=pointer]:
+            - strong [ref=e253]: 研究已完成
+            - generic [ref=e254]: 研究已完成 · 报告 v1
+            - generic [ref=e255]: "#65 · 2026-09-16T12:16:03Z · 未读"
+        - listitem [ref=e256]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e257] [cursor=pointer]:
+            - strong [ref=e258]: 研究部分完成
+            - generic [ref=e259]: 研究部分完成 · 报告 v1
+            - generic [ref=e260]: "#64 · 2026-09-16T12:08:00Z · 未读"
+        - listitem [ref=e261]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e262] [cursor=pointer]:
+            - strong [ref=e263]: 研究失败
+            - generic [ref=e264]: 研究失败 · 报告 v1
+            - generic [ref=e265]: "#63 · 2026-09-16T12:08:00Z · 未读"
+        - listitem [ref=e266]:
+          - button "研究已完成：研究已完成 · 报告 v1" [ref=e267] [cursor=pointer]:
+            - strong [ref=e268]: 研究已完成
+            - generic [ref=e269]: 研究已完成 · 报告 v1
+            - generic [ref=e270]: "#62 · 2026-09-16T09:25:20Z · 已读"
+        - listitem [ref=e271]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e272] [cursor=pointer]:
+            - strong [ref=e273]: 研究部分完成
+            - generic [ref=e274]: 研究部分完成 · 报告 v1
+            - generic [ref=e275]: "#61 · 2026-09-16T09:15:20Z · 未读"
+        - listitem [ref=e276]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e277] [cursor=pointer]:
+            - strong [ref=e278]: 研究失败
+            - generic [ref=e279]: 研究失败 · 报告 v1
+            - generic [ref=e280]: "#60 · 2026-09-16T09:15:20Z · 已读"
+        - listitem [ref=e281]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e282] [cursor=pointer]:
+            - strong [ref=e283]: 研究部分完成
+            - generic [ref=e284]: 研究部分完成 · 报告 v1
+            - generic [ref=e285]: "#59 · 2026-09-16T09:06:50Z · 未读"
+        - listitem [ref=e286]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e287] [cursor=pointer]:
+            - strong [ref=e288]: 研究失败
+            - generic [ref=e289]: 研究失败 · 报告 v1
+            - generic [ref=e290]: "#58 · 2026-09-16T09:06:50Z · 未读"
+        - listitem [ref=e291]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e292] [cursor=pointer]:
+            - strong [ref=e293]: 研究部分完成
+            - generic [ref=e294]: 研究部分完成 · 报告 v1
+            - generic [ref=e295]: "#57 · 2026-09-16T08:34:19Z · 未读"
+        - listitem [ref=e296]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e297] [cursor=pointer]:
+            - strong [ref=e298]: 研究失败
+            - generic [ref=e299]: 研究失败 · 报告 v1
+            - generic [ref=e300]: "#56 · 2026-09-16T08:34:19Z · 未读"
+        - listitem [ref=e301]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e302] [cursor=pointer]:
+            - strong [ref=e303]: 研究部分完成
+            - generic [ref=e304]: 研究部分完成 · 报告 v1
+            - generic [ref=e305]: "#55 · 2026-09-16T08:19:18Z · 未读"
+        - listitem [ref=e306]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e307] [cursor=pointer]:
+            - strong [ref=e308]: 研究失败
+            - generic [ref=e309]: 研究失败 · 报告 v1
+            - generic [ref=e310]: "#54 · 2026-09-16T08:19:18Z · 未读"
+        - listitem [ref=e311]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e312] [cursor=pointer]:
+            - strong [ref=e313]: 研究部分完成
+            - generic [ref=e314]: 研究部分完成 · 报告 v1
+            - generic [ref=e315]: "#53 · 2026-09-16T07:57:47Z · 未读"
+        - listitem [ref=e316]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e317] [cursor=pointer]:
+            - strong [ref=e318]: 研究失败
+            - generic [ref=e319]: 研究失败 · 报告 v1
+            - generic [ref=e320]: "#52 · 2026-09-16T07:57:47Z · 未读"
+        - listitem [ref=e321]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e322] [cursor=pointer]:
+            - strong [ref=e323]: 研究部分完成
+            - generic [ref=e324]: 研究部分完成 · 报告 v1
+            - generic [ref=e325]: "#51 · 2026-09-16T07:46:52Z · 未读"
+        - listitem [ref=e326]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e327] [cursor=pointer]:
+            - strong [ref=e328]: 研究失败
+            - generic [ref=e329]: 研究失败 · 报告 v1
+            - generic [ref=e330]: "#50 · 2026-09-16T07:46:52Z · 未读"
+        - listitem [ref=e331]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e332] [cursor=pointer]:
+            - strong [ref=e333]: 研究部分完成
+            - generic [ref=e334]: 研究部分完成 · 报告 v1
+            - generic [ref=e335]: "#49 · 2026-09-16T06:30:08Z · 未读"
+        - listitem [ref=e336]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e337] [cursor=pointer]:
+            - strong [ref=e338]: 研究失败
+            - generic [ref=e339]: 研究失败 · 报告 v1
+            - generic [ref=e340]: "#48 · 2026-09-16T06:30:08Z · 未读"
+        - listitem [ref=e341]:
+          - button "研究已完成：研究已完成 · 报告 v1" [ref=e342] [cursor=pointer]:
+            - strong [ref=e343]: 研究已完成
+            - generic [ref=e344]: 研究已完成 · 报告 v1
+            - generic [ref=e345]: "#47 · 2026-09-15T12:33:01Z · 已读"
+        - listitem [ref=e346]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e347] [cursor=pointer]:
+            - strong [ref=e348]: 研究部分完成
+            - generic [ref=e349]: 研究部分完成 · 报告 v1
+            - generic [ref=e350]: "#46 · 2026-09-15T10:00:34Z · 已读"
+        - listitem [ref=e351]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e352] [cursor=pointer]:
+            - strong [ref=e353]: 研究失败
+            - generic [ref=e354]: 研究失败 · 报告 v1
+            - generic [ref=e355]: "#45 · 2026-09-15T10:00:34Z · 已读"
+        - listitem [ref=e356]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e357] [cursor=pointer]:
+            - strong [ref=e358]: 研究部分完成
+            - generic [ref=e359]: 研究部分完成 · 报告 v1
+            - generic [ref=e360]: "#44 · 2026-09-15T09:55:04Z · 未读"
+        - listitem [ref=e361]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e362] [cursor=pointer]:
+            - strong [ref=e363]: 研究失败
+            - generic [ref=e364]: 研究失败 · 报告 v1
+            - generic [ref=e365]: "#43 · 2026-09-15T09:55:04Z · 未读"
+        - listitem [ref=e366]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e367] [cursor=pointer]:
+            - strong [ref=e368]: 研究部分完成
+            - generic [ref=e369]: 研究部分完成 · 报告 v1
+            - generic [ref=e370]: "#42 · 2026-09-15T09:30:11Z · 未读"
+        - listitem [ref=e371]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e372] [cursor=pointer]:
+            - strong [ref=e373]: 研究失败
+            - generic [ref=e374]: 研究失败 · 报告 v1
+            - generic [ref=e375]: "#41 · 2026-09-15T09:30:11Z · 未读"
+        - listitem [ref=e376]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e377] [cursor=pointer]:
+            - strong [ref=e378]: 研究部分完成
+            - generic [ref=e379]: 研究部分完成 · 报告 v1
+            - generic [ref=e380]: "#40 · 2026-09-15T09:24:19Z · 未读"
+        - listitem [ref=e381]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e382] [cursor=pointer]:
+            - strong [ref=e383]: 研究失败
+            - generic [ref=e384]: 研究失败 · 报告 v1
+            - generic [ref=e385]: "#39 · 2026-09-15T09:24:19Z · 未读"
+        - listitem [ref=e386]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e387] [cursor=pointer]:
+            - strong [ref=e388]: 研究部分完成
+            - generic [ref=e389]: 研究部分完成 · 报告 v1
+            - generic [ref=e390]: "#38 · 2026-09-15T07:56:35Z · 未读"
+        - listitem [ref=e391]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e392] [cursor=pointer]:
+            - strong [ref=e393]: 研究失败
+            - generic [ref=e394]: 研究失败 · 报告 v1
+            - generic [ref=e395]: "#37 · 2026-09-15T07:56:35Z · 未读"
+        - listitem [ref=e396]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e397] [cursor=pointer]:
+            - strong [ref=e398]: 研究部分完成
+            - generic [ref=e399]: 研究部分完成 · 报告 v1
+            - generic [ref=e400]: "#36 · 2026-09-15T07:50:02Z · 未读"
+        - listitem [ref=e401]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e402] [cursor=pointer]:
+            - strong [ref=e403]: 研究失败
+            - generic [ref=e404]: 研究失败 · 报告 v1
+            - generic [ref=e405]: "#35 · 2026-09-15T07:50:02Z · 未读"
+        - listitem [ref=e406]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e407] [cursor=pointer]:
+            - strong [ref=e408]: 研究部分完成
+            - generic [ref=e409]: 研究部分完成 · 报告 v1
+            - generic [ref=e410]: "#34 · 2026-09-15T07:46:10Z · 未读"
+        - listitem [ref=e411]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e412] [cursor=pointer]:
+            - strong [ref=e413]: 研究失败
+            - generic [ref=e414]: 研究失败 · 报告 v1
+            - generic [ref=e415]: "#33 · 2026-09-15T07:46:10Z · 未读"
+        - listitem [ref=e416]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e417] [cursor=pointer]:
+            - strong [ref=e418]: 研究部分完成
+            - generic [ref=e419]: 研究部分完成 · 报告 v1
+            - generic [ref=e420]: "#32 · 2026-09-15T07:31:52Z · 未读"
+        - listitem [ref=e421]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e422] [cursor=pointer]:
+            - strong [ref=e423]: 研究失败
+            - generic [ref=e424]: 研究失败 · 报告 v1
+            - generic [ref=e425]: "#31 · 2026-09-15T07:31:52Z · 未读"
+        - listitem [ref=e426]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e427] [cursor=pointer]:
+            - strong [ref=e428]: 研究部分完成
+            - generic [ref=e429]: 研究部分完成 · 报告 v1
+            - generic [ref=e430]: "#30 · 2026-09-14T23:40:16Z · 未读"
+        - listitem [ref=e431]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e432] [cursor=pointer]:
+            - strong [ref=e433]: 研究失败
+            - generic [ref=e434]: 研究失败 · 报告 v1
+            - generic [ref=e435]: "#29 · 2026-09-14T23:40:16Z · 未读"
+        - listitem [ref=e436]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e437] [cursor=pointer]:
+            - strong [ref=e438]: 研究部分完成
+            - generic [ref=e439]: 研究部分完成 · 报告 v1
+            - generic [ref=e440]: "#28 · 2026-09-14T23:36:14Z · 未读"
+        - listitem [ref=e441]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e442] [cursor=pointer]:
+            - strong [ref=e443]: 研究失败
+            - generic [ref=e444]: 研究失败 · 报告 v1
+            - generic [ref=e445]: "#27 · 2026-09-14T23:36:14Z · 未读"
+        - listitem [ref=e446]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e447] [cursor=pointer]:
+            - strong [ref=e448]: 研究部分完成
+            - generic [ref=e449]: 研究部分完成 · 报告 v1
+            - generic [ref=e450]: "#26 · 2026-09-14T22:45:59Z · 未读"
+        - listitem [ref=e451]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e452] [cursor=pointer]:
+            - strong [ref=e453]: 研究失败
+            - generic [ref=e454]: 研究失败 · 报告 v1
+            - generic [ref=e455]: "#25 · 2026-09-14T22:45:59Z · 未读"
+        - listitem [ref=e456]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e457] [cursor=pointer]:
+            - strong [ref=e458]: 研究部分完成
+            - generic [ref=e459]: 研究部分完成 · 报告 v1
+            - generic [ref=e460]: "#24 · 2026-09-14T22:36:17Z · 未读"
+        - listitem [ref=e461]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e462] [cursor=pointer]:
+            - strong [ref=e463]: 研究失败
+            - generic [ref=e464]: 研究失败 · 报告 v1
+            - generic [ref=e465]: "#23 · 2026-09-14T22:36:17Z · 未读"
+        - listitem [ref=e466]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e467] [cursor=pointer]:
+            - strong [ref=e468]: 研究部分完成
+            - generic [ref=e469]: 研究部分完成 · 报告 v1
+            - generic [ref=e470]: "#22 · 2026-09-14T22:16:28Z · 未读"
+        - listitem [ref=e471]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e472] [cursor=pointer]:
+            - strong [ref=e473]: 研究失败
+            - generic [ref=e474]: 研究失败 · 报告 v1
+            - generic [ref=e475]: "#21 · 2026-09-14T22:16:28Z · 未读"
+        - listitem [ref=e476]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e477] [cursor=pointer]:
+            - strong [ref=e478]: 研究部分完成
+            - generic [ref=e479]: 研究部分完成 · 报告 v1
+            - generic [ref=e480]: "#20 · 2026-09-14T22:13:50Z · 未读"
+        - listitem [ref=e481]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e482] [cursor=pointer]:
+            - strong [ref=e483]: 研究失败
+            - generic [ref=e484]: 研究失败 · 报告 v1
+            - generic [ref=e485]: "#19 · 2026-09-14T22:13:50Z · 未读"
+        - listitem [ref=e486]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e487] [cursor=pointer]:
+            - strong [ref=e488]: 研究部分完成
+            - generic [ref=e489]: 研究部分完成 · 报告 v1
+            - generic [ref=e490]: "#18 · 2026-09-14T22:09:31Z · 未读"
+        - listitem [ref=e491]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e492] [cursor=pointer]:
+            - strong [ref=e493]: 研究失败
+            - generic [ref=e494]: 研究失败 · 报告 v1
+            - generic [ref=e495]: "#17 · 2026-09-14T22:09:31Z · 未读"
+        - listitem [ref=e496]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e497] [cursor=pointer]:
+            - strong [ref=e498]: 研究部分完成
+            - generic [ref=e499]: 研究部分完成 · 报告 v1
+            - generic [ref=e500]: "#16 · 2026-09-14T22:07:12Z · 未读"
+        - listitem [ref=e501]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e502] [cursor=pointer]:
+            - strong [ref=e503]: 研究失败
+            - generic [ref=e504]: 研究失败 · 报告 v1
+            - generic [ref=e505]: "#15 · 2026-09-14T22:07:12Z · 未读"
+        - listitem [ref=e506]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e507] [cursor=pointer]:
+            - strong [ref=e508]: 研究部分完成
+            - generic [ref=e509]: 研究部分完成 · 报告 v1
+            - generic [ref=e510]: "#14 · 2026-09-14T19:55:51Z · 未读"
+        - listitem [ref=e511]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e512] [cursor=pointer]:
+            - strong [ref=e513]: 研究失败
+            - generic [ref=e514]: 研究失败 · 报告 v1
+            - generic [ref=e515]: "#13 · 2026-09-14T19:55:51Z · 未读"
+        - listitem [ref=e516]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e517] [cursor=pointer]:
+            - strong [ref=e518]: 研究部分完成
+            - generic [ref=e519]: 研究部分完成 · 报告 v1
+            - generic [ref=e520]: "#12 · 2026-09-14T19:44:50Z · 未读"
+        - listitem [ref=e521]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e522] [cursor=pointer]:
+            - strong [ref=e523]: 研究失败
+            - generic [ref=e524]: 研究失败 · 报告 v1
+            - generic [ref=e525]: "#11 · 2026-09-14T19:44:50Z · 未读"
+        - listitem [ref=e526]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e527] [cursor=pointer]:
+            - strong [ref=e528]: 研究部分完成
+            - generic [ref=e529]: 研究部分完成 · 报告 v1
+            - generic [ref=e530]: "#10 · 2026-09-14T18:57:03Z · 未读"
+        - listitem [ref=e531]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e532] [cursor=pointer]:
+            - strong [ref=e533]: 研究失败
+            - generic [ref=e534]: 研究失败 · 报告 v1
+            - generic [ref=e535]: "#9 · 2026-09-14T18:57:03Z · 未读"
+        - listitem [ref=e536]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e537] [cursor=pointer]:
+            - strong [ref=e538]: 研究部分完成
+            - generic [ref=e539]: 研究部分完成 · 报告 v1
+            - generic [ref=e540]: "#8 · 2026-09-14T18:51:47Z · 未读"
+        - listitem [ref=e541]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e542] [cursor=pointer]:
+            - strong [ref=e543]: 研究失败
+            - generic [ref=e544]: 研究失败 · 报告 v1
+            - generic [ref=e545]: "#7 · 2026-09-14T18:51:47Z · 未读"
+        - listitem [ref=e546]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e547] [cursor=pointer]:
+            - strong [ref=e548]: 研究部分完成
+            - generic [ref=e549]: 研究部分完成 · 报告 v1
+            - generic [ref=e550]: "#6 · 2026-09-14T18:41:51Z · 未读"
+        - listitem [ref=e551]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e552] [cursor=pointer]:
+            - strong [ref=e553]: 研究失败
+            - generic [ref=e554]: 研究失败 · 报告 v1
+            - generic [ref=e555]: "#5 · 2026-09-14T18:41:51Z · 未读"
+        - listitem [ref=e556]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e557] [cursor=pointer]:
+            - strong [ref=e558]: 研究部分完成
+            - generic [ref=e559]: 研究部分完成 · 报告 v1
+            - generic [ref=e560]: "#4 · 2026-09-14T18:07:28Z · 未读"
+        - listitem [ref=e561]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e562] [cursor=pointer]:
+            - strong [ref=e563]: 研究失败
+            - generic [ref=e564]: 研究失败 · 报告 v1
+            - generic [ref=e565]: "#3 · 2026-09-14T18:07:28Z · 未读"
+        - listitem [ref=e566]:
+          - button "研究部分完成：研究部分完成 · 报告 v1" [ref=e567] [cursor=pointer]:
+            - strong [ref=e568]: 研究部分完成
+            - generic [ref=e569]: 研究部分完成 · 报告 v1
+            - generic [ref=e570]: "#2 · 2026-09-14T18:04:28Z · 未读"
+        - listitem [ref=e571]:
+          - button "研究失败：研究失败 · 报告 v1" [ref=e572] [cursor=pointer]:
+            - strong [ref=e573]: 研究失败
+            - generic [ref=e574]: 研究失败 · 报告 v1
+            - generic [ref=e575]: "#1 · 2026-09-14T18:04:28Z · 未读"
+    - generic [ref=e576]:
+      - generic [ref=e579]:
+        - strong [ref=e580]: 本地服务
+        - text: qwen3.8:27b
+      - generic [ref=e581]:
+        - generic [ref=e582]: W
+        - generic [ref=e583]:
+          - strong [ref=e584]: 本地工作区
+          - text: Ollama
+        - button "本地工作区选项" [ref=e585] [cursor=pointer]: ···
+  - text: ⌄ ⌄ ⌄ ⌄
+  - region [ref=e586]:
+    - generic [ref=e588]:
+      - generic [ref=e589]: 工作区
+      - generic [ref=e590]: /
+      - strong [ref=e591]: 评测台
+    - region "评测工作台" [ref=e592]:
+      - generic [ref=e593]:
+        - heading "评测" [level=1] [ref=e594]
+        - paragraph [ref=e595]: 选择策略、被测模型与评测集，真实打分后逐维度查看分数、状态、样本数与明细。
+      - generic [ref=e596]:
+        - generic [ref=e597]:
+          - text: 策略
+          - combobox "策略" [ref=e598]:
+            - option "请选择策略" [selected]
+            - option "基线（v1 / top_k=5 / reranker=off）"
+            - option "切分 v2（top_k=5 / reranker=off）"
+            - option "扩大召回（v1 / top_k=10 / reranker=off）"
+            - option "启用重排（v1 / top_k=5 / reranker=on）"
+        - generic [ref=e599]:
+          - text: 模型
+          - combobox "模型" [ref=e600]:
+            - option "请选择模型" [selected]
+            - option "qwen3.8:27b-q4_K_M"
+            - option "qwen3.8:27b-mlx"
+            - option "qwen3.8-27b-q4:latest"
+            - option "qwen3.8:27b"
+            - option "oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU"
+            - option "qwen3.8:27b-q4"
+            - option "dengcao/Qwen3-Reranker-0.6B:Q8_0"
+            - option "bge-m3:latest"
+            - option "deepseek-coder-v2:16b"
+            - option "qwen3.5:9b"
+            - option "deepseek-coder:33b"
+            - option "deepseek:deepseek-flash"
+        - generic [ref=e601]:
+          - text: 评测集
+          - combobox "评测集" [ref=e602]:
+            - option "请选择评测集" [selected]
+            - option "RAG 检索召回"
+            - option "意图识别分类"
+            - option "回答质量（既有判官轨迹）"
+        - button "开始评分" [ref=e603] [cursor=pointer]
+      - status [ref=e604]: 选项已加载：请选择策略、模型与评测集后点击「开始评分」。
+      - heading "分维度分数" [level=2] [ref=e606]
+      - list "分维度分数"
+      - paragraph [ref=e607]: 尚未评分，请在上方三选一后点击「开始评分」。
+      - region "运行历史" [ref=e608]:
+        - generic [ref=e609]:
+          - heading "运行历史" [level=2] [ref=e610]
+          - button "刷新历史" [ref=e611] [cursor=pointer]
+        - list [ref=e612]:
+          - listitem [ref=e613]:
+            - button "eval-16eaa80954264138b46a40822980d61f" [ref=e614] [cursor=pointer]
+            - generic [ref=e615]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 11/11/2026, 03:42:29
+          - listitem [ref=e616]:
+            - button "eval-ca2657062094459696c2364a977b7bc7" [ref=e617] [cursor=pointer]
+            - generic [ref=e618]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 11/11/2026, 03:08:01
+          - listitem [ref=e619]:
+            - button "eval-a79a15cbd4c64fce964167bbe23abc88" [ref=e620] [cursor=pointer]
+            - generic [ref=e621]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 11/11/2026, 03:00:09
+          - listitem [ref=e622]:
+            - button "eval-703d84de2cc745ed8780f14b15dd17f6" [ref=e623] [cursor=pointer]
+            - generic [ref=e624]: 扩大召回（v1 / top_k=10 / reranker=off） · qwen3.8:27b-q4_K_M · rag-retrieval · 10/11/2026, 15:04:04
+          - listitem [ref=e625]:
+            - button "eval-ce59fc85b8e1434cbcf0dc70c49b6cb6" [ref=e626] [cursor=pointer]
+            - generic [ref=e627]: 启用重排（v1 / top_k=5 / reranker=on） · qwen3.8:27b-q4_K_M · rag-retrieval · 10/11/2026, 15:03:18
+          - listitem [ref=e628]:
+            - button "eval-eaa43839bd3f4eceaa891c1d7dbde196" [ref=e629] [cursor=pointer]
+            - generic [ref=e630]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · intent-classification · 10/11/2026, 08:45:43
+          - listitem [ref=e631]:
+            - button "eval-1cae839cd91a412ea647b5c8e3eb829d" [ref=e632] [cursor=pointer]
+            - generic [ref=e633]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 10/11/2026, 08:44:23
+          - listitem [ref=e634]:
+            - button "eval-1b65bc9ddb76444787782e416272f3ec" [ref=e635] [cursor=pointer]
+            - generic [ref=e636]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · intent-classification · 10/11/2026, 08:42:16
+          - listitem [ref=e637]:
+            - button "eval-5fdf023e2fa446c5aeb0021754de2f07" [ref=e638] [cursor=pointer]
+            - generic [ref=e639]: 扩大召回（v1 / top_k=10 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 08:42:16
+          - listitem [ref=e640]:
+            - button "eval-01420acf62aa40bf9ad035c9fc35a251" [ref=e641] [cursor=pointer]
+            - generic [ref=e642]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 08:41:43
+          - listitem [ref=e643]:
+            - button "eval-800f56ee6fe646aa8a799c6dcd0d21ba" [ref=e644] [cursor=pointer]
+            - generic [ref=e645]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 08:40:15
+          - listitem [ref=e646]:
+            - button "eval-86900b6f767248d7bed7a3c71a7a21dc" [ref=e647] [cursor=pointer]
+            - generic [ref=e648]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · intent-classification · 10/11/2026, 03:02:37
+          - listitem [ref=e649]:
+            - button "eval-27bb2cbae2744d329ac831f66f07fceb" [ref=e650] [cursor=pointer]
+            - generic [ref=e651]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 03:02:18
+          - listitem [ref=e652]:
+            - button "eval-3f4604a791974712b7c034b51b4db385" [ref=e653] [cursor=pointer]
+            - generic [ref=e654]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · intent-classification · 10/11/2026, 02:58:18
+          - listitem [ref=e655]:
+            - button "eval-7f2d1cc764ae42feb994e313b706a81c" [ref=e656] [cursor=pointer]
+            - generic [ref=e657]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:58:18
+          - listitem [ref=e658]:
+            - button "eval-3a5b5eee42f14bfb9ee2474713229a52" [ref=e659] [cursor=pointer]
+            - generic [ref=e660]: 基线（v1 / top_k=5 / reranker=off） · qwen3.8:27b-q4 · chat-quality · 10/11/2026, 02:57:54
+          - listitem [ref=e661]:
+            - button "eval-f6e799ae03494733b2f84e18807721d8" [ref=e662] [cursor=pointer]
+            - generic [ref=e663]: 基线（v1 / top_k=5 / reranker=off） · qwen3.8:27b · chat-quality · 10/11/2026, 02:56:54
+          - listitem [ref=e664]:
+            - button "eval-5064c132930a4fca82ae61cf5c35fd66" [ref=e665] [cursor=pointer]
+            - generic [ref=e666]: 基线（v1 / top_k=5 / reranker=off） · qwen3.8:27b · chat-quality · 10/11/2026, 02:55:15
+          - listitem [ref=e667]:
+            - button "eval-7bb5da044d40420c993ca0e5f2e012a5" [ref=e668] [cursor=pointer]
+            - generic [ref=e669]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 10/11/2026, 02:54:09
+          - listitem [ref=e670]:
+            - button "eval-49e1ea0a1a46490898801b805c9392b5" [ref=e671] [cursor=pointer]
+            - generic [ref=e672]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · intent-classification · 10/11/2026, 02:40:55
+          - listitem [ref=e673]:
+            - button "eval-069122d56ac84fe1ace765e3359095c5" [ref=e674] [cursor=pointer]
+            - generic [ref=e675]: 扩大召回（v1 / top_k=10 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:40:55
+          - listitem [ref=e676]:
+            - button "eval-2dfc6775b59b4587a66f2b7478382174" [ref=e677] [cursor=pointer]
+            - generic [ref=e678]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:40:53
+          - listitem [ref=e679]:
+            - button "eval-eb616010db6746dda99e56a3bb7968c1" [ref=e680] [cursor=pointer]
+            - generic [ref=e681]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 10/11/2026, 02:38:50
+          - listitem [ref=e682]:
+            - button "eval-3e0ded6d8bb64a9582bd72610860599d" [ref=e683] [cursor=pointer]
+            - generic [ref=e684]: 切分 v2（top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:23:17
+          - listitem [ref=e685]:
+            - button "eval-d54f3aec2973437fa8868cf995360abc" [ref=e686] [cursor=pointer]
+            - generic [ref=e687]: 启用重排（v1 / top_k=5 / reranker=on） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:23:17
+          - listitem [ref=e688]:
+            - button "eval-71356d31f1ed4ba3b9eebd5003461277" [ref=e689] [cursor=pointer]
+            - generic [ref=e690]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · chat-quality · 10/11/2026, 02:23:05
+          - listitem [ref=e691]:
+            - button "eval-f89b5aa12e6549f58fe5309d17285f64" [ref=e692] [cursor=pointer]
+            - generic [ref=e693]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · intent-classification · 10/11/2026, 02:22:30
+          - listitem [ref=e694]:
+            - button "eval-fc99c427d5d840e485ea51131d4dbdeb" [ref=e695] [cursor=pointer]
+            - generic [ref=e696]: 扩大召回（v1 / top_k=10 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:22:30
+          - listitem [ref=e697]:
+            - button "eval-37e5d6d4636544f7962a1d1597f4e764" [ref=e698] [cursor=pointer]
+            - generic [ref=e699]: 基线（v1 / top_k=5 / reranker=off） · qwen3.5:9b · rag-retrieval · 10/11/2026, 02:22:22
+      - region "两次对比" [ref=e700]:
+        - heading "两次对比" [level=2] [ref=e701]
+        - generic [ref=e702]:
+          - generic [ref=e703]:
+            - text: 运行 A
+            - combobox "运行 A" [ref=e704]:
+              - option "选择运行 A" [selected]
+              - option "eval-16eaa80954264138b46a40822980d61f · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-ca2657062094459696c2364a977b7bc7 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-a79a15cbd4c64fce964167bbe23abc88 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-703d84de2cc745ed8780f14b15dd17f6 · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-ce59fc85b8e1434cbcf0dc70c49b6cb6 · 启用重排（v1 / top_k=5 / reranker=on） · rag-retrieval"
+              - option "eval-eaa43839bd3f4eceaa891c1d7dbde196 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-1cae839cd91a412ea647b5c8e3eb829d · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-1b65bc9ddb76444787782e416272f3ec · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-5fdf023e2fa446c5aeb0021754de2f07 · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-01420acf62aa40bf9ad035c9fc35a251 · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-800f56ee6fe646aa8a799c6dcd0d21ba · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-86900b6f767248d7bed7a3c71a7a21dc · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-27bb2cbae2744d329ac831f66f07fceb · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-3f4604a791974712b7c034b51b4db385 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-7f2d1cc764ae42feb994e313b706a81c · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-3a5b5eee42f14bfb9ee2474713229a52 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-f6e799ae03494733b2f84e18807721d8 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-5064c132930a4fca82ae61cf5c35fd66 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-7bb5da044d40420c993ca0e5f2e012a5 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-49e1ea0a1a46490898801b805c9392b5 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-069122d56ac84fe1ace765e3359095c5 · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-2dfc6775b59b4587a66f2b7478382174 · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-eb616010db6746dda99e56a3bb7968c1 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-3e0ded6d8bb64a9582bd72610860599d · 切分 v2（top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-d54f3aec2973437fa8868cf995360abc · 启用重排（v1 / top_k=5 / reranker=on） · rag-retrieval"
+              - option "eval-71356d31f1ed4ba3b9eebd5003461277 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-f89b5aa12e6549f58fe5309d17285f64 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-fc99c427d5d840e485ea51131d4dbdeb · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-37e5d6d4636544f7962a1d1597f4e764 · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+          - generic [ref=e705]:
+            - text: 运行 B
+            - combobox "运行 B" [ref=e706]:
+              - option "选择运行 B" [selected]
+              - option "eval-16eaa80954264138b46a40822980d61f · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-ca2657062094459696c2364a977b7bc7 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-a79a15cbd4c64fce964167bbe23abc88 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-703d84de2cc745ed8780f14b15dd17f6 · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-ce59fc85b8e1434cbcf0dc70c49b6cb6 · 启用重排（v1 / top_k=5 / reranker=on） · rag-retrieval"
+              - option "eval-eaa43839bd3f4eceaa891c1d7dbde196 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-1cae839cd91a412ea647b5c8e3eb829d · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-1b65bc9ddb76444787782e416272f3ec · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-5fdf023e2fa446c5aeb0021754de2f07 · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-01420acf62aa40bf9ad035c9fc35a251 · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-800f56ee6fe646aa8a799c6dcd0d21ba · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-86900b6f767248d7bed7a3c71a7a21dc · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-27bb2cbae2744d329ac831f66f07fceb · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-3f4604a791974712b7c034b51b4db385 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-7f2d1cc764ae42feb994e313b706a81c · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-3a5b5eee42f14bfb9ee2474713229a52 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-f6e799ae03494733b2f84e18807721d8 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-5064c132930a4fca82ae61cf5c35fd66 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-7bb5da044d40420c993ca0e5f2e012a5 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-49e1ea0a1a46490898801b805c9392b5 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-069122d56ac84fe1ace765e3359095c5 · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-2dfc6775b59b4587a66f2b7478382174 · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-eb616010db6746dda99e56a3bb7968c1 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-3e0ded6d8bb64a9582bd72610860599d · 切分 v2（top_k=5 / reranker=off） · rag-retrieval"
+              - option "eval-d54f3aec2973437fa8868cf995360abc · 启用重排（v1 / top_k=5 / reranker=on） · rag-retrieval"
+              - option "eval-71356d31f1ed4ba3b9eebd5003461277 · 基线（v1 / top_k=5 / reranker=off） · chat-quality"
+              - option "eval-f89b5aa12e6549f58fe5309d17285f64 · 基线（v1 / top_k=5 / reranker=off） · intent-classification"
+              - option "eval-fc99c427d5d840e485ea51131d4dbdeb · 扩大召回（v1 / top_k=10 / reranker=off） · rag-retrieval"
+              - option "eval-37e5d6d4636544f7962a1d1597f4e764 · 基线（v1 / top_k=5 / reranker=off） · rag-retrieval"
+          - button "对比" [ref=e707] [cursor=pointer]

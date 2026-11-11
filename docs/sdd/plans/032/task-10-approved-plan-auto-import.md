@@ -21,7 +21,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-10/auto-import.md`，列真实和固定样本、PDF 身份核验依据、状态流、命令/退出码与改动文件。主 Agent 已复查普通搜索零 PDF 请求与错误 PDF fail-closed。执行结果：批准计划自动导入按预算、身份门禁、幂等恢复和失败保留路径完成；定向测试 `206 passed`，Ruff、compileall、diff-check 通过。
+写 `artifacts/spec-032/task-10/auto-import.md`，列真实和固定样本、PDF 身份核验依据、状态流、命令/退出码与改动文件。主 Agent 已复查普通搜索零 PDF 请求与错误 PDF fail-closed。执行结果：批准计划自动导入按预算、身份门禁、幂等恢复和失败保留路径完成；定向测试 `206 passed`，Ruff、compileall、diff-check 通过。
 
 ## 变更日志
 

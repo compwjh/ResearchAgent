@@ -1,0 +1,31 @@
+### Result
+{
+  "deployedUrl": "http://127.0.0.1:8000/#research-view",
+  "selectedTaskId": "2eb327f2cefb5fc7b5ac60e0454294f6",
+  "eventsLoaded": 40,
+  "lastSeq": 40,
+  "sectionHidden": false,
+  "stateText": "仅展示已存在且通过数值边界校验的摘要。",
+  "metricItems": [
+    {
+      "phase": "warm",
+      "text": "热身中位 TTFT：38478.93 ms吞吐：19.73 tokens/s峰值内存：106070016 bytes失败率：0 %"
+    }
+  ],
+  "metricSpans": [
+    "中位 TTFT：38478.93 ms",
+    "吞吐：19.73 tokens/s",
+    "峰值内存：106070016 bytes",
+    "失败率：0 %"
+  ]
+}
+### Ran Playwright code
+```js
+await page.evaluate('async () => { await window.ResearchTasks.selectTask(\'2eb327f2cefb5fc7b5ac60e0454294f6\'); await new Promise(r => setTimeout(r, 2500)); const sec = document.getElementById(\'research-benchmark-section\'); const ul = document.getElementById(\'research-benchmark-metrics\'); return { deployedUrl: location.href, selectedTaskId: window.ResearchTasks.state.selectedTaskId, eventsLoaded: window.ResearchTasks.state.events.size, lastSeq: window.ResearchTasks.state.lastSeq, sectionHidden: sec.hidden, stateText: document.getElementById(\'research-benchmark-state\').textContent, metricItems: Array.from(ul.querySelectorAll(\'li\')).map(li => ({ phase: li.dataset.phase || \'\', text: li.textContent })), metricSpans: Array.from(ul.querySelectorAll(\'.research-benchmark-metric\')).map(s => s.textContent) }; }');
+```
+### Page
+- Page URL: http://127.0.0.1:8000/#research-view
+- Page Title: ResearchAgent
+- Console: 4 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-11-08T09-07-57-037Z.log#L1-L4

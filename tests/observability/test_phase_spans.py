@@ -200,6 +200,67 @@ class PhaseSpanCaptureTests(unittest.TestCase):
                 f"{prev} 终点 {spans[prev].end_time} 与 {nxt} 起点 {spans[nxt].start_time} 不相接",
             )
 
+    def test_overhead_zero_length_when_timings_unavailable(self):
+        """定稿 D3：timings_available=False（langchain 无原生 timings）时，
+        phase:overhead 不得再吃满整段墙钟（[0, client_wall_ms]），而应收敛成
+        零长度 (end_ms, end_ms)；4 个 phase span 名与数量不变、首段及所有段
+        不超墙钟；4 个 span 统一带独立 OTel attribute metrics.available=False
+        （不是 _build_metadata 的 metadata dict，不触发 Spec024 allowlist）。
+        """
+        unavailable = _result(
+            timings=OllamaTimings(),  # 三阶段全 0：langchain 链路无原生 timings
+            timings_available=False,
+            first_token_ms=0.0,
+            client_wall_ms=39490.0,  # 只读调查 B 节的 ~39.49s 样本量级
+        )
+        self._run(unavailable, started_at=self.started_at)
+
+        spans = {s.name: s for s in self.exporter.get_finished_spans()}
+        self.assertEqual(
+            set(spans.keys()),
+            {"phase:load", "phase:prefill", "phase:decode", "phase:overhead"},
+            f"不可用样本仍应产生 4 个阶段子 span，实际：{sorted(spans.keys())}",
+        )
+
+        wall_end = _to_ns(
+            self.started_at + timedelta(milliseconds=unavailable.client_wall_ms)
+        )
+        # 首段（phase:load）与所有段都不得超出墙钟结束时刻
+        self.assertLessEqual(
+            spans["phase:load"].start_time, wall_end,
+            "首段 phase:load 起点不得超出墙钟",
+        )
+        for name, span in spans.items():
+            self.assertLessEqual(span.start_time, wall_end + 1, f"{name} 起点超出墙钟")
+            self.assertLessEqual(span.end_time, wall_end + 1, f"{name} 终点超出墙钟")
+
+        overhead = spans["phase:overhead"]
+        self.assertEqual(
+            overhead.start_time, overhead.end_time,
+            f"phase:overhead 必须零长，实际 start={overhead.start_time} end={overhead.end_time}",
+        )
+        self.assertEqual(
+            overhead.start_time, wall_end,
+            f"零长点应落在 end_ms={wall_end}（不再从 0 起吃满墙钟），实际 {overhead.start_time}",
+        )
+
+        # 独立 OTel span attribute：4 个 span 统一带 metrics.available=False
+        for name, span in spans.items():
+            self.assertIn(
+                "metrics.available", span.attributes,
+                f"{name} 缺少独立 OTel attribute metrics.available",
+            )
+            self.assertIs(
+                span.attributes.get("metrics.available"), False,
+                f"{name} metrics.available 应为 Python False，"
+                f"实际 {span.attributes.get('metrics.available')!r}",
+            )
+
+        # 反向守门：可用性标记走 OTel attribute 通道，绝不写进 generation metadata
+        metadata = self.client.last_start_kwargs.get("metadata", {})
+        self.assertNotIn("timings_available", metadata)
+        self.assertNotIn("metrics.available", metadata)
+
     def test_decode_uses_server_timeline_not_first_token_plus_eval(self):
         """spec-041 T-H 回归锁定：用一次真实调用（预热后）的实测数字。
 

@@ -84,6 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fallback", default=FALLBACK_JUDGE, metavar="MODEL")
     parser.add_argument("--repeats", type=_positive_int, default=REPEATS, metavar="N")
     parser.add_argument("--max-items", type=_positive_int, default=None, metavar="N")
+    parser.add_argument(
+        "--gold",
+        default=None,
+        metavar="PATH",
+        help="optional desensitized human gold JSON for human_agree_rate",
+    )
     return parser
 
 
@@ -212,6 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             repeats=args.repeats,
             max_items=args.max_items,
             export=export,
+            gold_path=args.gold,
         )
     except Exception as exc:
         paths = _best_effort_failure_report(args.output_dir, exc)

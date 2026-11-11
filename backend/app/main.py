@@ -96,6 +96,16 @@ async def lifespan(_app: FastAPI):
     except Exception as error:
         print(f"[capabilities] 调度器启动失败（已忽略）：{error}")
 
+    # 事件表 retention：复用启动钩子在低峰触发（面向未来增长，非现有故障）。
+    # 单一编排入口内部已逐库 fail-open；外层再包一层，确保任何意外都不影响
+    # 下方 try/finally 的既有收尾语义。
+    try:
+        from backend.app.platform.retention import run_event_retention
+
+        run_event_retention()
+    except Exception as error:
+        print(f"[retention] 启动清理失败（已忽略）：{error}")
+
     try:
         yield
     finally:

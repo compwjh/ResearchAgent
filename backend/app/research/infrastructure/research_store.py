@@ -22,6 +22,7 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -33,6 +34,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Optional
 
+from backend.app.platform.benchmark_summary import (
+    METRIC_NAMES as BENCHMARK_SUMMARY_METRICS,
+)
+from backend.app.platform.benchmark_summary import (
+    PHASES as BENCHMARK_SUMMARY_PHASES,
+)
 from backend.app.platform.config import BASE_DIR
 from backend.app.research.domain.contracts import (
     AGENT_ROLES,
@@ -130,6 +137,37 @@ _EVENT_SAFE_KEYS = {
 _EVENT_SENSITIVE_PARTS = ("prompt", "cot", "reasoning", "credential", "password", "secret", "token", "authorization", "cookie", "api_key", "access_key")
 
 
+def _safe_benchmark_summary(value: object) -> dict | None:
+    """只保留 ``{warm|cold: {四项指标: 有限数值}}``；其它键与非数值一律丢弃。
+
+    基准卡片（裁决 A）：payload.benchmark_summary 由基准脚本自产，是固定形状的结构化
+    数值摘要，不含用户输入。它无法走通用白名单：键名不在 _EVENT_SAFE_KEYS，且指标
+    throughput_completion_tokens_per_s 含 "token" 会命中 _EVENT_SENSITIVE_PARTS 的通用
+    子串过滤（那是真实指标名，不是凭据）。故对这一棵子树用显式指标白名单逐项放行，
+    **不放宽**任何既有事件的过滤规则（白名单 / 敏感 scrub 语义保持不变）。
+    """
+    if not isinstance(value, dict):
+        return None
+    result = {}
+    for phase in BENCHMARK_SUMMARY_PHASES:
+        phase_value = value.get(phase)
+        if not isinstance(phase_value, dict):
+            continue
+        metrics = {}
+        for name in BENCHMARK_SUMMARY_METRICS:
+            if name not in phase_value:
+                continue
+            number = phase_value[name]
+            if isinstance(number, bool) or not isinstance(number, (int, float)):
+                continue
+            if not math.isfinite(float(number)):
+                continue
+            metrics[name] = number
+        if metrics:
+            result[phase] = metrics
+    return result or None
+
+
 def _safe_event_value(value: object, *, depth: int = 0) -> object:
     if depth > 3:
         return None
@@ -137,6 +175,11 @@ def _safe_event_value(value: object, *, depth: int = 0) -> object:
         result = {}
         for key, item in value.items():
             key_text = str(key)
+            if key_text == "benchmark_summary":
+                cleaned_summary = _safe_benchmark_summary(item)
+                if cleaned_summary is not None:
+                    result[key_text] = cleaned_summary
+                continue
             lowered = key_text.casefold()
             if key_text not in _EVENT_SAFE_KEYS or any(part in lowered for part in _EVENT_SENSITIVE_PARTS):
                 continue
@@ -4759,6 +4802,48 @@ class ResearchStore:
                 (research_task_id, int(after_seq), limit),
             ).fetchall()
         return [ResearchEvent.from_row(dict(r)) for r in rows]
+
+    def prune_events(
+        self,
+        *,
+        max_age_days: int | None = None,
+        max_rows: int | None = None,
+        now: datetime | None = None,
+    ) -> int:
+        """按「时间 + 行数」保守清理 research_events，返回删除行数。
+
+        与 ``delete_task`` 同源的单事务写法（``BEGIN IMMEDIATE`` + commit/rollback）；
+        异常交给编排层 fail-open。``created_at`` 是 ``_utcnow()`` 的 ``Z`` 格式，
+        cutoff 必须同格式（memory 库是 ``+00:00``，两者不可混用）。
+        """
+        from backend.app.platform import config
+
+        age_days = config.EVENT_RETENTION_MAX_AGE_DAYS if max_age_days is None else int(max_age_days)
+        row_cap = config.EVENT_RETENTION_MAX_ROWS if max_rows is None else int(max_rows)
+        if age_days < 1 or row_cap < 1:
+            raise ValueError("invalid event retention thresholds")
+        reference = now or datetime.now(timezone.utc)
+        cutoff = (reference - timedelta(days=age_days)).isoformat(timespec="seconds").replace("+00:00", "Z")
+        with _write_lock, self._connect() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                excess = max(
+                    0, int(conn.execute("SELECT COUNT(*) FROM research_events").fetchone()[0]) - row_cap
+                )
+                # research_events 是普通表（非 WITHOUT ROWID），rowid 可作稳定的删除锚点；
+                # 复合主键 (research_task_id, event_seq) 不做字符串拼接，全部参数化。
+                cur = conn.execute(
+                    "DELETE FROM research_events WHERE created_at < ? OR rowid IN "
+                    "(SELECT rowid FROM research_events "
+                    " ORDER BY created_at, research_task_id, event_seq LIMIT ?)",
+                    (cutoff, excess),
+                )
+                deleted = max(int(cur.rowcount), 0)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return deleted
 
     def last_event_seq(self, research_task_id: str) -> int:
         """返回某任务当前 last_event_seq（不存在/无事件返回 0）。"""
