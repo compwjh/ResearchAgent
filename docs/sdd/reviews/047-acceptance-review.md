@@ -833,3 +833,191 @@ PYTEST_EXIT=0
 - 收口动作：spec 追加范围三状态 `实施中 → 已完成`、本台账追加、`plans/047/README.md` 与 task-16 状态回填、本地 commit
   （不 push、不合 main、`origin/main` 仍 `1b26c76c`）。服务由 Agent 实际重启并验证 `/api/health` 200，
   可点击地址 `http://127.0.0.1:8000/#evaluation-view`（端口 `8000`，`RERANKER_ENABLED=false ./deploy/start.sh -d`）。
+
+---
+
+## §16 追加范围四验收评审（不相关指标灰色弱化）
+
+> 本节为**纯末尾追加**，§1–§15 及「补记：最终候选全量回归结论已生效」逐字保留、未改写、不翻案、不回退。
+> 验收判定全部基于 `Read` / `Grep` 打开的真实文件 + 本轮现场只读 `curl`，逐条附 `文件:行`；未凭 spec 描述或任务书断言下结论。
+
+### 16.0 头部四项与证据时点
+
+| 项 | 内容 |
+|---|---|
+| **评审者** | `tester`（跨端验收总控，独立验收角色；对应 ECC `e2e-runner` / `verification-loop`） |
+| **角色** | QA 验收判定与报告产出；不写业务代码、不改 spec 正文 / 测试 / 配置 / 状态台账 / 历史评审结论，不做 push / 合并。单端回归以 `frontend-tester` 报告为准，本 QA 不重复跑单端单元测试 |
+| **模型** | `hy4`（Tencent Hunyuan Hy）；唯一真源 `.codebuddy/agents/tester.md:6` |
+| **分派方式** | 主会话独立 `Task(tester)` 一次（task-19 验收分派，`spec:1129`）；与 `frontend-reviewer` / `frontend-tester` 两次独立 `Task` 互不代行（`coderev:8`） |
+
+> **证据时点**：2026-11-12 06:46:56 CST 起（本 QA 进展日志 `20261112-064656`）。
+> 本轮只读 `git rev-parse --short HEAD` = `cdbb83cc`、`origin/main` = `cdbb83cc`、分支 `feature/spec-047-unrelated-metric-greyout`，与 `coderev:10` / `tech:570` 落盘记录一致。
+> 评审对象：`spec` 追加范围四整章（`spec:991-1196`）与 §13 Gate 2 强制裁决（`spec:1165-1195`）。
+> **路径简写（下文表格依据用）**：`spec`=`docs/sdd/specs/047-evaluation-p2-and-observability-fixes.md`；`req`=`docs/sdd/reviews/047-requirement-review.md`；`tech`=`docs/sdd/reviews/047-tech-review.md`；`coderev`=`docs/sdd/reviews/047-frontend-gray-style-review.md`；`impl`=`docs/sdd/plans/047/runs/task-17/implementation.md`；`frontreg`=`docs/sdd/plans/047/runs/task-18/frontend-regression.md`；`e2e`=`docs/sdd/plans/047/runs/task-19/gray-style-e2e.json`；`deploy`=`docs/sdd/plans/047/runs/task-19/deploy-verification.json`；`fullreg`=`docs/sdd/plans/047/runs/task-19/full-regression.txt`；`manual`=`artifacts/spec-047-irrelevant-metric-gray-manual-e2e.md`；`retro`=`docs/sdd/retro/2026-11-12-spec047-irrelevant-metric-gray-closure.md`；`changelog`=`docs/sdd/spec-status-changelog.md`；`contract`=`tests/frontend/test_evaluation_irrelevant_metric_gray_contract.py`；`css`=`frontend/styles.css`；`html`=`frontend/index.html`。4 项浏览器产物均在 `docs/sdd/plans/047/runs/task-19/`（`gray-cards.png` / `gray-initial.yaml` / `gray-final.yaml` / `computed-style-raw.txt`，见 `e2e:129-134`）。
+> **纪律**：本轮唯一写入为本节 §16 追加 + 一份进展日志；§15 及以前（前 835 行）追加前后 `sha` 均为 `1cebd1ae5ba371b94281a851eb52a186e4ba50de`。
+
+### 16.1 上游评审与单端结论汇总
+
+| 环节 | 落盘结论 | P0 / P1 | 依据 |
+|---|---|---|---|
+| 需求评审 §16 | **通过** | 0 / 0 | `req` §16（`req:251-296`，`req:288`「本章需求侧 P1=0」）；`spec:1146` 官方记录 |
+| 技术评审「追加范围四技术评审」 | **通过（附强制约束）** | 0 / 2 | `tech:574-582`；P1-1 V3 WCAG `4.2330:1<4.5` 裁决改 `#5f626c`（`tech:621-632,689`）、P1-2 精确断言实为 6 处（`tech:642-666,690`）；`tech:691-692` 明确不打回 |
+| spec §13 强制裁决 | 覆盖 §3 V3 与 §4 边界 6 | — | `spec:1165-1195`（裁决 1 `:1173-1175`、裁决 2 `:1179-1186`、R1 `:1176-1177`） |
+| 代码评审 | **APPROVE** | 0 / 0（P2=1） | `coderev:18-24,152-169,191-193` |
+| 前端单端回归 | **通过**（614 passed / EXIT=0） | 0 / 0 | `frontreg:12-15,84-96,113-115` |
+| 真实 Chromium E2E | **PASS 7 步** | 0 / 0 | `e2e:44-128,142` |
+| 部署验证 | **PASS**（4 项 200） | 0 / 0 | `deploy:8-26` |
+| 最终候选全量回归 | **PYTEST_EXIT=0** | 0 / 0 | `fullreg:77,82` |
+
+> **P1 闭环说明**：技术评审 2 项 P1 均为 spec 与代码事实的偏差 / 内部口径冲突，已由 `spec` §13 书面裁决、`task-17` 采纳（`impl:9-12,20-24`；`css:4407` `#5f626c`；6 处断言同步 `76`）、`task-18` 复核（`frontreg:28-52`）、`task-19` `getComputedStyle` 复验（`e2e:18-43`）闭环，**不构成打回**。**验收时点遗留 P0 = 0 / P1 = 0**。
+
+### 16.2 V1–V7 视觉契约逐条判定（7/7 PASS）
+
+| # | 契约目标（现状紫 → 目标灰） | 判定 | 依据（文件:行） |
+|---|---|---|---|
+| V1 | 左边框 `4px solid #6d5dfc` → `#c9cbd3` | **PASS** | `spec:1051`；`css:4406` `border-left-color:#c9cbd3`；`contract:83` 静态断言；`e2e:61` computed `rgb(201,203,211)=#c9cbd3` |
+| V2 | 卡片背景 `#faf9ff` → `#f6f6f8` | **PASS** | `spec:1052`；`css:4406` `background:#f6f6f8`；`contract:84`；`e2e:62` `rgb(246,246,248)` |
+| V3 | 徽章 `--accent-soft`/`--accent` → `background:#e9eaee; color:#5f626c`（§13 裁决，作废 `#6b6e78`） | **PASS** | `spec:1053` 原值 / `spec:1173-1175` 裁决；`css:4407`；`contract:86` `color:#5f626c` / `:92` 禁 `#6b6e78` / `:113-120` WCAG 5.0630；`frontreg:47-52` 生效且 `#6b6e78` 全文 0 命中；`e2e:19-24,63-64` `rgb(95,98,108)` / `rgb(233,234,238)`、ratio 5.063 PASS |
+| V4 | 标题继承 `--ink` → `var(--muted-strong)` `#5a5d66` | **PASS** | `spec:1054`；`css:4408`；`contract:87` count==2（V4+V6）；`e2e:26-30,65` `rgb(90,93,102)`、ratio 6.0947 PASS |
+| V5 | 数值 `--ink`（显示 `—`）→ `var(--muted)` | **PASS** | `spec:1055`；`css:4409`；`contract:88` count==1；`e2e:66` `rgb(139,142,150)`；`e2e:85-86` `—` 仍可见 |
+| V6 | `<summary>` `--accent` 紫 → `var(--muted-strong)` | **PASS** | `spec:1056`；`css:4410` 按 `tech:608` 特异性陷阱写成 `.evaluation-metric-params > summary`；`contract:87`；`e2e:92-101` 灰卡 `<details>` 点击后展开 |
+| V7 | `samples` / `detail-row` / `params` 保持 `--muted`，不重复声明 | **PASS** | `spec:1057`；`css:4401/4403/4404` 仍 `var(--muted)`、`css:4411` 展开 `param-row` 保持 `--ink` 深墨；`tech:609,1176-1177` R1；`e2e:37-42` 3.0365:1 如实记录 |
+
+> 五条灰化规则 `css:4406-4410` **逐行**以 `#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"]` 开头（`coderev:33` 实测 `[True×5]`、`contract:60-66` 锁定），层叠位于基础规则之后且 `4411` 之后无覆盖（`coderev:53-54`）。禁用 `opacity` / `filter: grayscale()` / `display:none` / `visibility:hidden`（`spec:1060`；`contract:95-98`；`coderev:99`；`e2e:67-69` 实测 `display:grid` / `visibility:visible` / `opacity:1`）。
+
+### 16.3 边界 1–7 逐条判定（7/7 PASS）
+
+| # | 边界 | 判定 | 依据（文件:行） |
+|---|---|---|---|
+| 1 | 只有 `needs_ground_truth` 灰化；`computed` `#287c43` / `degraded` `#c8871a`+`#fffdf7` / `unavailable` `#b13a3a`+`#fff8f8` 逐字不变 | **PASS** | `spec:1065`；`contract:102-109` 四条基础状态规则逐字仍在；`coderev:100` 基础规则逐字未变、三状态不受影响；`e2e:72-80` computed 绿 `#287c43`、`e2e:102-110` degraded 橙 `#c8871a`/`#fffdf7` 未灰化；`unavailable` 由 `contract:107` 静态锁定（本轮 E2E 未单独取色，如实说明为静态契约覆盖） |
+| 2 | 未知 status 不灰化、不报错 | **PASS** | `spec:1066`；`tech:598`（`app.js:7749` `String(metric.status \|\| 'unavailable')` 兜底 + CSS 精确属性匹配自动沿用基础样式）；`req:279`；`contract:137-139` `card.dataset.status` 渲染仍在 |
+| 3 | 灰卡不隐藏：`value=null → —`、`reason` 可见、`sample_count=0` 显示 0、`<details>` 可展开 | **PASS** | `spec:1067`；`e2e:81-91`（`null_rendered_as_dash` / `reason_visible` / `sample_count_zero_visible` / `no_hidden_cards`）、`e2e:92-101`（`open_after_click=1` / `param_rows_after_expand=2`）；`contract:95-98`；`coderev:96-99`；`e2e:67-69` |
+| 4 | 历史 6/22 项 run 与「两次对比」详情页共用 `renderEvaluationMetricCard`、灰化一致且不丢卡 | **PASS** | `spec:1068`；`tech:613`（`app.js:7866-7872` 共用 `appendEvaluationGroupedRows` + 同一渲染函数）；`req:281`；`e2e:46-56` 回看历史 `run_id=eval-009223db…` 22 卡（10 灰 + 12 computed）全部渲染 |
+| 5 | `styles.css?v=75 → ?v=76`、`app.js?v=77` 逐字不动、新增 `styles.css?v=75` 纯属性 marker（不污染 `_live_versions`） | **PASS** | `spec:1069-1070`；`html:8` / `html:905` / `html:912`（位于 `907-911` 之后末尾注释区、`</head>` 之后、无 `<link`/`<script` 字面串）；`contract:124-133`；`deploy:13-15`；`e2e:12-17`；本节 16.5 现场 curl 复核 |
+| 6 | 静态契约精确 live 断言同步为 **6 处**（§13 裁决 2 强制覆盖 §4「4 处」），只改期望值、不删断言 / 不放宽；9 处 `in INDEX` 冻结断言靠 marker、2 处范围断言自然通过 | **PASS** | `spec:1179-1186` 六处清单 / `spec:1071-1076`；`frontreg:28-39` 6/6 实读 `[76]` / `v=76` / `["76"]`；`coderev:72-81`；`impl:20-24`；`spec:1188-1192`；`tech:655` 精确断言不会靠 marker 静默失效 |
+| 7 | 无 `innerHTML`、无新 class、DOM 契约与 `app.js` 零改动、`node --check` 仍 EXIT=0 | **PASS** | `spec:1077`；`coderev:36` `git diff -- frontend/app.js` 为空 / `:47` 评测段 0 `innerHTML` + 9 `textContent`；`impl:51`；`frontreg:13-14,80` `node --check` 与 `git diff --check` EXIT=0；`contract:137-139` |
+
+### 16.4 真实 Chromium 浏览器 E2E 7 步（7/7 PASS）
+
+证据：`e2e:44-128`，`conclusion: "PASS"`（`e2e:142`）；工具 `playwright-cli (Chromium, headed)`，入口 `http://127.0.0.1:8000/#evaluation-view`，服务 PID 50865、`GET /api/health -> 200`（`e2e:2-11`）。
+
+| 步 | 场景 | 判定 | 关键观测（依据） |
+|---|---|---|---|
+| ① | 入口 / 运行历史回看 `chat-quality` run | **PASS** | 22 卡 = 10 `needs_ground_truth` + 12 `computed`；`run_id=eval-009223db…`（`e2e:46-56`） |
+| ② | 灰卡 `getComputedStyle`（V1–V6） | **PASS** | `#c9cbd3` / `#f6f6f8` / 徽章 `#5f626c`+`#e9eaee` / 标题 `#5a5d66` / 数值 `var(--muted)`；`display:grid`、`visibility:visible`、`opacity:1`（`e2e:57-71`） |
+| ③ | computed 卡仍绿色醒目 | **PASS** | `borderLeftColor=rgb(40,124,67)=#287c43`、紫徽章未变（`e2e:72-80`） |
+| ④ | 灰卡信息不隐藏 / 反伪造 | **PASS** | `召回率@k / — / 缺少标注 / 样本数：0 / 原因：该评测集没有 relevant_doc_ids…`，`no_hidden_cards=true`（`e2e:81-91`） |
+| ⑤ | 灰卡 `<details>` 参数与明细可展开 | **PASS** | `total_details=13`、`grey_details=1`、`open_after_click=1`、`param_rows_after_expand=2`（`e2e:92-101`） |
+| ⑥ | `degraded` 未被灰化 | **PASS** | `run_id=eval-a79a15cb…`，橙 `#c8871a` / `#fffdf7`（`e2e:102-110`） |
+| ⑦ | 切 `rag-retrieval` 后检索组恢复 computed 绿卡 | **PASS** | `run_id=eval-cc2b4b91…`，`recall_at_k.status=computed`、`#287c43`（`e2e:111-127`） |
+
+> WCAG 实测：V3 徽章 `#5f626c`/`#e9eaee` = **5.063:1 PASS**、V4 标题 `#5a5d66`/`#f6f6f8` = **6.0947:1 PASS**；作废 `#6b6e78` = 4.233:1 FAIL（未采用）；R1 `--muted` = 3.0365:1 如实记录、未用 `opacity`/`filter` 补救（`e2e:18-43`）。4 项产物 `gray-cards.png` / `gray-initial.yaml` / `gray-final.yaml` / `computed-style-raw.txt` 均落盘（`e2e:129-134`，本 QA `test -f` 复核存在）。
+
+### 16.5 部署验证 / 跨端集成验收 / 最终候选全量回归
+
+**（1）部署验证（task-19 落盘，`deploy:8-26`，conclusion PASS）**：`GET /api/health` 200、首页 `/` 200（live `<link … styles.css?v=76>`）、`/assets/styles.css?v=76` 200（`needs_ground_truth_rules=6`）、`/api/evaluation/options` 200（`datasets=3`）；live `app.js?v=77` 由 `e2e:13` 与 `html:905` 佐证。**4/4 PASS**。
+
+**（2）本 QA 跨端集成验收（现场只读 `curl`，未重启服务 / 未改状态 / 未跑真实打分）**：
+
+| 复验项 | HTTP | 观测 |
+|---|---|---|
+| `/api/health` | **200** | `{"status":"ok","model":"qwen3.8:27b", …}` |
+| `/`（首页） | **200** | 精确 live 标签 `styles.css?v=76` / `app.js?v=77`；`styles.css?v=75` 纯属性兼容 marker 恰好 1 条 |
+| `/assets/styles.css?v=76` | **200** | `data-status="needs_ground_truth"` 命中 6 行（基础规则 1 + 灰化规则 5，与 `deploy:19` 一致） |
+| `/api/evaluation/options` | **200** | 返回 `strategies` / `datasets=3`，与 `deploy:21-24` 一致 |
+
+判定：**跨端集成验收 PASS**，与 task-19 落盘部署证据一致。真实打分（约 8–10 分钟）本轮未重复执行，以 `e2e` 真实 Chromium 回看历史 run 与 `deploy` 落盘证据为准，**未跑 mock 冒充实测**。
+
+**（3）最终候选全量回归（task-19 落盘，`fullreg`）**：
+`4557 passed, 2 skipped, 5 warnings, 69 subtests passed in 731.98s (0:12:11)`（`fullreg:77`）、`PYTEST_EXIT=0`（`fullreg:82`）。`fullreg:78-80` 的 Langfuse `:3000` span 导出 transient error 未影响退出码，属已知非阻塞。**PASS**。
+
+**（4）单端回归汇总（以 `frontreg` 为准，本 QA 不重复跑）**：`614 passed / 0 failed / 0 skipped / 0 xfailed`（`frontreg:12`，`--collect-only` 佐证 614 collected、覆盖 69 个文件）、`node --check` EXIT=0、`git diff --check` EXIT=0（`frontreg:13-14`）；`scripts/check_test_layout.py` EXIT=1 为 5 项既有历史编号测试（`frontreg:15,102-109`），非本任务引入。**通过**。
+
+### 16.6 人工验收准备度十项检查（10/10 PASS，门槛 ≥9/10）
+
+对齐 `spec:1115`「十项至少九项通过」与 `manual:35-48`；本 QA 逐项以已读回的真实证据复核判定：
+
+| # | 检查项 | 判定 | 本 QA 复核依据 |
+|---|---|---|---|
+| 1 | 需求目标与范围清晰、用户可见行为可测 | **PASS** | `req` §16 四查全 ✅（`req:251-258`）；`spec:1026-1036` 三目标可测 |
+| 2 | 数据模型 / 接口无越界改动 | **PASS** | `tech:593` 零后端 / 零接口 / 零字段；`coderev:36` `git diff -- frontend/app.js` 为空 |
+| 3 | 三份评审（需求 / 技术 / 验收）有真实结论 | **PASS** | `req` §16 通过；`tech:574-582` 通过附强制约束；本节 §16 通过并签字 |
+| 4 | 独立代码评审 + 单端回归通过 | **PASS** | `coderev:18-24,191-193` APPROVE；`frontreg:113-115` 通过 / 614 passed |
+| 5 | 最终候选全量回归通过 | **PASS** | `fullreg:77,82` 4557 passed / PYTEST_EXIT=0 |
+| 6 | 真实 API E2E（当前部署版本） | **PASS** | `deploy:8-26` 4 项 200；本节 16.5(2) 现场 curl 4 项 200 复验 |
+| 7 | 真实浏览器 E2E + 截图 / snapshot 落盘 | **PASS** | `e2e:44-128,142` 7 步 PASS；4 项产物 `e2e:129-134` + 本 QA `test -f` 复核 |
+| 8 | 部署可访问、live 版本正确 | **PASS** | `html:8` `styles.css?v=76` / `html:905` `app.js?v=77`；现场 curl 精确标签一致 |
+| 9 | 状态台账 / 变更日志 / 复盘 / 引用路径齐全 | **PASS** | `changelog:789,791,793,795` 追加范围四 4 条（最新「已确认 → 实施中」）；`retro:8,29-34`；`spec:1151-1157` 变更日志；引用路径逐项 `test -f` **20 个 / 断链 0** |
+| 10 | 无 P0/P1、无关键产物缺失 | **PASS** | 验收遗留 P0=0 / P1=0（16.1）；16 个证据文件 + 7 个 task-19 产物全部存在（本轮 `wc -l` / `ls` / `test -f` 复核） |
+
+**合计 10/10 PASS，满足 ≥9/10 门槛。** 明确确认：**无 P0/P1 遗留**（技术评审 2 项 P1 已由 §13 裁决闭环）、**无 API E2E 失败**（部署 4 项 + 现场 curl 4 项均 200）、**无关键产物缺失**、**引用路径 0 断链**。
+
+> 台账如实说明：`changelog:795` 最新条目为「已确认 → 实施中」；收口「实施中 → 已完成」的状态回填属主会话 / 架构师在 §16 签字与合并裁决之后的动作，非本 QA 权限，本 QA **未改台账**。此与 §13/§14/§15 历史收口顺序一致，不构成关键产物缺失。
+
+### 16.7 VERIFICATION REPORT（verification-loop 格式）
+
+```
+VERIFICATION REPORT — spec-047 追加范围四 / §16 / tester（跨端验收总控）
+====================================================================
+Build/Syntax : PASS  (node --check frontend/app.js EXIT=0；git diff --check EXIT=0)
+Contracts    : PASS  (V1–V7 7/7；边界 1–7 7/7；6 处精确 live 断言 6/6 同步为 76)
+Version      : PASS  (styles.css?v=76 live + v=75 纯属性 marker；app.js?v=77 逐字未动)
+XSS/DOM      : PASS  (app.js 零改动；评测段 0 innerHTML / 9 textContent；无新 class)
+WCAG         : PASS  (V3 5.0630:1 / V4 6.0947:1 ≥4.5；作废值 #6b6e78 全文 0 命中)
+Unit(front)  : PASS  (614 passed / 0 failed / EXIT=0，以 frontend-tester 报告为准)
+E2E(browser) : PASS  (真实 Chromium 7 步 PASS + 4 项产物落盘)
+Deploy/API   : PASS  (health / 首页 / styles.css?v=76 / options 全 200；现场 curl 复验一致)
+Full regress : PASS  (4557 passed, 2 skipped, 69 subtests / PYTEST_EXIT=0)
+Readiness    : PASS  (人工验收准备度 10/10 ≥9/10；引用路径 0 断链)
+P0/P1        : PASS  (验收遗留 P0=0 / P1=0；Gate 2 技术评审 P1=2 已由 §13 裁决闭环)
+
+Overall:   READY — 跨端集成验收【通过】，同意验收签字 R
+```
+
+### 16.8 已知非阻塞项（如实登记，不隐瞒、不虚报全绿）
+
+| # | 项 | 性质 / 依据 | 是否阻塞 |
+|---|---|---|---|
+| 1 | **R1**：V5/V7 沿用 `--muted:#8b8e96` 在灰底 3.0365:1 低于 4.5:1（改动前淡紫底 3.1306:1），属既有基线轻微退化 | `spec:1176-1177` §13 R1、`tech:634` R1、`coderev:111,115,174`、`e2e:37-42`；信息层完整保留、严禁 `opacity`/`filter` 补救 | 否 |
+| 2 | **P2-1**：两处 f-string 失败提示文案残留 `75`（断言值已为 `["76"]`） | `coderev:134-146,164-169`：`test_research_detail_actions_placement_contract.py:223`、`test_memory_return_global_contract.py:210`；仅断言失败时显示，不影响判定 | 否 |
+| 3 | `scripts/check_test_layout.py` EXIT=1 的 5 项历史编号测试 | `frontreg:102-109`、`coderev:132,177`、`impl:43`；均为既有 tracked 文件，`git diff -- <这 5 个文件>` 为空，新增契约不在报错列表，未改测试凑绿 | 否 |
+| 4 | Langfuse `:3000` 未启动导致 span 导出 transient error；浏览器控制台 4 个 404 | `fullreg:78-80`（3 行 transient、未影响 `PYTEST_EXIT=0`）、`e2e:136-137`（4×404 来自其它视图历史会话资源，与评测视图无关）、`manual:55` | 否 |
+| 5 | 合并后 `research-tasks.js?v=25` 未随净增 223 行升版，浏览器缓存可能命中旧脚本 | `manual:56`、`retro:39`；合并 PR #4 已披露，另案处理 | 否 |
+| 6 | 单端全量 pytest 前台命令曾触发工具超时标记 | `frontreg:17-24,110`、`impl:41,45`；以 `nohup` 后台完整跑完同一命令得 EXIT=0 / 614 passed，`--collect-only` 佐证 614 collected = 614 passed，非「只跑子集宣称全绿」 | 否 |
+
+### 16.9 最终结论
+
+# **通过**
+
+- V1–V7 视觉契约、边界 1–7、真实浏览器 E2E 7 步、部署验证、跨端集成验收（现场 curl）、最终候选全量回归、人工验收准备度十项**全部 PASS**。
+- **无 P0 / 无 P1 遗留**（Gate 2 技术评审 2 项 P1 已由 `spec` §13 强制裁决并经 task-17/18/19 闭环）；**无 API E2E 失败**、**无关键产物缺失**、**引用路径 0 断链**；准备度 **10/10 ≥ 9/10** 门槛。
+- 已知非阻塞项 6 项已逐条如实登记（16.8），不隐瞒、不虚报全绿；均不构成打回条件。
+- 下游只认落盘文档：本节 §16（`tester` 验收签字 R）+ `spec` 追加范围四 §13 + 需求评审 §16 + 技术评审「追加范围四」+ `coderev` + `frontreg` + `e2e` / `deploy` / `fullreg` / 4 项浏览器产物 + `manual` / `retro` / `changelog`。收口状态回填与合并裁决由主会话 / 架构师按既有流程执行。
+
+### 16.10 验收签字栏（已填）
+
+| 项 | 内容 |
+|---|---|
+| **签字角色** | `tester`（跨端验收总控） |
+| **签字标记** | **R（验收签字，已填）** |
+| **结论** | **通过** |
+| **日期** | **2026-11-12** |
+| **模型 / 分派** | `hy4`（Tencent Hunyuan Hy）；主会话独立 `Task(tester)` 一次 |
+| **证据清单** | `docs/sdd/specs/047-evaluation-p2-and-observability-fixes.md` 追加范围四 §13；`docs/sdd/reviews/047-requirement-review.md` §16；`docs/sdd/reviews/047-tech-review.md`「追加范围四技术评审」；`docs/sdd/reviews/047-frontend-gray-style-review.md`；`docs/sdd/plans/047/runs/task-17/implementation.md`；`docs/sdd/plans/047/runs/task-18/frontend-regression.md`；`docs/sdd/plans/047/runs/task-19/gray-style-e2e.json`、`gray-cards.png`、`gray-initial.yaml`、`gray-final.yaml`、`computed-style-raw.txt`、`deploy-verification.json`、`full-regression.txt`；`artifacts/spec-047-irrelevant-metric-gray-manual-e2e.md`；`docs/sdd/retro/2026-11-12-spec047-irrelevant-metric-gray-closure.md`；`docs/sdd/spec-status-changelog.md`（2026-11-12 追加范围四条目）；`frontend/styles.css:4406-4410`、`frontend/index.html:8,905,912`、`tests/frontend/test_evaluation_irrelevant_metric_gray_contract.py`；本 QA 现场只读 curl 复验记录（16.5） |
+
+### 16.11 开发主管签字 / 架构师合并裁决（留空，交架构师签署）
+
+| 项 | 内容 |
+|---|---|
+| 签字角色 | `architect`（架构师·合并裁决） |
+| 结论 | （待架构师填写） |
+| 日期 | （待架构师填写） |
+
+> 本 QA 不代架构师签字、不做合并裁决、不转 spec 状态。本节留空，沿用 §13.8 / §14.8 / §15.8 既有流程。
+
+### 16.12 纪律声明
+
+1. **写入边界**：本轮唯一写入为 `docs/sdd/reviews/047-acceptance-review.md` 的本节 §16 **纯末尾追加**，以及一份进展日志 `.codebuddy/agent-logs/spec-047/task-19/tester/20261112-064656.md`。**未改**任何业务代码 / 测试 / 配置 / spec 正文 / 状态台账 / plans / 复盘 / 人工验收文档 / E2E 证据 / §1–§15 及「补记」历史评审结论；§15 及以前（前 835 行）追加前后 `sha` 均为 `1cebd1ae5ba371b94281a851eb52a186e4ba50de`，追加内容已 `Read` 读回校验。
+2. **反伪造**：所有判定基于 `Read` / `Grep` 打开的真实文件与现场只读 `curl`，逐条附 `文件:行`；**未跑 mock 冒充实测**、未把落盘的 `e2e` / `deploy` / `fullreg` 证据说成本 QA 亲自重跑、未重启服务、未跑真实打分（约 8–10 分钟，避免与在跑服务争抢）、未重复跑单端单元测试。
+3. **不虚报**：已知非阻塞 6 项（含 R1 对比度、P2 文案、`check_test_layout.py` 历史编号、Langfuse / 404、`research-tasks.js?v=25` 缓存风险、工具超时标记）逐条如实登记；台账最新条目仍为「实施中」，收口回填属主会话 / 架构师后续动作，如实说明、不隐瞒。
+4. **不越权**：未代 `frontend-tester` / `frontend-reviewer` 出具报告、未代架构师签合并裁决、未转 spec 状态 / 写台账、**未 `git commit` / `push` / 合 `main` / `force push`**；仅执行只读 `git rev-parse` / `git branch --show-current` / `git status --short` / `shasum` / `test -f` / `curl` / `wc -l` / `ls`。工作树既有未提交改动属 task-17/18/19 交付物，非本 QA 引入。

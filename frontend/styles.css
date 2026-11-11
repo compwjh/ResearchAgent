@@ -4403,6 +4403,11 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 #evaluation-view .evaluation-metric-detail-row { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 #evaluation-view .evaluation-metric-params { margin: 0; min-width: 0; font: 11px/1.5 'DM Mono', monospace; color: var(--muted); overflow-wrap: anywhere; }
 #evaluation-view .evaluation-metric-params > summary { cursor: pointer; color: var(--accent); font-size: 11px; overflow-wrap: anywhere; }
+#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"] { border-left-color: #c9cbd3; background: #f6f6f8; }
+#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"] .evaluation-metric-status { background: #e9eaee; color: #5f626c; }
+#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"] .evaluation-metric-label { color: var(--muted-strong); }
+#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"] .evaluation-metric-value { color: var(--muted); }
+#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"] .evaluation-metric-params > summary { color: var(--muted-strong); }
 #evaluation-view .evaluation-metric-param-row { margin: 4px 0 0; color: var(--ink); font-size: 11px; overflow-wrap: anywhere; word-break: break-word; }
 #evaluation-view .evaluation-detail-row { margin: 0; color: var(--ink); font: 11px 'DM Mono', monospace; overflow-wrap: anywhere; }
 #evaluation-view .evaluation-empty { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }

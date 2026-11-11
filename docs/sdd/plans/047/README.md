@@ -128,3 +128,28 @@
 > 证据落 `docs/sdd/plans/047/runs/task-14/`（Go/No-Go 基准）、`runs/task-15/`（前端交接）与 `runs/task-16/`（E2E），
 > 人工验收详情按 `artifacts/README.md` 契约命名 `artifacts/spec-047-*.md`。
 > 本节为纯文档改动，由主会话代行，三处留痕见 spec §13.3。
+
+## 追加范围四（2026-11-12 用户提出）：不相关指标灰色弱化
+
+> 详见 [spec-047 追加范围四](../../specs/047-evaluation-p2-and-observability-fixes.md)（状态 **`已完成`**：单端 `614 passed`、最终全量 `4557 passed / PYTEST_EXIT=0`、真实 Chromium E2E 7 步 PASS、部署验证 4×200、验收 §16 与合并裁决双签批准收口）。
+> **不新增 spec 编号 / `plans/048/`**；用户「你处理下合并。然后再实现这个task」→ `待确认 → 已确认 → 实施中`。
+> 远程合并已完成（PR #4 squash → `origin/main` `cdbb83cc`），设计按合并后 live `styles.css?v=75` / `app.js?v=77` 重基线，
+> 升版目标改为 `styles.css?v=75 → ?v=76`。
+> 需求评审 [§16](../../reviews/047-requirement-review.md)（通过，P0=0/P1=0）与技术评审
+> [「追加范围四技术评审」](../../reviews/047-tech-review.md)（通过，P0=0/P1=2）均已落盘；
+> 两项 P1 的书面裁决见 **spec 追加范围四 §13**（V3 徽章 WCAG 达标色值 `#5f626c`；精确 live 断言 6 处清单；
+> `v=75` 纯属性 marker 须置于 `index.html` 末尾注释区）。
+> 原 task-01..16 状态、追加范围一/二/三收口结论与三份评审签字全部保持历史原样、不翻案。
+
+### 追加范围四任务清单（依赖 17 → 18 → 19；纯前端单端分派）
+
+| 编号 | 任务 | 任务文档 | 分派角色 | 状态 |
+|---|---|---|---|---|
+| 17 | 灰阶视觉契约 V1–V7 + `styles.css?v=76` + 6 处精确断言 + 新增静态契约用例 | [task-17-evaluation-irrelevant-metric-gray-style.md](./task-17-evaluation-irrelevant-metric-gray-style.md) | `frontend-dev` | **已完成** |
+| 18 | 前端代码评审 + 单端回归（版本 / XSS / WCAG / 反伪造复核） | [task-18-evaluation-gray-style-review.md](./task-18-evaluation-gray-style-review.md) | `frontend-reviewer` · `frontend-tester` | **已完成** |
+| 19 | 真实浏览器 E2E + 部署验证 + 验收签字 + 台账 / 复盘 / 本地 commit | [task-19-evaluation-gray-style-e2e.md](./task-19-evaluation-gray-style-e2e.md) | `tester` · `architect` · 主会话 | **已完成** |
+
+> 纯前端单端改动：只派 `frontend-dev`，后端 dev / reviewer / tester 一律不分派，单端回归只跑 `tests/frontend/`。
+> 证据落 `docs/sdd/plans/047/runs/task-17/`（实现交接）、`runs/task-18/`（评审与回归）、`runs/task-19/`（E2E snapshot / 截图 / `gray-style-e2e.json`）。
+> 本节为纯文档改动，由主会话代行，三处留痕见 spec 追加范围四 §13。
+> 收口证据：`runs/task-17/implementation.md`、`runs/task-18/frontend-regression.md`、`runs/task-19/gray-style-e2e.json` / `deploy-verification.json` / `full-regression.txt` / `merge-decision.md`；验收签字见 `docs/sdd/reviews/047-acceptance-review.md` §16。本节状态回填由主会话代行（纯文档，三处留痕见 spec 追加范围四 §13）。
