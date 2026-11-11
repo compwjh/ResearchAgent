@@ -193,8 +193,8 @@ def test_asset_versions_bumped_and_five_others_unchanged() -> None:
     for ref in (
         'href="/assets/literature-maps.css?v=34"',
         'src="/assets/literature-maps.js?v=47"',
-        'src="/assets/research-tasks.js?v=25"',
-        'src="/assets/research-session-ui.js?v=3"',
+        'src="/assets/research-tasks.js?v=26"',
+        'src="/assets/research-session-ui.js?v=4"',
         'src="/assets/conversation-research.js?v=3"',
     ):
         assert ref in INDEX, f"其余资源版本不得改动：{ref}"

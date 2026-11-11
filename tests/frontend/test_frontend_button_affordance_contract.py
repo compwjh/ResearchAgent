@@ -195,7 +195,7 @@ def test_asset_versions_are_frozen() -> None:
     for marker in (
         'href="/assets/styles.css?v=75"',
         'src="/assets/app.js?v=74"',
-        'src="/assets/research-tasks.js?v=25"',
+        'src="/assets/research-tasks.js?v=26"',
         'src="/assets/literature-maps.js?v=47"',
         'src="/assets/conversation-research.js?v=3"',
         'href="/assets/literature-maps.css?v=34"',

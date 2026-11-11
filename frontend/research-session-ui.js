@@ -90,14 +90,30 @@
     return `${label} 秒`;
   }
   function durationText(item) {
-    // Prefer the backend's authoritative duration_ms, then fall back to the
-    // started_at/completed_at window, then created_at/updated_at. A missing,
-    // zero, or negative value is not a valid elapsed time.
+    // This field is task execution elapsed time only. A finished/partly
+    // finished task reports the authoritative duration_ms; a missing, zero,
+    // or negative value is not a valid elapsed time.
     const duration = Number(item?.duration_ms);
     if (Number.isFinite(duration) && duration > 0) return formatElapsed(duration);
-    const start = Date.parse(item?.started_at || item?.created_at || '');
-    const end = Date.parse(item?.completed_at || item?.updated_at || '');
-    if (Number.isFinite(start) && Number.isFinite(end) && end > start) return formatElapsed(end - start);
+    // A started-but-unfinished task has no duration_ms yet: show a live
+    // now-start clock. Each re-render (SSE event / manual refresh) refreshes
+    // it naturally, so no extra high-frequency timer is needed. The session
+    // lifecycle (its created_at/updated_at wall-clock, which also covers
+    // planning, approval and idle waiting) is deliberately NOT consulted.
+    const liveStatuses = new Set(['queued', 'running', 'waiting_retry', 'paused', 'recovery_required']);
+    if (liveStatuses.has(item?.status)) {
+      const start = Date.parse(item?.started_at || item?.created_at || '');
+      const end = Date.now();
+      if (Number.isFinite(start) && end > start) return formatElapsed(end - start);
+      return '—';
+    }
+    // A finished task without duration_ms may still expose the task-level
+    // execution window (started_at -> completed_at). Never widen this to the
+    // session created_at/updated_at span.
+    const taskStart = Date.parse(item?.started_at || '');
+    const taskEnd = Date.parse(item?.completed_at || '');
+    if (Number.isFinite(taskStart) && Number.isFinite(taskEnd) && taskEnd > taskStart) return formatElapsed(taskEnd - taskStart);
+    // Pure intake / planning / approval-waiting sessions have not started.
     return '—';
   }
   function progressText(item) {
