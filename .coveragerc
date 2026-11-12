@@ -1,0 +1,22 @@
+[run]
+source = backend/app
+omit =
+    */tests/*
+    */__pycache__/*
+    */migrations/*
+    */eval_042/*
+    */vendor/*
+branch = False
+
+[report]
+show_missing = True
+skip_covered = False
+precision = 2
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:
+
+# 刻意不设置 fail_under：见 docs/sdd/specs/047-*.md「追加范围五 §2 明确不做」。
+# 覆盖率基线实测后若达标再另起任务启用阈值门禁，避免制造主干红灯 / 虚报达标。

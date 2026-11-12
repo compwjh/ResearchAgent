@@ -33,6 +33,8 @@ def _grey_block() -> str:
 def _live_versions(asset: str) -> list[int]:
     if asset == "app.js":
         found = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
+    elif asset == "research-tasks.js":
+        found = re.findall(r'<script src="/assets/research-tasks\.js\?v=(\d+)"', INDEX)
     else:
         found = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     assert found, f"missing live asset tag for {asset}"
@@ -84,8 +86,8 @@ def test_v1_to_v6_grey_colours() -> None:
     assert "background:#f6f6f8" in flat, "V2 卡片浅灰底"
     assert "background:#e9eaee" in flat, "V3 徽章灰底"
     assert "color:#5f626c" in flat, "V3 徽章文字（§13 裁决达标色值）"
-    assert block.count("var(--muted-strong)") == 2, "V4 标题 + V6 summary 用 --muted-strong"
-    assert block.count("var(--muted)") == 1, "V5 数值用 --muted"
+    assert block.count("var(--muted-strong)") == 3, "V4 标题 + V5 数值 + V6 summary 用 --muted-strong"
+    assert block.count("var(--muted)") == 0, "灰化规则块内不得出现 var(--muted)"
 
 
 def test_deprecated_badge_colour_is_absent() -> None:
@@ -122,7 +124,7 @@ def test_wcag_aa_contrast_for_badge_and_title() -> None:
 
 # ---- 5. 版本契约与纯属性 marker ------------------------------------------
 def test_live_asset_versions_and_compat_marker() -> None:
-    assert _live_versions("styles.css") == [76], "styles.css 生效版本唯一且为 76"
+    assert _live_versions("styles.css") == [77], "styles.css 生效版本唯一且为 77"
     assert _live_versions("app.js") == [77], "app.js 未改，仍为 77"
     marker = 'Merge compatibility marker: href="/assets/styles.css?v=75"'
     marker_lines = [line for line in INDEX.splitlines() if marker in line]
@@ -137,3 +139,53 @@ def test_live_asset_versions_and_compat_marker() -> None:
 def test_app_js_metric_card_dom_contract_unchanged() -> None:
     assert "card.className = 'evaluation-metric-card'" in APP
     assert "card.dataset.status = String(metric.status" in APP, "needs_ground_truth 状态仍由 dataset.status 渲染"
+
+
+# ---- 7. R1：灰卡文字色提到 --muted-strong（追加范围五 task-20） ----------
+GREY_TEXT_CHILDREN = (
+    ".evaluation-metric-value",
+    ".evaluation-metric-samples",
+    ".evaluation-metric-detail-row",
+    ".evaluation-metric-params",
+)
+
+
+def _all_grey_rules() -> str:
+    """从 V1 #c9cbd3 起连续的状态限定灰化规则（原 5 条 + R1 新增 3 条）。"""
+    lines = CSS.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if "#c9cbd3" in line and STATUS_LIMIT in line),
+        None,
+    )
+    assert start is not None, "缺少 V1 灰化卡片规则"
+    picked: list[str] = []
+    for line in lines[start:]:
+        if not line.strip().startswith(GREY_PREFIX):
+            break
+        picked.append(line)
+    return "\n".join(picked)
+
+
+def test_r1_four_grey_card_text_rules_use_muted_strong() -> None:
+    block = _all_grey_rules()
+    for child in GREY_TEXT_CHILDREN:
+        rule = f"{GREY_PREFIX} {child} {{ color: var(--muted-strong); }}"
+        assert rule in block, f"缺少灰卡文字色规则: {child}"
+    assert "var(--muted)" not in block, "灰化规则块内不得出现 var(--muted)"
+
+
+def test_r1_grey_text_wcag_and_live_asset_versions() -> None:
+    ratio = _contrast_ratio("#5a5d66", "#f6f6f8")
+    assert ratio >= 4.5, f"灰卡文字对比度 {ratio:.4f}:1 未达 AA"
+    assert _live_versions("styles.css") == [77], "改 CSS 后 live styles.css 须为 77"
+    assert _live_versions("app.js") == [77], "app.js 未改，仍为 77"
+    assert _live_versions("research-tasks.js") == [26], "research-tasks.js live 须升到 26"
+    for fragment in (
+        'src="/assets/research-tasks.js?v=25"',
+        'href="/assets/styles.css?v=76"',
+    ):
+        lines = [line for line in INDEX.splitlines() if fragment in line]
+        assert len(lines) == 1, f"兼容 marker 须恰好 1 条: {fragment}"
+        line = lines[0]
+        assert "<!--" in line and "-->" in line, "marker 须位于 HTML 注释内"
+        assert "<script" not in line and "<link" not in line, "marker 不得含 <script/<link 标签字面串"

@@ -1196,3 +1196,125 @@ task-19 须如实记录且严禁 `opacity` / `filter` 补救。
 **状态流转**：`已确认 → 实施中 → 已完成`（台账同步；2026-11-12 验收 §16 与 `runs/task-19/merge-decision.md` 双签批准收口）。task-17/18/19 文档由主会话代行创建（纯文档，三处留痕：
 产出文档头部、本节记录、状态台账）；含 `.py` / `.js` / `.html` / `.css` 的实现一律分派 `frontend-dev`，
 评审分派 `frontend-reviewer` / `frontend-tester`，验收分派 `tester`。
+
+## 追加范围五（2026-11-12 用户提出）：遗留项清理
+
+> **本追加范围状态：`已完成`**（`待确认 → 已确认 → 实施中 → 已完成`，2026-11-12 收口）。依据：用户 2026-11-12「灰色弱化成果只在本地分支 要做。遗留你也改一下」，
+> 是对上一轮回复中逐条列出的遗留清单的明确执行授权，构成 `AGENTS.md` 强制流程第 4 条「按这个执行」的等价意思；
+> 其后连续多次「请继续 / 请继续执行未完成的任务」进一步确认不中途停顿。本范围在计划模式完成只读勘察后直接执行。
+> **收口依据**：最终候选全量回归 `4559 passed / EXIT=0`、覆盖率 `TOTAL 83.02%`、真实 Chromium 复核与部署 5×200 PASS；
+> `architect` 合并裁决「批准收口」与 `tester` §17 验收「通过」双签并列、`frontend-reviewer` APPROVE；
+> 十项人工验收准备度 ≥9/10，无 P0 / P1、无 API E2E 失败、无关键产物缺失；台账、复盘与人工验收步骤已落盘（详见 §5.1 / §7 / §8）。
+> **不新增 spec 编号 / `plans/048/`**（沿用「归为 047 的追加功能」约束）。
+> 基线：`origin/main` `42bbc188`（PR #5 squash 后），工作分支 `feature/spec-047-followup-cleanup`。
+> spec 主体与追加范围一 / 二 / 三 / 四的收口结论、四份评审签字与历史记录**逐字保留、不翻案、不回退、不重开门禁**。
+
+### 0. 遗留清单与处置决策（只读勘察证据）
+
+| # | 遗留项 | 勘察事实 | 处置 |
+|---|---|---|---|
+| A | 合并后 `research-tasks.js?v=25` 未随净增 223 行升版，缓存可能命中旧脚本 | `frontend/index.html:902` live `?v=25`；`tests/frontend/*.py` 有 5 处 `in INDEX` 字符串冻结断言，**无任何 `_live_versions("research-tasks.js")` 精确断言**（全扫 0 命中） | **做**：升 `?v=26`，新增 `v=25` 纯属性 marker，5 处断言靠 marker 继续满足 |
+| B | P2 两处 f-string 失败提示仍写「为 75」；函数名 / 注释残留旧版本 | `test_research_detail_actions_placement_contract.py:223`、`test_memory_return_global_contract.py:210`、`test_evaluation_metric_grouping.py:187` 函数名 `..._77_and_75`、`test_evaluation_dataset_count_rendering.py:86` 注释 | **做**：只同步文案 / 命名 / 注释，不动断言值与正则 |
+| C | `scripts/check_test_layout.py` EXIT=1（5 项既有历史编号测试） | 4 个 `test_taskNN_*.py` + `tests/conftest.py`；`conftest.py` 顶层仅 `import time/pytest`，无 backend 导入、fixture 为显式 opt-in；历史报告引用旧路径按 `AGENTS.md` 不重写 | **做**：4 个测试按能力改名、`tests/conftest.py` 移到仓库根（规则「全局 fixture 放仓库根 `conftest.py`」） |
+| D | R1：灰卡 V5/V7 用 `--muted` 在灰底 3.0365:1（既有基线退化） | `frontend/styles.css:4398,4401-4404` 中 `-samples` / `-detail-row` / `-params` 用 `var(--muted)`；灰卡 `-value` 覆盖亦为 `--muted`；`--muted-strong:#5a5d66` 对 `#f6f6f8` 为 6.0947:1 | **做**：仅在 `[data-status="needs_ground_truth"]` 限定下改 `var(--muted-strong)`；改 CSS 须升 `styles.css?v=76 → ?v=77`、同步 6 处精确断言、新增 `v=76` 纯属性 marker |
+| E | 无真实 CI workflow、覆盖率未量化 | `pytest_cov 7.1.0` 已装，`.gitignore:9-10` 已忽略 `.coverage`；无 `pyproject.toml`/`pytest.ini`/`.coveragerc` | **部分做**：新增 `.coveragerc` 采集配置 + 实测覆盖率报告落盘；**不设** `fail_under`，除非实测 ≥80%。真实 GitHub Actions 见 §2「明确不做」 |
+
+### 1. 目标与非目标
+
+**目标**：消除上一轮交付登记的 5 类遗留（缓存版本、诊断文案、测试布局合规、灰卡文字对比度、覆盖率可观测），
+且不改变任何用户可见的功能行为、不破坏既有闸门、不制造新的红灯。
+
+**非目标**：见 §2「明确不做」。
+
+### 2. 明确不做（划出范围）
+
+- **不新增真实 GitHub Actions workflow**：本环境无法验证平台侧运行，且全量测试依赖本地 Ollama / Qdrant / Langfuse 等外部服务；
+  贸然接入会让主干 CI 红灯，属独立基础设施 spec，需先做依赖评估与覆盖率基线。本次只做本地可验证的覆盖率采集配置与实测报告。
+- **不设 `--cov-fail-under=80` 默认门禁**：实测若未达标则只保留报告并如实登记，不虚报、不放宽、不制造红灯。
+- **不改 `frontend/app.js` / `backend/**` 业务逻辑**、不动 22 key / 5 group / 五端点、不加字段或端点。
+- **不改 `:root` 变量定义**；灰化规则一律带 `[data-status="needs_ground_truth"]` 限定；`computed` / `degraded` / `unavailable` 配色逐字不变；
+  不用 `opacity` / `filter` / `display:none`。
+- **不重写历史归档报告中的旧测试路径**（`AGENTS.md` 测试文件命名段明确「历史归档报告中的旧路径不随改名重写」）。
+- **不改松任何断言 / 不删测试 / 不 skip / 不 xfail**：`check_test_layout.py` 只靠真实改名与 conftest 迁移转绿。
+- **不主动合到 `main`、不 force push**；本地 `main`（`440d9e33`）落后于 `origin/main` 属既有状态，按 `AGENTS.md` 不主动快进或合并。
+- **不处理** Langfuse `:3000` 启动与浏览器控制台 4 个其它视图 404（环境依赖 / 超出本范围）。
+- 本范围闭环后仅本地 `git commit`，**不 push、不合 main**，除非用户另行授权。
+
+### 3. 数据模型 / 接口
+
+**无新增数据模型字段、无后端改动、无接口变化**：五端点、22 key、`METRIC_KEYS` / `METRIC_GROUPS`、
+`status` 取值域、`detail.reason`、`sample_count`、稳定错误码全部不变。本范围只涉及前端静态资源版本号、
+CSS 颜色、测试文件命名 / 位置、诊断文案与本地覆盖率配置。
+
+### 4. 逐项实现契约（每条对应验证点）
+
+| # | 契约 | 验证点 |
+|---|---|---|
+| A1 | `frontend/index.html:902` live `research-tasks.js?v=25 → ?v=26` | `_live_versions("research-tasks.js") == [26]`（新增静态断言） |
+| A2 | 末尾注释区新增一条 `v=25` **纯属性片段** marker（不含 `<script` 标签字面串） | 5 处 `in INDEX` 冻结断言继续通过；`test_research_task_search.py:38` 的 `v=22` marker 不变 |
+| B1 | 2 处 f-string 失败文案「为 75」→「为 76」；`test_evaluation_metric_grouping.py:187` 函数名 `..._77_and_75 → ..._77_and_76`；`test_evaluation_dataset_count_rendering.py:86` 注释同步 live 口径 | 全仓 grep 无残留误导性 `v=75` 生效文案（历史 marker 断言除外） |
+| C1 | 4 个测试按能力改名：`test_task03_reproducibility.py → test_fallback_reproducibility.py`、`test_task04_idempotency.py → test_score_idempotency.py`、`test_task05_decoupling.py → test_observability_decoupling.py`、`test_task06_identity_redaction.py → test_trace_identity_redaction.py` | `scripts/check_test_layout.py` EXIT=0；4 个文件定向 pytest 通过 |
+| C2 | `tests/conftest.py` → 仓库根 `conftest.py`（顶层无 backend 导入、fixture 显式 opt-in，子目录 `tests/system/conftest.py` / `tests/kb/conftest.py` 仍可引用） | 受影响后端测试定向通过；最终全量回归通过 |
+| D1 | 灰卡内 `-value` / `-samples` / `-detail-row` / `-params` 在 `[data-status="needs_ground_truth"]` 限定下用 `var(--muted-strong)`；非灰卡保持 `var(--muted)` | 新增静态契约断言；浏览器 `getComputedStyle` 实测 ≥4.5:1 |
+| D2 | 改 CSS 后 live `styles.css?v=76 → ?v=77`，新增 `v=76` 纯属性 marker 于末尾注释区；`app.js?v=77` 不动 | 6 处精确 live 断言同步为 `77` / `["77"]`；9 处 `in INDEX` 冻结断言靠 marker 满足；`active_version > 68` 不污染 |
+| D3 | `computed` 绿 / `degraded` 橙 / `unavailable` 红、灰卡 V1–V4/V6 与「不隐藏 / 不降级」红线逐字不变 | 既有 `test_evaluation_irrelevant_metric_gray_contract.py` 全部继续通过 |
+| E1 | 新增 `.coveragerc`（`source = backend/app`，`omit` 测试 / 迁移 / 缓存），不改 pytest 默认 `addopts` | `.venv/bin/python -m pytest -q --cov=backend/app --cov-report=term-missing` 落盘实测报告；无阈值门禁 |
+
+### 5. 验证方式
+
+- **单端定向**：`node --check frontend/app.js`；`.venv/bin/python -m pytest -q tests/frontend/`；
+  `.venv/bin/python scripts/check_test_layout.py` 应 **EXIT=0**；4 个改名测试与 conftest 迁移后的后端定向测试。
+- **真实浏览器复核**：Chromium 打开评测视图回看 `eval-009223db…`，读 `getComputedStyle` 确认灰卡
+  `-value` / `-samples` / `-detail-row` 文字色为 `rgb(90, 93, 102)`，computed 卡仍绿；落盘 `runs/task-20/`。
+- **覆盖率实测**：`--cov=backend/app --cov-report=term-missing` 输出落盘，记录总覆盖率数值；达标与否如实登记，不改阈值凑绿。
+- **Spec 收口**：最终候选全量 `.venv/bin/python -m pytest -q`，记录命令 / 退出码 / 通过数 / 阻塞项；
+  `git diff --check` 0、冲突标记 0、引用路径 0 断链。
+- **部署验证**：`GET /api/health` 200、首页 200、`index.html` live `styles.css?v=77` / `research-tasks.js?v=26`。
+- **收口**：独立 `architect` 出具需求 / 技术 / 验收合并裁决（一次独立只读评审，非自批），
+  `tester` 验收签字，状态 `实施中 → 已完成`、台账、复盘、本地 commit。
+
+#### 5.1 执行结果（2026-11-12 收口回填）
+
+| 验证项 | 命令 / 产物 | 退出码 | 结果 |
+|---|---|---|---|
+| 最终候选全量回归 | `.venv/bin/python -m pytest -q --cov=backend/app --cov-report=term-missing` → `docs/sdd/plans/047/runs/task-20/full-regression-coverage.txt` / `.exit` | **0** | **`4559 passed, 2 skipped, 5 warnings, 69 subtests passed in 887.98s`**；`TOTAL 51890 8811 83.02%`；0 failed / 0 error；未设 `fail_under` |
+| 单端定向 | `node --check`、`pytest -q tests/frontend/`、4 个改名测试、后端定向、`check_test_layout.py` | 均 0 | `616 passed` / `39 passed` / `37 passed` / `test layout: ok` |
+| 真实浏览器 | `docs/sdd/plans/047/runs/task-20/r1-computed-style.txt`、`task-20-gray.png` | — | 22 卡（10 灰 / 12 computed）；灰卡 `rgb(90, 93, 102)` = 6.0947:1；computed 仍绿 `rgb(40, 124, 67)` |
+| 部署验证 | `docs/sdd/plans/047/runs/task-20/deploy-verification.json` | — | health / 首页 / `styles.css?v=77` / `research-tasks.js?v=26` / `/api/evaluation/options` **5×200，`CONCLUSION PASS`**；收口前 `/api/health` 再验 200 |
+| 静态自检 | `git diff HEAD --check`、变更文件冲突标记扫描、spec 引用路径检查 | 均 0 | `diff --check` 0、冲突标记 0、047 引用路径 0 断链、无「结论：/」占位 |
+
+**阻塞项 0**。完整记录见 `docs/sdd/plans/047/runs/task-20/final-verification.md`。已知非阻塞 7 项（185 个历史 lint 债务、Langfuse `:3000`、Playwright `params:null`、无真实 CI workflow、branch protection 未配置、未设覆盖率阈值、浏览器其它视图 4×404）逐条如实登记，不虚报全绿。
+
+### 6. 执行配置与任务计划
+
+> 沿用本 spec §274–287 现行 RACI 与「型号唯一真源 = `.codebuddy/agents/<role>.md`」规则，不新增模型列；架构师填「自身」。
+> 本项目不存在 `junior-dev`；跨端改动拆 `frontend-dev` / `backend-dev` 两次独立分派，不派通吃 agent。
+
+| 编号 | 任务 | 角色 | 产出 |
+|---|---|---|---|
+| 20 | A + B + D：`research-tasks.js?v=26`、P2 文案、R1 灰卡文字色 + `styles.css?v=77` + 6 处断言 + 静态契约 | `frontend-dev` | `plans/047/runs/task-20/` |
+| 21 | C：4 个测试改名 + `tests/conftest.py` 迁根；E1：`.coveragerc` + 覆盖率实测 | `backend-dev` · 主会话 | `plans/047/runs/task-20/` |
+| 22 | 独立评审 + 单端 / 全量回归 + 浏览器复核 + 部署验证 + 验收签字 + 台账 / 复盘 / 本地 commit | `architect` · `tester` · 主会话 | `plans/047/runs/task-20/`、`reviews/047-*` |
+
+> 任务 20 / 21 / 22 **均为 `已完成`**（2026-11-12），任务文档见
+> `plans/047/task-20-followup-frontend-cleanup.md`、`task-21-followup-test-layout-and-coverage.md`、`task-22-followup-acceptance-and-closure.md`，
+> 状态与 `plans/047/README.md`「追加范围五任务清单」一致；依赖 20 → 21 → 22。
+
+### 7. 评审记录（已回填）
+
+- **需求评审 / 技术评审 / 验收合并裁决**：`docs/sdd/plans/047/runs/task-20/merge-review.md`（`Task(architect)` 独立只读，217 行）— 需求评审 **通过**、技术评审 **通过**、验收合并裁决 **批准收口**；P0=0 / P1=0 / P2=0；**架构师签字 A（批准收口）**，非自批。
+- **验收评审**：`docs/sdd/reviews/047-acceptance-review.md` §17（`Task(tester)` 独立只读，纯末尾追加）— **通过**；契约 9/9、§5 8/8、集成 5/5；**验收签字 R**；既有 §1–§16 `shasum` 前后一致、逐字未变。
+- **代码评审**：`docs/sdd/reviews/047-followup-frontend-review.md`（`Task(frontend-reviewer)` 独立只读，214 行）— **APPROVE**；DOM 契约 / `?v=N` / XSS 三项 PASS，WCAG 复算 6.0947:1；P0=0 / P1=0 / P2=2（信息性，不阻断）。
+- **准备度**：`tester` 报告出具时点 9/10（第 10 项「台账 / 复盘 / commit」为时点快照，明确不回改）、`architect` 按材料齐备评 10/10 就绪，均 ≥9/10 门槛；差异如实登记。
+- **代行留痕（纯文档）**：本节状态回填、`plans/047/README.md` 追加范围五段、3 份 task 文档、`final-verification.md`、人工验收步骤与复盘均由主会话代行；三处留痕为「各文档头部 / 本节 / 状态台账 2026-11-12 收口条」。含 `.py` / `.html` / `.css` / 测试文件的实现一律由 `frontend-dev` / `backend-dev` 分派，评审由 `architect` / `tester` / `frontend-reviewer` 分派。
+
+### 8. 变更日志
+
+| 时间 | 角色 | 动作 |
+|---|---|---|
+| 2026-11-12 | 架构师 `architect`（自身） | 计划模式只读勘察（`index.html:902,905-912`、`styles.css:1,4395-4410`、`tests/frontend/*.py` 全扫 `research-tasks.js` 断言、`scripts/check_test_layout.py`、`tests/conftest.py`、4 个历史测试 docstring、`pytest_cov 7.1.0`、`.gitignore:9-10`）；产出追加范围五设计并置 `待确认`。同步发现 `gh pr merge --delete-branch` 把工作区切回旧本地 `main` `440d9e33`，已从 `origin/main` `42bbc188` 新建 `feature/spec-047-followup-cleanup` 恢复，9 个历史未跟踪日志先备份至 `.codebuddy/backup-untracked-047/` 且原位置未丢失。 |
+| 2026-11-12 | 用户 + 主会话 | 用户「遗留你也改一下」+ 连续「请继续」构成等价确认 → `待确认 → 已确认 → 实施中`；台账同步。按任务 20/21/22 分派，闭环后本地 commit，不 push、不合 main、不 force push。 |
+| 2026-11-12 | `frontend-dev` | 任务 20：A/B/D 实现（live 版本 + 2 条纯属性 marker、P2 文案 / 函数名 / 注释、灰卡 4 类文字色状态限定修复、6 处精确断言同步、R1 静态契约）；RED `10 failed / 48 passed` → GREEN，`tests/frontend/` 616 passed。报告 `runs/task-20/frontend-implementation.md`。 |
+| 2026-11-12 | `backend-dev` | 任务 21（C）：4 个 `git mv` 纯改名（`R100`）+ `tests/conftest.py` fixture 等价迁入根 `conftest.py`（保留原有 5 个 autouse fixture，`diff -u` EXIT=0）；定向 39 + 37 passed、布局门禁 EXIT=0。报告 `runs/task-20/backend-implementation.md`。 |
+| 2026-11-12 | 主会话 | 任务 21（E1）与 22：新增 `.coveragerc`（不设 `fail_under`）、启动最终候选全量回归与覆盖率实测（EXIT=0 / 4559 passed / 83.02%）、真实 Chromium 复核、部署验证 5×200 PASS、机械化校验 0 断链 / 0 冲突标记、台账 / 复盘 / 人工验收步骤 / README 与任务文档回填、本地 commit。 |
+| 2026-11-12 | `architect` · `tester` · `frontend-reviewer` | Gate 5 三次独立分派：合并裁决「批准收口」+ 签字 A；验收 §17「通过」+ 签字 R（既有 §1–§16 逐字保留）；前端代码评审 APPROVE（P0=0 / P1=0 / P2=2）。双签并列后状态 `实施中 → 已完成`。 |

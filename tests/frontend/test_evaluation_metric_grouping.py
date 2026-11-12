@@ -184,9 +184,9 @@ def test_group_cards_grid_wraps_on_narrow_viewports() -> None:
 
 # ---- (c) 资源版本 / 旧兼容 marker / 超时对齐 ----
 
-def test_live_asset_versions_bumped_to_77_and_75() -> None:
+def test_live_asset_versions_bumped_to_77_and_76() -> None:
     assert INDEX.count('<script src="/assets/app.js?v=77"></script>') == 1
-    assert INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=76">') == 1
+    assert INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=77">') == 1
     # 升版前的两个精确 live 值降级为纯属性片段兼容 marker（不含 <script/<link 标签字面串）
     assert 'src="/assets/app.js?v=75"' in INDEX
     assert 'href="/assets/styles.css?v=72"' in INDEX

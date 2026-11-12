@@ -207,7 +207,7 @@ def test_live_tags_no_longer_reference_old_versions() -> None:
     live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     # 合并 spec-047 后 app.js 升到 v=77（含评测视图）；v=74 保留为纯属性兼容 marker
     assert live_app == ["77"], f"生效 app.js 版本唯一且为 77：{live_app}"
-    assert live_css == ["76"], f"生效 styles.css 版本唯一且为 75：{live_css}"
+    assert live_css == ["77"], f"生效 styles.css 版本唯一且为 76：{live_css}"
 
 
 # ---- 6. 既有 OCC / 保存 / 409 / 作用域切换契约不回归 -------------------------

@@ -1,0 +1,20 @@
+{
+  "service": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "start_command": "RERANKER_ENABLED=false ./deploy/start.sh -d"
+  },
+  "checks": {
+    "health": 200,
+    "index": 200,
+    "styles_css_v77": 200,
+    "research_tasks_js_v26": 200,
+    "evaluation_options": 200,
+    "live_stylesheet": "<link rel=\"stylesheet\" href=\"/assets/styles.css?v=77\">",
+    "live_research_js": "<script src=\"/assets/research-tasks.js?v=26\"></script>",
+    "gray_muted_strong_rules": 6,
+    "search_layer_present": 3
+  },
+  "layout_check": "test layout: ok / EXIT=0",
+  "conclusion": "PASS"
+}

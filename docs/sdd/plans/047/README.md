@@ -153,3 +153,23 @@
 > 证据落 `docs/sdd/plans/047/runs/task-17/`（实现交接）、`runs/task-18/`（评审与回归）、`runs/task-19/`（E2E snapshot / 截图 / `gray-style-e2e.json`）。
 > 本节为纯文档改动，由主会话代行，三处留痕见 spec 追加范围四 §13。
 > 收口证据：`runs/task-17/implementation.md`、`runs/task-18/frontend-regression.md`、`runs/task-19/gray-style-e2e.json` / `deploy-verification.json` / `full-regression.txt` / `merge-decision.md`；验收签字见 `docs/sdd/reviews/047-acceptance-review.md` §16。本节状态回填由主会话代行（纯文档，三处留痕见 spec 追加范围四 §13）。
+
+## 追加范围五（2026-11-12 用户提出）：遗留项清理
+
+> 详见 [spec-047 追加范围五](../../specs/047-evaluation-p2-and-observability-fixes.md)（状态 **`已完成`**：最终候选全量 `4559 passed / EXIT=0`、覆盖率 `TOTAL 83.02%`、真实 Chromium 复核、部署 5×200 PASS、双签批准收口）。
+> **不新增 spec 编号 / `plans/048/`**；用户「遗留你也改一下」+ 连续「请继续」→ `待确认 → 已确认 → 实施中 → 已完成`。
+> 基线 `origin/main 42bbc188`（PR #5 squash）；分支 `feature/spec-047-followup-cleanup`。
+> 原 task-01..19 状态、追加范围一/二/三/四收口结论与历史评审签字全部保持原样、不翻案、不重开门禁。
+
+### 追加范围五任务清单（依赖 20 → 21 → 22；跨端拆两次独立分派）
+
+| 编号 | 任务 | 任务文档 | 分派角色 | 状态 |
+|---|---|---|---|---|
+| 20 | A 静态资源缓存版本 + B P2 文案 + D 灰卡文字对比度与 `styles.css?v=77` | [task-20-followup-frontend-cleanup.md](./task-20-followup-frontend-cleanup.md) | `frontend-dev` | **已完成** |
+| 21 | C 测试布局合规 + E1 `.coveragerc` 覆盖率采集 | [task-21-followup-test-layout-and-coverage.md](./task-21-followup-test-layout-and-coverage.md) | `backend-dev` · 主会话 | **已完成** |
+| 22 | 独立评审 + 单端 / 全量回归 + 浏览器复核 + 部署验证 + 验收签字 + 台账 / 复盘 / 本地 commit | [task-22-followup-acceptance-and-closure.md](./task-22-followup-acceptance-and-closure.md) | `architect` · `tester` · `frontend-reviewer` · 主会话 | **已完成** |
+
+> 收口证据：`runs/task-20/frontend-implementation.md`、`backend-implementation.md`、`full-regression-coverage.txt` / `.exit`、`r1-computed-style.txt`、`deploy-verification.json`、`final-verification.md`、`merge-review.md`；
+> 验收签字 [`docs/sdd/reviews/047-acceptance-review.md` §17](../../reviews/047-acceptance-review.md)、代码评审 [`047-followup-frontend-review.md`](../../reviews/047-followup-frontend-review.md)、复盘 [`2026-11-12-spec047-followup-cleanup-closure.md`](../../retro/2026-11-12-spec047-followup-cleanup-closure.md)。
+> 本节与 3 份 task 文档为纯文档改动，由主会话代行（三处留痕：各文档头部 / spec 追加范围五 §7 / 状态台账 2026-11-12 收口条）；含 `.py` / `.js` / `.html` / `.css` 的实现一律由 `frontend-dev` / `backend-dev` 分派。
+> 闭环后仅本地 commit，**不 push、不合 main、不 force push**，`origin/main` 保持 `42bbc188`。

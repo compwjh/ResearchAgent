@@ -1021,3 +1021,140 @@ Overall:   READY — 跨端集成验收【通过】，同意验收签字 R
 2. **反伪造**：所有判定基于 `Read` / `Grep` 打开的真实文件与现场只读 `curl`，逐条附 `文件:行`；**未跑 mock 冒充实测**、未把落盘的 `e2e` / `deploy` / `fullreg` 证据说成本 QA 亲自重跑、未重启服务、未跑真实打分（约 8–10 分钟，避免与在跑服务争抢）、未重复跑单端单元测试。
 3. **不虚报**：已知非阻塞 6 项（含 R1 对比度、P2 文案、`check_test_layout.py` 历史编号、Langfuse / 404、`research-tasks.js?v=25` 缓存风险、工具超时标记）逐条如实登记；台账最新条目仍为「实施中」，收口回填属主会话 / 架构师后续动作，如实说明、不隐瞒。
 4. **不越权**：未代 `frontend-tester` / `frontend-reviewer` 出具报告、未代架构师签合并裁决、未转 spec 状态 / 写台账、**未 `git commit` / `push` / 合 `main` / `force push`**；仅执行只读 `git rev-parse` / `git branch --show-current` / `git status --short` / `shasum` / `test -f` / `curl` / `wc -l` / `ls`。工作树既有未提交改动属 task-17/18/19 交付物，非本 QA 引入。
+
+---
+
+## §17 追加范围五遗留项清理验收（2026-11-12）
+
+> 本章为**纯末尾追加**：既有 §1–§16 及「补记」全部文字逐字保留、未改动、未删除、不翻案、不重开门禁。追加前文件 1023 行，`head -1023 | shasum` = `98a3a4e5d1b1c9ba98416bcbf8f3f002c80778b8`；追加后已读回并以同一命令比对（见 17.11）。
+
+### 17.1 元数据
+
+| 项 | 内容 |
+|---|---|
+| **评审者** | `tester` |
+| **角色** | 跨端验收总控（ECC `e2e-runner` / `verification-loop`） |
+| **模型** | `hy4`（读 `.codebuddy/agents/tester.md:6` 的 `model: hy4`；Tencent Hunyuan Hy） |
+| **分派方式** | `Task(tester)` 一次独立只读分派 |
+| **基线 / 分支** | `origin/main 42bbc188` / `feature/spec-047-followup-cleanup`（本 QA 现场 `git branch --show-current` + `git log -1` 复核） |
+| **验收范围** | `docs/sdd/specs/047-evaluation-p2-and-observability-fixes.md:1200-1294` 追加范围五：§0 五类遗留 A–E、§2 明确不做、§4 实现契约 A1/A2/B1/C1/C2/D1/D2/D3/E1、§5 验证方式；不改变用户可见功能行为 |
+| **门禁** | `AGENTS.md:49-58`「Task 与 Spec 的回归边界」；`docs/sdd/SDD-GATE-CHECKLIST.md:106-112` Gate 5（tester 出报告 + architect 签字 + 运行时验证 + 逐项附文件:行） |
+
+### 17.2 逐项判定表（§4 实现契约 A1–E1，共 9 条）
+
+| 契约 | 判定 | 证据（文件:行 / 命令，均为 Read/Grep/diff/curl 实测） |
+|---|---|---|
+| **A1** `research-tasks.js?v=25→?v=26` + 新增精确断言 | **通过** | `frontend/index.html:902` `git diff HEAD` 真实 `?v=25→?v=26`；`tests/frontend/test_evaluation_irrelevant_metric_gray_contract.py:182` 新增 `assert _live_versions("research-tasks.js") == [26]`；运行时 `curl /assets/research-tasks.js?v=26` → 200 / 248732B |
+| **A2** 末尾注释区新增 `v=25` 纯属性 marker，5 处冻结断言续绿 | **通过** | `frontend/index.html:913` `<!-- Merge compatibility marker: src="/assets/research-tasks.js?v=25" -->`（注释内、不含 `<script` 标签字面串）；`test_evaluation_irrelevant_metric_gray_contract.py:184-191` 断言 marker 恰好 1 条 / 在 HTML 注释内 / 不含 `<script`/`<link` / 不插入 `<head>` 污染 `active_version`；`frontend-implementation.md:20` 5 处 `in INDEX` 冻结断言未改；`.venv/bin/python -m pytest -q tests/frontend/` → `616 passed` |
+| **B1** P2 文案 / 命名 / 注释同步 | **通过** | `tests/frontend/test_memory_return_global_contract.py:210`、`test_research_detail_actions_placement_contract.py:223` f-string「为 75」→「为 76」且断言 `["76"]→["77"]`（真实 diff）；`test_evaluation_metric_grouping.py:187` 函数名 `test_live_asset_versions_bumped_to_77_and_76`；`test_evaluation_dataset_count_rendering.py:86` 注释「live CSS 为 v=77（本任务升版后）」；全仓 `.py` grep（排除 `__pycache__`）无「为 75」/ `_77_and_75` 误导性生效文案残留（范围外历史注释 1 处见 17.6⑦） |
+| **C1** 4 个测试按能力改名 | **通过** | `git status --short` 4 个 `R`：`test_task03_reproducibility.py→test_fallback_reproducibility.py`、`test_task04_idempotency.py→test_score_idempotency.py`、`test_task05_decoupling.py→test_observability_decoupling.py`、`test_task06_identity_redaction.py→test_trace_identity_redaction.py`；`git diff HEAD --stat` 4 改名 `0 insertions(+), 0 deletions(-)`（R100 纯改名）；本 QA 亲跑 `.venv/bin/python scripts/check_test_layout.py` → `test layout: ok` / EXIT=0；4 改名测试 `39 passed`（`backend-implementation.md:47`） |
+| **C2** `tests/conftest.py` → 仓库根 `conftest.py` | **通过** | `D tests/conftest.py` + `M conftest.py`(+35 行：`conftest.py:98-100` 来源注释、`:103-128` fixture 块逐字迁入、原有 5 个 autouse fixture 逐字保留)；`tests/` 根已无 `.py` 源文件；`check_test_layout.py` EXIT=0；后端定向 `37 passed`（`backend-implementation.md:48`）；`pytest --fixtures` `clean_warmup_registry -- conftest.py:124`（:51）；最终全量 4559 passed 覆盖；引用路径 0 断链（见 17.3） |
+| **D1** 灰卡文字色 `--muted-strong`（`needs_ground_truth` 限定） | **通过** | `frontend/styles.css:4409` 灰卡 `-value` `var(--muted)→var(--muted-strong)`；`:4411-4413` 新增 `-samples` / `-detail-row` / `-params` 3 条 `[data-status="needs_ground_truth"]` 限定 `var(--muted-strong)` 规则；非灰卡基础规则 `:4401/:4403/:4404` 的 `var(--muted)` 逐字不动、`:root` 不动；运行时 `/assets/styles.css?v=77` 实测 6 条灰卡 muted-strong 规则；`test_evaluation_irrelevant_metric_gray_contract.py:169` `test_r1_four_grey_card_text_rules_use_muted_strong`、`:177` WCAG 复算 6.0947:1 ≥ 4.5；`r1-computed-style.txt:2` 真实浏览器 value/samples/detailRow = `rgb(90, 93, 102)` |
+| **D2** `styles.css?v=76→?v=77` + `v=76` marker + 6 处精确断言 | **通过** | `frontend/index.html:8` `?v=76→?v=77`（真实 diff）、`:905` `app.js?v=77` 逐字未动、`:914` 新增 `v=76` 纯属性 marker；6 处精确 live 断言同步 `77`（`test_memory_return_global_contract.py:210`、`test_research_detail_actions_placement_contract.py:223` 真实 diff + `frontend-implementation.md:13-16`）；9 处 `in INDEX` 冻结断言靠 marker 满足（:20,:45）；`active_version` 取 :8 首个 `href="...styles.css?v="` = 77 > 68 未污染；首页运行时 `styles.css?v=77` 唯一 live |
+| **D3** `computed`/`degraded`/`unavailable` 配色与「不隐藏 / 不降级」红线不变 | **通过** | `git diff HEAD -- frontend/styles.css` 仅动 `-value` 与新增 3 条灰卡规则；computed 绿 `#287c43` / degraded 橙 `#c8871a` / unavailable 红 `#b13a3a` / 灰卡 `#f6f6f8` + `#c9cbd3` 逐字未变；`test_evaluation_irrelevant_metric_gray_contract.py:82/97/104` 三测试（V1–V6 配色 / `test_grey_block_has_no_hiding_or_fading` / `test_base_status_rules_are_unchanged`，不用 `opacity`/`filter`/`display:none`）；既有 `test_evaluation_irrelevant_metric_gray_contract.py` 全部继续通过（616 passed 内含）；`r1-computed-style.txt:2` computed 左边框 `rgb(40, 124, 67)` 仍绿 |
+| **E1** 新增 `.coveragerc` + 覆盖率实测 | **通过** | 新增 `.coveragerc`：`[run] source=backend/app`、`omit = */tests/* */__pycache__/* */migrations/* */eval_042/* */vendor/*`、`branch=False`；`[report] show_missing=True, precision=2`；**无 `fail_under`** 且注释明言「刻意不设置 fail_under」；`git status --short -- pytest.ini pyproject.toml setup.cfg tox.ini` 无输出 → 未改 pytest 默认 `addopts`；`.venv/bin/python -m pytest -q --cov=backend/app --cov-report=term-missing` EXIT=0 / `TOTAL 51890 8811 83.02%`（`full-regression-coverage.txt:294-295`、`full-regression-coverage.exit`=0） |
+
+**逐项判定结果：9 / 9 通过，0 不通过。**
+
+### 17.3 §5 验证方式逐项
+
+| §5 验证方式 | 结果 | 依据（命令 / 退出码 / 通过数 / 阻塞项） |
+|---|---|---|
+| 单端定向测试 | **通过** | `node --check frontend/app.js` EXIT=0；`.venv/bin/python -m pytest -q tests/frontend/` → `616 passed` / EXIT=0；`.venv/bin/python scripts/check_test_layout.py` → `test layout: ok` / EXIT=0（本 QA 亲跑）；4 个改名测试 `39 passed`；conftest 迁移后后端定向 `37 passed`（`backend-implementation.md:46-52`、`frontend-implementation.md:24-31`） |
+| 最终候选全量回归 | **通过** | 命令 `.venv/bin/python -m pytest -q --cov=backend/app --cov-report=term-missing`；**退出码 EXIT=0**；**`4559 passed, 2 skipped, 5 warnings, 69 subtests passed in 887.98s (0:14:47)`**；**阻塞项 0**；证据 `full-regression-coverage.txt:294-295` + `full-regression-coverage.exit`=0。本 QA 不重复跑单端全量单元测试，以落盘报告为准 |
+| `git diff --check` | **通过** | EXIT=0（本 QA 亲跑）；`git diff HEAD --check`（覆盖 staged 改名 / 删除）EXIT=0 |
+| 冲突标记 0 | **通过** | 改动文件 `grep -rlE '^(<<<<<<< |=======|>>>>>>> )'` → `CONFLICT_COUNT=0` |
+| 引用路径 0 断链 | **通过** | 全仓 `.py` grep 仅 3 处**叙述性**命中：`conftest.py:98` 来源注释、`tests/kb/conftest.py:4` 与 `tests/system/conftest.py:4` docstring「根 `tests/conftest.py`」；**无 `from conftest import` / `import conftest` 形式**，均为注释/docstring、按 `AGENTS.md`「历史归档旧路径不随改名重写」保留，不构成符号断链（与 `backend-implementation.md:60-64` 一致） |
+| 真实浏览器复核 | **通过** | `r1-computed-style.txt:2`：22 卡 / `needs_ground_truth` 10 / `computed` 12；灰卡 `value`/`samples`/`detailRow` = `rgb(90, 93, 102)`（`--muted-strong` 生效色）；computed 左边框仍绿 `rgb(40, 124, 67)`；liveCss `/assets/styles.css?v=77`；落盘 `runs/task-20/` |
+| 覆盖率实测 | **通过** | `TOTAL 51890 8811 83.02%`（≥ 80%）；达标与否如实登记、**未设 `fail_under`、未改阈值凑绿**（`.coveragerc` 注释 + spec §2） |
+| 部署验证 | **通过** | `deploy-verification.json:8-19`：`/api/health` 200、首页 200、`styles.css?v=77` 200、`research-tasks.js?v=26` 200、`/api/evaluation/options` 200、live `<link .../styles.css?v=77>` 与 `<script .../research-tasks.js?v=26>`、`gray_muted_strong_rules: 6`、`layout_check: "test layout: ok / EXIT=0"`、**`CONCLUSION PASS`** |
+
+### 17.4 跨端集成验收（本 QA 现场只读 curl，服务 `127.0.0.1:8000` 真实运行）
+
+| # | 请求 | HTTP | 运行时证据 |
+|---|---|---|---|
+| 1 | `GET /api/health` | **200** | `{"status":"ok","model":"qwen3.8:27b",...,"paper_discovery_enabled":true}` |
+| 2 | `GET /` | **200** | live 标签 `styles.css?v=77` / `research-tasks.js?v=26` / `app.js?v=77` 各恰好 1；其余 `?v=` 均位于 `<!-- -->` 历史兼容 marker 注释内，不参与加载 |
+| 3 | `GET /assets/styles.css?v=77` | **200** | 响应体 `needs_ground_truth.*muted-strong` = **6** 条（与静态 `grep -c` 6 条、`deploy-verification.json:15` 6 条一致）→ 部署版本即改后 CSS |
+| 4 | `GET /assets/research-tasks.js?v=26` | **200** | `size=248732`、`content-type: text/javascript; charset=utf-8` → 升版资源真实可取 |
+| 5 | `GET /api/evaluation/options` | **200** | 返回 4 个 strategies（baseline / chunker-v2 / topk-10 / rerank-on）+ models，五端点主链路可用 |
+
+**跨端集成验收结论：PASS**（5/5 端点 200，运行时静态资源与浏览器样式契约一致）。单端结论汇总：`frontend-tester` 静态核对 616 passed / EXIT=0；`backend-tester` 定向 39 + 37 passed、布局门禁 EXIT=0；全量 4559 passed / EXIT=0；无 API E2E 失败。
+
+### 17.5 十项人工验收准备度（≥ 9/10 才允许交付）
+
+> 依据 `AGENTS.md:57-58`（十项至少九项通过、无 P0/P1 阻塞、无 API E2E 失败、无关键产物缺失），矩阵沿用本文件 §2:88-105 十项结构，**如实不虚报 10/10**。
+
+| # | 准备度检查 | 判定 | 依据 + 产物路径 |
+|---|---|---|---|
+| 1 | Spec 目标 / 边界 / 明确不做可映射 | **通过** | `spec:1219-1238`（§1 目标 / §2 明确不做 8 条）、`:1246-1258`（§4 九契约）、`:1260-1271`（§5 验证方式） |
+| 2 | 真实 API E2E 请求 / 响应 / 终态 / 产物路径齐全 | **通过** | 本 QA 现场 17.4 五端点 200 + 响应体；`deploy-verification.json:2-19`；本范围 spec §3「无接口变化」，既有 E2E 材料不受影响 |
+| 3 | 主路径入口可按真实操作（自然语言 / CLI） | **通过** | `spec:1222`「不改变任何用户可见的功能行为」；首页 200、`/api/evaluation/options` 200；既有自然语言聊天主路径未改动 |
+| 4 | 关键产物可查看 | **通过** | `runs/task-20/` 六份产物（`frontend-implementation.md`、`backend-implementation.md`、`full-regression-coverage.txt` / `.exit`、`r1-computed-style.txt`、`deploy-verification.json`）均 Read 回非空；新增 `.coveragerc`；`git diff HEAD` 真实可复核；**关键产物 0 缺失** |
+| 5 | 人工步骤六要素（点击 / 提示 / 等待 / 等待中 / 下一步 / 失败恢复） | **通过** | 本范围为遗留项清理、无新增用户可见操作路径，无新增人工步骤需求；既有 `spec:188-222` 案例 0–3 六要素材料不受影响（如实说明「无新增」，非缺项） |
+| 6 | 关键失败 / 降级场景诚实呈现且无 P0/P1 阻塞 | **通过** | **P0 = 0 / P1 = 0**；全量 EXIT=0；TDD RED `10 failed / 48 passed` 为「实现未落地」预期红已记录（`frontend-implementation.md:33`）；17.6 非阻塞项逐条如实登记、无隐瞒、未降级 |
+| 7 | 最终全量回归通过、退出码 / 计数可复核 | **通过** | `full-regression-coverage.txt:294-295` `TOTAL 51890 8811 83.02%` / `4559 passed, 2 skipped, 5 warnings, 69 subtests passed in 887.98s`；`.exit`=0；见 17.3 |
+| 8 | 当前部署 health / 关键链路验证 | **通过** | 17.4 现场 curl 5×200；`deploy-verification.json` `CONCLUSION PASS`；`start_command: RERANKER_ENABLED=false ./deploy/start.sh -d` |
+| 9 | API / 产物 / 导出统一绑定当前部署版本 | **通过** | 首页 live `styles.css?v=77` / `research-tasks.js?v=26` 各唯一；运行时 CSS 6 条灰卡规则；浏览器 `liveCss: ["/assets/styles.css?v=77"]`（`r1-computed-style.txt:2`）；静态断言、运行时、浏览器三处一致 |
+| 10 | tester 结论 / architect 签字 / 状态台账闭环 | **未通过（待闭环，非实现缺陷）** | tester 本报告已给「通过」结论与验收签字（17.9）；架构师合并裁决签字见 `docs/sdd/plans/047/runs/task-20/merge-review.md`（本 QA 不代签、不引用其结论充作自身判定）；spec 状态 / 台账 / 复盘 / 本地 commit 属主会话收口动作，报告出具时点工作树仍有 16 项未提交、未闭环。沿用 §2:103-105 先例保留原评分，不回改为 10/10 |
+
+**计分：9 PASS / 1 未通过（待闭环） = 9/10，满足 ≥ 9/10 门槛。未通过项无 P0/P1 阻塞、无 API E2E 失败、无关键产物缺失；逐项核对：P0=0、P1=0、API E2E 5/5 200、关键产物 0 缺失。**
+
+### 17.6 已知非阻塞项（如实登记，不虚报、不放宽、不制造红灯）
+
+1. **全仓 `ruff check .` 185 个历史 lint 债务**（`backend-implementation.md:56`：`Found 185 errors`，`[*] 97 fixable`）。本次唯一有内容改动的文件 `conftest.py` 单独 `ruff check` EXIT=0 / `All checks passed!`，4 个改名文件 0 行变化 → **未新增任何 lint 错误**；未越界修既有债务。
+2. **Langfuse `:3000` span 导出超时**：`full-regression-coverage.txt` 尾部 `Failed to export span batch due to timeout, max retries or shutdown.`；`backend-implementation.md:16,54` 迁移前后均出现 `Failed to export span batch ... Connection refused` transient 告警；spec §2 明确不处理，退出码与通过数不受影响。
+3. **Playwright 灰卡 `.evaluation-metric-params` 为 `null`**：`r1-computed-style.txt:2` 该灰卡无对应 DOM 节点，`getComputedStyle` 返回 null；**静态 CSS 契约已验证 6 条规则**（`deploy-verification.json:15` `gray_muted_strong_rules: 6`、运行时 CSS 6 条、`test_evaluation_irrelevant_metric_gray_contract.py:169`）。如实登记为数据特性，不虚报为实测色值；value/samples/detailRow 三类可读节点均实测 `rgb(90, 93, 102)`。
+4. **无真实 CI workflow**：本 QA 现场 `ls .github/workflows/` → `NO_WORKFLOW_DIR`；spec §2 明确不做（本环境无法验证平台侧运行、全量依赖本地 Ollama / Qdrant / Langfuse），属独立基础设施 spec，先做依赖评估与覆盖率基线。
+5. **平台 branch protection 未配置**：属平台侧配置，spec §2 划出范围，如实登记。
+6. **浏览器控制台其它视图 404**：spec §2 明确不处理（环境依赖 / 超出本范围），与本次评测视图验收无关。
+7. **QA 复核补充（范围外历史注释）**：`tests/frontend/test_frontend_map_header_actions_readability.py:29` 仍写「生效引用现为 75」。该文件**不在** spec §0 表 B / §4 B1 的 4 文件清单内、非 f-string 失败提示、无 `v=75` 字面断言，属其它批次描述性注释；按「不重写历史 / 最小改动 / 不改松任何断言」边界保留，登记为范围外观察项，不影响 B1 判定。
+
+### 17.7 明确不做边界核对（spec §2）
+
+| 边界 | 核对结论 | 依据 |
+|---|---|---|
+| 不新增 CI workflow | **遵守** | `ls .github/workflows/` → `NO_WORKFLOW_DIR`；`git status --short` 无任何 workflow 文件；仅新增本地 `.coveragerc` |
+| 不设 `fail_under` / 不放宽阈值 | **遵守** | `.coveragerc` 无 `fail_under` 且注释明言「刻意不设置」；`git status --short -- pytest.ini pyproject.toml setup.cfg tox.ini` 无输出（未改 pytest 默认 `addopts`）；83.02% 虽达标但未改阈值凑绿 |
+| 不改 `frontend/app.js` / `backend/**` 业务逻辑、不改 `:root`、不重写历史报告旧路径、不松断言 / 不删测试 / 不 skip / 不 xfail | **遵守** | `git diff HEAD --stat` 16 files 中无 `frontend/app.js`、无 `backend/**`；`frontend-implementation.md:20` 冻结断言 / 历史 marker / 9 处 `in INDEX` 均未改动；`backend-implementation.md:28` 4 改名 R100 / 0 行内容变化 |
+| 不 push / 不合 `main` / 不 force push | **遵守** | 本 QA 现场 `git branch --show-current` = `feature/spec-047-followup-cleanup`、`git log -1` = `42bbc188`、工作树 16 项未提交；本 QA 全程仅只读 git 查询，未执行 `commit` / `push` / `merge` / `force push`；本地闭环与裁决由主会话 / 架构师后续动作 |
+
+### 17.8 高频回归点复核（`regression-guard` 项目附加快照）
+
+- **JS 渲染 class 名与 CSS 选择器一致**：新增 4 条灰卡规则复用既有 `-value` / `-samples` / `-detail-row` / `-params` class，无新 class；`frontend-implementation.md:37-40` 反向确认 `app.js:7758/7793/7805/7813/7824` 用 `className` 渲染；本 QA `sed -n '4390,4416p' frontend/styles.css` 静态复核一致 → **通过**。
+- **静态资源版本号 `?v=N` 随改动升级**：`index.html:8` 77、`:902` 26、`:905` `app.js?v=77` 未动（本范围未改 app.js）；`v=25` / `v=76` 降级为纯属性 marker；静态断言、首页运行时、浏览器 liveCss 三处一致 → **通过**。
+- **XSS / CSS 作用域**：本范围未改 `frontend/app.js`，新增内容为 HTML 注释 marker / CSS 颜色规则 / Python 静态断言，无 `innerHTML` 拼接（`frontend-implementation.md:48-50`）；灰化规则一律带 `[data-status="needs_ground_truth"]` 限定，无全局污染 → **通过**。
+- **后端 SQLite 迁移 / 外键 `RESTRICT` / SSRF / USENIX 来源 / 额度 `try/finally`**：`git diff HEAD --stat` 显示本范围**未改 `backend/**` 任何文件**（spec §3「无新增数据模型字段、无后端改动、无接口变化」），此类回归点本范围**不涉及**（如实说明为「不涉及」，非「已验证通过」）。
+
+### 17.9 结论与验收签字
+
+| 项 | 内容 |
+|---|---|
+| **跨端集成验收** | **PASS** |
+| **§4 实现契约** | 9 / 9 通过，0 不通过 |
+| **§5 验证方式** | 8 / 8 通过 |
+| **十项人工验收准备度** | 9 / 10（≥ 9/10 门槛，达到交付准备度） |
+| **P0 / P1 / API E2E / 关键产物** | P0=0 / P1=0 / API E2E 5/5 200 / 关键产物 0 缺失 |
+| **结论** | **通过** |
+| **验收签字** | `tester`（跨端验收总控） |
+| **签字日期** | **2026-11-12** |
+| **模型 / 分派** | `hy4`（Tencent Hunyuan Hy）；`Task(tester)` 一次独立只读分派 |
+
+> **架构师合并裁决签字见 `docs/sdd/plans/047/runs/task-20/merge-review.md`**。本 QA 不代架构师签字、不做合并裁决、不引用其结论充作自身判定、不转 spec 状态。
+
+### 17.10 开发主管签字（留空，交架构师签署）
+
+| 项 | 内容 |
+|---|---|
+| 签字角色 | `architect`（架构师 · 合并裁决） |
+| 结论 | （待架构师填写） |
+| 日期 | （待架构师填写） |
+
+> 本节留空，沿用 §16.11 / §15.8 既有流程；签字栏留空则不得把 spec 转「已完成」（Gate 5）。
+
+### 17.11 纪律声明
+
+1. **写入边界**：本轮唯一写入为本节 §17 的**纯末尾追加**（`cat >> ... <<'EOF'` 单引号定界符），以及一份进展日志 `.codebuddy/agent-logs/spec-047/task-22/tester/20261112-000319.md`。**未改**任何业务代码 / 测试 / 配置 / spec 正文 / 状态台账 / plans / 复盘 / E2E 证据 / §1–§16 及「补记」既有文字；追加前 1023 行 sha `98a3a4e5d1b1c9ba98416bcbf8f3f002c80778b8`，追加后 `head -1023 | shasum` 比对一致、章节标题 Read 读回确认 §1–§16 仍在。
+2. **反伪造**：所有判定基于 `Read` / `Grep` 打开的真实文件与现场只读 `curl` / `git diff` / `grep`，逐条附 `文件:行`；未跑 mock 冒充实测、未把落盘 evidence 说成本 QA 亲自重跑、未重启服务、未重复跑单端全量单元测试。
+3. **不虚报**：17.6 六项已知非阻塞项 + 1 项范围外观察逐条如实登记；Playwright `params=null` 不虚报为实测色值；`83.02%` 达标但未改阈值凑绿；第 10 项准备度如实判「待闭环」不回改 10/10。
+4. **不越权**：未代 `frontend-tester` / `backend-tester` 出具单端报告、未代架构师签合并裁决、未转 spec 状态 / 写台账、**未 `git commit` / `push` / 合 `main` / `force push`**；工作树既有未提交改动属 task-20/21/22 交付物，非本 QA 引入。

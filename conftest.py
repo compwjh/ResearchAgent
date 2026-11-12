@@ -16,6 +16,8 @@ autouse 的 function 级 fixture，把 ``markdown_store.MEMORY_DIR`` 指向每�
 显式传入 ``memory_dir`` 的用例不受影响（它们自己指定路径）。
 """
 
+import time
+
 import pytest
 
 
@@ -91,3 +93,36 @@ def _pin_default_route_to_langchain_in_tests(monkeypatch):
     monkeypatch.setattr(
         "backend.app.chat.application.chat_runner.OLLAMA_ROUTE", "langchain"
     )
+
+
+# --- 由 tests/conftest.py 迁入的全局显式 opt-in fixture（spec-047 追加范围五 C2）---
+# 顶层不导入 backend；仅由 tests/system/conftest.py 与 tests/kb/conftest.py
+# 以目录级 autouse 形参引用启用，作用面不变。以下代码逐字取自原文件。
+
+
+_WARMUP_TERMINAL_STATUSES = ("ready", "failed")
+_WARMUP_DRAIN_TIMEOUT_SECONDS = 5.0
+
+
+def _drain_and_reset() -> None:
+    """等待在飞预热线程收敛后再清空登记表（消除逻辑竞态）。"""
+    from backend.app.platform import warmup
+
+    if warmup.is_warmup_started():
+        deadline = time.monotonic() + _WARMUP_DRAIN_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            snapshot = warmup.readiness_snapshot()
+            if snapshot and all(
+                item["status"] in _WARMUP_TERMINAL_STATUSES for item in snapshot.values()
+            ):
+                break
+            time.sleep(0.01)
+    warmup.reset_warmup()
+
+
+@pytest.fixture
+def clean_warmup_registry():
+    """每个用例前后把预热登记表恢复为干净的 unknown 状态（需显式声明才生效）。"""
+    _drain_and_reset()
+    yield
+    _drain_and_reset()

@@ -97,7 +97,7 @@ def test_live_asset_versions_are_unique_and_current() -> None:
     # 否则 _live_versions 的前缀正则会把 marker 误算成第二个 live 标签，
     # 使 [-1] 语义被污染。此处精确锁定每种资源仅 1 个 live 版本。
     assert _live_versions("app.js") == [77]
-    assert _live_versions("styles.css") == [76]
+    assert _live_versions("styles.css") == [77]
 
 
 def test_new_compatibility_marker_is_pure_attribute_fragment() -> None:
@@ -115,4 +115,4 @@ def test_new_compatibility_marker_is_pure_attribute_fragment() -> None:
     assert "<link" not in marker_line, "注释内不得含 <link 标签字面串"
     # 纯属性片段不会被 live 版本正则误算
     assert _live_versions("app.js") == [77]
-    assert _live_versions("styles.css") == [76]
+    assert _live_versions("styles.css") == [77]
