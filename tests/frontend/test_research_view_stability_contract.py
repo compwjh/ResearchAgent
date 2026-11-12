@@ -177,9 +177,9 @@ def test_hydrate_session_errors_are_diagnosable():
 
 # ---- 5. 版本号冻结 -------------------------------------------------------
 def test_static_asset_versions_are_unchanged():
-    assert "styles.css?v=75" in INDEX
-    assert "app.js?v=74" in INDEX
-    assert "research-tasks.js?v=26" in INDEX
+    assert "styles.css?v=76" in INDEX
+    assert "app.js?v=75" in INDEX
+    assert "research-tasks.js?v=28" in INDEX
     assert "research-session-ui.js?v=4" in INDEX
 
 

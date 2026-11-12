@@ -10,8 +10,8 @@
 2. **全局 `.secondary-button` 基础规则不被改动**（该 class 被会话、项目、论文、技能等视图复用）；
 3. 4 个按钮的 id / 文案 / 默认显隐与事件绑定不变（只改样式，不改交互）；
 4. 资源版本号已同步到生产页与同名 fixture，当前生效值见下方常量：
-   `MAP_CSS_VERSION`（literature-maps.css?v=34）、`APP_JS_VERSION`（app.js?v=74）、
-   `STYLES_VERSION`（styles.css?v=75，因新增 `#kb-view` 失败态/提示样式）。
+   `MAP_CSS_VERSION`（literature-maps.css?v=34）、`APP_JS_VERSION`（app.js?v=75）、
+   `STYLES_VERSION`（styles.css?v=76，因新增 `#kb-view` 失败态/提示样式）。
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 MAP_CSS = (ROOT / "frontend/literature-maps.css").read_text(encoding="utf-8")
 MAP_JS = (ROOT / "frontend/literature-maps.js").read_text(encoding="utf-8")
 MAP_CSS_VERSION = 34
-APP_JS_VERSION = 74
+APP_JS_VERSION = 75
 # styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用现为 75。
-STYLES_VERSION = 75
+STYLES_VERSION = 76
 HEADER_ACTION_IDS = (
     "literature-map-refresh-button",
     "literature-map-new-button",

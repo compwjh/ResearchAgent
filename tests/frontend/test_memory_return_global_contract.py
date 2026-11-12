@@ -9,7 +9,7 @@
   - 可读标题：memoryDocumentLabelFor 用项目名 / 短 ID，不再输出 projects/<32位id>.md。
   - 点击反馈：切换完成后滚动 + #memory-status 明确提示「返回全局」。
   - 状态同步：option 缺失时补 option、切回 global 清残留值、renderMemoryDocument 同步按钮/标题。
-  - 版本号：app.js?v=74 / styles.css?v=75；其余 5 行与历史 marker 不动。
+  - 版本号：app.js?v=75 / styles.css?v=76；其余 5 行与历史 marker 不动。
   - 护栏：不新增 <script>、不新增 innerHTML/insertAdjacentHTML/document.write、不删既有 DOM id、
     项目记忆列表默认仍展开且全量列出、既有 OCC/保存/409/作用域切换契约不回归。
 """
@@ -187,13 +187,13 @@ def test_no_new_script_tag_and_button_count_guard() -> None:
 # ---- 5. 版本号 ---------------------------------------------------------------
 
 def test_asset_versions_bumped_and_five_others_unchanged() -> None:
-    assert 'src="/assets/app.js?v=74"' in INDEX, "app.js 73 → 74"
-    assert 'href="/assets/styles.css?v=75"' in INDEX, "styles.css 74 → 75"
+    assert 'src="/assets/app.js?v=75"' in INDEX, "app.js 74 → 75"
+    assert 'href="/assets/styles.css?v=76"' in INDEX, "styles.css 75 → 76"
     # 其余 5 行保持
     for ref in (
         'href="/assets/literature-maps.css?v=34"',
         'src="/assets/literature-maps.js?v=47"',
-        'src="/assets/research-tasks.js?v=26"',
+        'src="/assets/research-tasks.js?v=28"',
         'src="/assets/research-session-ui.js?v=4"',
         'src="/assets/conversation-research.js?v=3"',
     ):
@@ -205,8 +205,8 @@ def test_asset_versions_bumped_and_five_others_unchanged() -> None:
 def test_live_tags_no_longer_reference_old_versions() -> None:
     live_app = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
     live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
-    assert live_app == ["74"], f"生效 app.js 版本唯一且为 74：{live_app}"
-    assert live_css == ["75"], f"生效 styles.css 版本唯一且为 75：{live_css}"
+    assert live_app == ["75"], f"生效 app.js 版本唯一且为 75：{live_app}"
+    assert live_css == ["76"], f"生效 styles.css 版本唯一且为 76：{live_css}"
 
 
 # ---- 6. 既有 OCC / 保存 / 409 / 作用域切换契约不回归 -------------------------

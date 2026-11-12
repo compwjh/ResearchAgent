@@ -43,7 +43,26 @@ _FORBIDDEN_KEYS = frozenset({
     "cot", "chain_of_thought", "hidden_prompt", "system_prompt", "prompt", "url",
     "password", "api_key", "authorization", "token", "cookie", "credential", "credentials",
 })
-_URL_RE = re.compile(r"(?:https?://|ftp://|www\.|localhost(?::\d+)?(?:/|$)|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:/|$))", re.IGNORECASE)
+# A bare domain without an explicit URL suffix must start at a token boundary
+# AND end in a known TLD: ``re.search`` otherwise matches the tail of a Python
+# fully qualified name (``backend.app...Service.search`` or the shorter
+# ``backend.catalog.search``) as ``label.TLD`` and rejects valid plans as
+# ``url_value``.  Domains with an explicit suffix (``/``, ``?``, ``#``) cannot
+# collide with an identifier, so they keep the wider match for any TLD.
+# ``example``/``test``/``invalid`` are RFC 2606 reserved TLDs used by the
+# existing safety contracts.  Scheme / www. / localhost branches are
+# unchanged, so real URLs are still blocked in every field (no field-name
+# exemption).
+_URL_RE = re.compile(
+    r"(?:https?://|ftp://|www\.|localhost(?::\d+)?(?:/|$)"
+    r"|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:/|\?|#)"
+    r"|(?<![a-z0-9._-])(?:[a-z0-9-]+\.)+(?:"
+    r"com|net|org|gov|edu|mil|int|io|ai|dev|co|us|uk|cn|jp|de|fr|kr|in|au|ca|eu|"
+    r"info|biz|me|app|xyz|online|site|tech|cloud|store|top|club|vip|shop|link|live|news|wiki|"
+    r"example|test|invalid"
+    r")(?::\d+)?$)",
+    re.IGNORECASE,
+)
 _SAFE_DIAGNOSTIC_CLASSIFICATIONS = frozenset({
     "forbidden_key", "url_value", "credential_pattern", "size_limit", "depth_limit", "shape_invalid",
 })
@@ -67,6 +86,15 @@ _SAFE_DIAGNOSTIC_FIELDS = frozenset({
     "allowed_params", "required_params", "parameters", "properties", "type", "enum", "items",
     "description", "format", "citations", "title_only", "metadata_only", "verified",
 })
+
+# A persisted, registry-normalized capability snapshot nests as
+# ``capabilities[].tools[].parameters.properties.<field>.items`` -- measured at
+# depth 11 with ``build_default_tool_registry``.  The old hard cap of 6 made
+# every ``revise_plan`` fail: that command falls untouched capabilities back to
+# the snapshot and re-validates the whole plan.  Keep a finite ceiling so
+# pathological payloads (e.g. 50 nested levels) are still refused by the depth
+# guard instead of leaving the recursive walk unbounded.
+_MAX_PLAN_DEPTH = 24
 
 
 class ResearchPlanOutput(BaseModel):
@@ -144,7 +172,7 @@ def plan_output_hash(payload: dict[str, Any]) -> str:
 
 
 def _walk_safe(value: Any, *, depth: int = 0, safe_path: tuple[str, ...] = ()) -> None:
-    if depth > 6:
+    if depth > _MAX_PLAN_DEPTH:
         raise PlanOutputInvalid(
             "plan nesting exceeds limit",
             safety_classification="depth_limit",
@@ -160,7 +188,23 @@ def _walk_safe(value: Any, *, depth: int = 0, safe_path: tuple[str, ...] = ()) -
         for key, child in value.items():
             normalized = str(key).casefold().replace("-", "_")
             child_path = (*safe_path, _safe_diagnostic_segment(key))
-            if normalized in _FORBIDDEN_KEYS or any(token in normalized for token in ("prompt", "cot", "chainofthought", "chain_of_thought", "url")):
+            # A forbidden *field name* is only a URL-hiding vector when the
+            # value is a string: smuggling a URL into a field called ``url``
+            # (or ``article_url``) is the shape this guard must still block.
+            # Persisted, registry-normalized capability snapshots legitimately
+            # reuse these names for JSON-Schema parameter definitions -- e.g.
+            # ``fetch_paper_detail`` -> ``parameters.properties.url`` is a dict
+            # of ``type``/``description`` -- and ``revise_plan`` feeds that
+            # whole snapshot back through this validator.  Structured values
+            # are therefore walked recursively instead of rejected by key
+            # name; every nested string still faces the _URL_RE, credential
+            # and nested key-name checks below.  The string-valued ban is
+            # unchanged, so a real URL (or any non-URL string) hidden in a
+            # ``url`` field is still refused.
+            if isinstance(child, str) and (
+                normalized in _FORBIDDEN_KEYS
+                or any(token in normalized for token in ("prompt", "cot", "chainofthought", "chain_of_thought", "url"))
+            ):
                 raise PlanOutputInvalid(
                     "reasoning fields are not allowed",
                     safety_classification="forbidden_key",

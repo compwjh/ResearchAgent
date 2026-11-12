@@ -2312,24 +2312,40 @@ function researchPlanFieldText(plan, key) {
     return safeResearchList(value).join('；') || '未提供研究方向';
   }
   if (key === 'capabilities') {
-    const list = safeResearchList(value);
-    const source = parseResearchProjection(value);
-    if (!list.length && source.sources) return safeResearchList(source.sources).join('；');
-    return list.join('；') || '未提供来源策略';
+    const items = Array.isArray(value) ? value : [];
+    return items.map((item) => {
+      const skill = item?.skill || {};
+      const tools = Array.isArray(skill.tools) ? skill.tools.join('、') : '';
+      return `${skill.name || '未知能力'}${tools ? `（工具：${tools}）` : ''}`;
+    }).join('；') || '未提供来源策略';
   }
   if (key === 'budget') {
     const budget = parseResearchProjection(value);
-    const parts = ['model_loops', 'tool_calls', 'seconds', 'worker_count', 'max_results']
-      .filter((name) => budget[name] !== undefined)
-      .map((name) => `${name}: ${safeResearchScalar(budget[name], '')}`);
+    const limits = budget.resource_limits || {};
+    const parts = [];
+    if (limits.max_model_loops != null) parts.push(`模型循环≤${limits.max_model_loops}`);
+    if (limits.max_tool_calls != null) parts.push(`工具调用≤${limits.max_tool_calls}`);
+    if (limits.max_seconds != null) parts.push(`时长≤${limits.max_seconds}s`);
+    if (budget.target_paper_count != null) parts.push(`目标论文${budget.target_paper_count}篇`);
+    if (budget.quality_profile) parts.push(`质量档${budget.quality_profile}`);
     return parts.join(' · ') || safeResearchScalar(value);
   }
-  if (key === 'report_structure') return safeResearchList(value).join('；') || safeResearchScalar(value);
+  if (key === 'report_structure') {
+    const report = parseResearchProjection(value);
+    const sections = Array.isArray(report.sections) ? report.sections : [];
+    const parts = [];
+    if (report.title) parts.push(report.title);
+    if (report.format) parts.push(report.format);
+    if (report.language) parts.push(report.language);
+    const head = parts.join('（') + (parts.length > 1 ? '）'.repeat(parts.length - 1) : '');
+    return [head, sections.join('/')].filter(Boolean).join(' · ') || safeResearchScalar(value);
+  }
   if (key === 'safety_summary') {
     const safety = parseResearchProjection(value);
-    const parts = ['degraded_sources', 'fallback', 'fallback_strategy', 'stop_reason', 'limitations']
-      .filter((name) => safety[name] !== undefined)
-      .map((name) => `${name}: ${safeResearchScalar(safety[name], '')}`);
+    const parts = [];
+    if (safety.decision) parts.push(safety.decision);
+    if (Array.isArray(safety.degraded) && safety.degraded.length) parts.push(`降级源：${safety.degraded.join('、')}`);
+    else if (Array.isArray(safety.constraints) && safety.constraints.length) parts.push(`约束：${safety.constraints.join('、')}`);
     return parts.join(' · ') || safeResearchScalar(value);
   }
   return safeResearchScalar(value);

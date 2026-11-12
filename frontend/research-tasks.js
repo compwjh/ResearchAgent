@@ -1643,16 +1643,43 @@
       safeSessionList(scope.research_directions || scope.questions).forEach((item) => parts.push(`方向：${item}`));
       return parts.join(' · ') || safeSessionValue(value);
     }
-    if (key === 'work_items' || key === 'capabilities' || key === 'report_structure') return safeSessionList(value).join('；') || safeSessionValue(value);
+    if (key === 'work_items') return safeSessionList(value).join('；') || safeSessionValue(value);
+    if (key === 'capabilities') {
+      const items = Array.isArray(value) ? value : [];
+      return items.map((item) => {
+        const skill = item?.skill || {};
+        const tools = Array.isArray(skill.tools) ? skill.tools.join('、') : '';
+        return `${skill.name || '未知能力'}${tools ? `（工具：${tools}）` : ''}`;
+      }).join('；') || '未提供来源策略';
+    }
     if (key === 'budget') {
       const budget = parseSessionJson(value);
-      return ['model_loops', 'tool_calls', 'seconds', 'worker_count', 'max_results']
-        .filter((name) => budget[name] !== undefined).map((name) => `${name}: ${safeSessionValue(budget[name], '')}`).join(' · ') || safeSessionValue(value);
+      const limits = budget.resource_limits || {};
+      const parts = [];
+      if (limits.max_model_loops != null) parts.push(`模型循环≤${limits.max_model_loops}`);
+      if (limits.max_tool_calls != null) parts.push(`工具调用≤${limits.max_tool_calls}`);
+      if (limits.max_seconds != null) parts.push(`时长≤${limits.max_seconds}s`);
+      if (budget.target_paper_count != null) parts.push(`目标论文${budget.target_paper_count}篇`);
+      if (budget.quality_profile) parts.push(`质量档${budget.quality_profile}`);
+      return parts.join(' · ') || safeSessionValue(value);
+    }
+    if (key === 'report_structure') {
+      const report = parseSessionJson(value);
+      const sections = Array.isArray(report.sections) ? report.sections : [];
+      const parts = [];
+      if (report.title) parts.push(report.title);
+      if (report.format) parts.push(report.format);
+      if (report.language) parts.push(report.language);
+      const head = parts.join('（') + (parts.length > 1 ? '）'.repeat(parts.length - 1) : '');
+      return [head, sections.join('/')].filter(Boolean).join(' · ') || safeSessionValue(value);
     }
     if (key === 'safety_summary') {
       const safety = parseSessionJson(value);
-      return ['degraded_sources', 'fallback', 'fallback_strategy', 'stop_reason', 'limitations']
-        .filter((name) => safety[name] !== undefined).map((name) => `${name}: ${safeSessionValue(safety[name], '')}`).join(' · ') || safeSessionValue(value);
+      const parts = [];
+      if (safety.decision) parts.push(safety.decision);
+      if (Array.isArray(safety.degraded) && safety.degraded.length) parts.push(`降级源：${safety.degraded.join('、')}`);
+      else if (Array.isArray(safety.constraints) && safety.constraints.length) parts.push(`约束：${safety.constraints.join('、')}`);
+      return parts.join(' · ') || safeSessionValue(value);
     }
     return safeSessionValue(value);
   }
@@ -1662,9 +1689,105 @@
     if (command === 'approve_plan') return { plan_version: Number(plan?.version || plan?.plan_version || 0), output_hash: safeSessionValue(plan?.output_hash, '') };
     if (command === 'approve_capability') return { approval_request_id: safeSessionValue(approval?.approval_request_id, ''), skill: safeSessionValue(requested.skill, ''), skill_name: safeSessionValue(requested.skill_name, ''), tools: safeSessionList(requested.tools) };
     if (command === 'approve_resource_extension') return { approval_request_id: safeSessionValue(approval?.approval_request_id, ''), model_loops: Number(requested.model_loops) || 0, tool_calls: Number(requested.tool_calls) || 0, seconds: Number(requested.seconds) || 0 };
-    if (command === 'revise_plan') return Object.fromEntries(['objective', 'scope', 'work_items', 'capabilities', 'budget', 'report_structure'].map((key) => [key, sessionPlanField(plan, key)]));
+    if (command === 'revise_plan') return Object.fromEntries([
+      ...['objective', 'scope', 'work_items', 'capabilities', 'budget', 'report_structure'].map((key) => [key, sessionPlanField(plan, key)]),
+      ['safe_summary', sessionPlanField(plan, 'safety_summary')],
+    ]);
     if (command === 'decline_request') return { approval_request_id: safeSessionValue(approval?.approval_request_id, '') };
     return {};
+  }
+
+  // 研究页「会话计划」后 4 个字段的确定性推荐候选：全部从当前 plan 派生，
+  // 不依赖 LLM，也不硬编码 content_hash / output_hash 等易变字段。
+  function researchPlanCapabilityChoices(plan) {
+    const caps = sessionPlanField(plan, 'capabilities');
+    const items = Array.isArray(caps) ? caps : [];
+    const matching = (names) => items.filter((item) => names.includes(item?.skill?.name));
+    return [
+      { label: '全部能力', recommended: true, value: items },
+      { label: '检索+评估', recommended: false, value: matching(['usenix-catalog-orchestration', 'research-paper-evaluation']) },
+      { label: '仅目录检索', recommended: false, value: matching(['usenix-catalog-orchestration']) },
+    ];
+  }
+
+  function researchPlanBudgetChoices(plan) {
+    const budget = parseSessionJson(sessionPlanField(plan, 'budget')) || {};
+    const current = parseSessionJson(budget.resource_limits) || {};
+    const loopsRatio = Number(current.task_max_model_loops) > 0 && Number(current.max_model_loops) > 0
+      ? Number(current.task_max_model_loops) / Number(current.max_model_loops) : 4;
+    const callsRatio = Number(current.task_max_tool_calls) > 0 && Number(current.max_tool_calls) > 0
+      ? Number(current.task_max_tool_calls) / Number(current.max_tool_calls) : 4;
+    const variant = (label, recommended, loops, calls, seconds, papers) => ({
+      label, recommended,
+      value: {
+        ...budget,
+        quality_profile: budget.quality_profile || 'balanced',
+        resource_limits: {
+          ...current,
+          max_model_loops: loops,
+          max_tool_calls: calls,
+          max_seconds: seconds,
+          task_max_model_loops: Math.round(loops * loopsRatio),
+          task_max_tool_calls: Math.round(calls * callsRatio),
+        },
+        target_paper_count: papers,
+      },
+    });
+    return [
+      variant('均衡', true, 160, 640, 21600, 5),
+      variant('快速', false, 80, 320, 10800, 3),
+      variant('深度', false, 320, 1280, 43200, 8),
+    ];
+  }
+
+  function researchPlanReportChoices(plan) {
+    const report = parseSessionJson(sessionPlanField(plan, 'report_structure')) || {};
+    const variant = (label, recommended, sections) => ({ label, recommended, value: { ...report, sections } });
+    return [
+      variant('标准综述', true, ['研究问题', '方法与来源', '主要发现', '局限与后续工作']),
+      variant('深度报告', false, ['研究问题', '方法与来源', '主要发现', '证据对比', '局限与后续工作', '结论']),
+      variant('简报', false, ['研究问题', '主要发现', '局限']),
+    ];
+  }
+
+  function researchPlanSafetyChoices(plan) {
+    const safety = parseSessionJson(sessionPlanField(plan, 'safety_summary')) || {};
+    const variant = (label, recommended, decision, notes) => ({
+      label, recommended,
+      value: {
+        decision, notes,
+        constraints: Array.isArray(safety.constraints) ? safety.constraints : [],
+        degraded: Array.isArray(safety.degraded) ? safety.degraded : [],
+      },
+    });
+    return [
+      variant('平衡', true, '遇到来源降级时保留已有证据并收敛，不阻断整体研究', '保留既有证据，来源降级时收敛范围后继续研究。'),
+      variant('保守', false, '任何来源降级立即暂停并提示用户确认后再继续', '来源降级先暂停，等待用户确认。'),
+      variant('弹性', false, '来源降级时自动重试，超过重试阈值后再收敛并报告', '降级先自动重试，达到阈值后收敛并报告。'),
+    ];
+  }
+
+  const RESEARCH_PLAN_FIELD_CHOICES = Object.freeze({
+    capabilities: researchPlanCapabilityChoices,
+    budget: researchPlanBudgetChoices,
+    report_structure: researchPlanReportChoices,
+    safety_summary: researchPlanSafetyChoices,
+  });
+  const RESEARCH_PLAN_CHOICE_SCOPE_KEYS = Object.freeze({
+    capabilities: 'capabilities', budget: 'budget',
+    report_structure: 'report_structure', safety_summary: 'safe_summary',
+  });
+  // 记录最近一次成功采用的候选（按 session + 字段），供重渲染后保留选中态。
+  const sessionPlanChoiceSelections = new Map();
+
+  // 推荐候选的提交 scope：后端 /commands 的 scope_json 限制嵌套深度 ≤ 4，而完整
+  // plan 的 capabilities[].skill.tools 会达 5 层；_revise_plan 对未传字段一律回退
+  // 旧值。故只提交目标字段与当前 safe_summary（降级策略必须显式带上，否则后端
+  // 写不回该字段），其余字段由后端保持原值。
+  function researchPlanChoiceScope(plan, key, value) {
+    const base = sessionCommandScope('revise_plan', null, plan);
+    const scopeKey = RESEARCH_PLAN_CHOICE_SCOPE_KEYS[key];
+    return { safe_summary: base.safe_summary, [scopeKey]: value };
   }
 
   function setSessionCommandState(button, status, label = '') {
@@ -1772,7 +1895,74 @@
     if (!plan && !approvals.length) return;
     setText('research-session-plan-meta', `会话计划 v${version || '—'} · ${plan?.status === 'proposed' ? '待审批' : (plan?.status || '已记录')}`);
     const fields = byId('research-session-plan-fields'); clearNode(fields);
-    SESSION_PLAN_FIELDS.forEach(([key, label]) => { const dt = state.document.createElement('dt'); dt.className = 'research-session-plan-field-name'; dt.textContent = label; const dd = state.document.createElement('dd'); dd.className = 'research-session-plan-field-value'; dd.textContent = sessionPlanFieldText(plan || {}, key); fields.append(dt, dd); });
+    const choicesByField = plan ? RESEARCH_PLAN_FIELD_CHOICES : {};
+    SESSION_PLAN_FIELDS.forEach(([key, label]) => {
+      const dt = state.document.createElement('dt'); dt.className = 'research-session-plan-field-name'; dt.textContent = label;
+      const dd = state.document.createElement('dd'); dd.className = 'research-session-plan-field-value'; dd.textContent = sessionPlanFieldText(plan || {}, key);
+      fields.append(dt, dd);
+      const buildChoices = choicesByField[key];
+      if (!buildChoices || !sessionId || version <= 0) return;
+      const choices = buildChoices(plan);
+      if (!Array.isArray(choices) || !choices.length) return;
+      const container = state.document.createElement('div'); container.className = 'research-plan-field-choices';
+      const selectionKey = `${sessionId}::${key}`;
+      const selectedLabel = sessionPlanChoiceSelections.get(selectionKey);
+      const buttons = [];
+      const buttonText = (choice) => choice.recommended ? `★ ${choice.label}（推荐）` : choice.label;
+      const resetButtons = () => buttons.forEach((entry) => {
+        entry.button.disabled = false; entry.button.dataset.state = '';
+        entry.button.setAttribute('aria-busy', 'false');
+        entry.button.classList.remove('is-loading', 'is-success', 'is-error', 'is-stale', 'is-conflict', 'is-selected');
+        entry.button.setAttribute('aria-pressed', 'false');
+        entry.button.textContent = buttonText(entry.choice);
+      });
+      choices.forEach((choice) => {
+        const button = state.document.createElement('button');
+        button.type = 'button';
+        button.className = 'secondary-button btn-outline research-plan-choice';
+        if (choice.recommended) button.classList.add('is-recommended');
+        button.setAttribute('aria-pressed', 'false');
+        button.textContent = buttonText(choice);
+        if (selectedLabel && selectedLabel === choice.label) {
+          button.classList.add('is-selected'); button.setAttribute('aria-pressed', 'true');
+          button.textContent = `已采用：${choice.label}`;
+        }
+        button.addEventListener('click', async () => {
+          if (button.dataset.state === 'loading') return;
+          const scope = researchPlanChoiceScope(plan, key, choice.value);
+          buttons.forEach((entry) => { entry.button.disabled = true; });
+          const onSuccess = async (result) => {
+            sessionPlanChoiceSelections.set(selectionKey, choice.label);
+            resetButtons();
+            button.classList.add('is-selected'); button.setAttribute('aria-pressed', 'true');
+            button.textContent = `已采用：${choice.label}`;
+            try {
+              const fresh = await requestJson(`/api/research-sessions/${encodeURIComponent(sessionId)}`);
+              const freshPlan = fresh?.plan || plan;
+              if (state.selectedTask) state.selectedTask = { ...state.selectedTask, research_session: fresh, session_plan: freshPlan, session_approvals: fresh?.approvals || [] };
+              renderSessionPlan(freshPlan, fresh?.approvals || [], fresh);
+            } catch (_) {
+              // 重新拉取失败时，用已提交的候选值本地重渲染，仍能显示新值。
+              const planKey = RESEARCH_PLAN_CHOICE_SCOPE_KEYS[key];
+              renderSessionPlan({ ...plan, [planKey]: choice.value }, approvals, session);
+            }
+          };
+          const pending = submitSessionCommand(sessionId, 'revise_plan', version, scope, button, onSuccess);
+          button.textContent = '应用…';
+          const result = await pending;
+          const failedState = button.dataset.state;
+          button.dataset.state = '';
+          if (!result) {
+            resetButtons();
+            button.classList.add('is-error');
+            button.textContent = failedState === 'stale' ? '版本已过期' : failedState === 'conflict' ? '已有窗口处理' : '提交失败，重试';
+          }
+        });
+        container.appendChild(button);
+        buttons.push({ button, choice });
+      });
+      dd.appendChild(container);
+    });
     renderSessionApprovals(approvals, sessionId, version, plan || {});
     const actions = byId('research-session-plan-actions'); clearNode(actions);
     if (sessionId && plan && version > 0) {

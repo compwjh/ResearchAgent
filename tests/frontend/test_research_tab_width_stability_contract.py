@@ -16,7 +16,7 @@
   2. index.html 内联 workspace 规则无 display:grid → 不受隐式 auto 列影响、
      无需同步单列声明（历史独立交付只镜像主 tab 规则），且不覆盖 styles.css 修复；
   3. 两处 CSS 的 .research-create-panel 规则不得再加让面板变窄的规则；
-  4. 静态资源版本号 styles.css?v=75 / app.js?v=74 与 index.html 生效引用一致。
+  4. 静态资源版本号 styles.css?v=76 / app.js?v=75 与 index.html 生效引用一致。
 """
 from __future__ import annotations
 
@@ -122,6 +122,6 @@ def test_create_panel_has_no_width_narrowing_declarations_in_both_stylesheets():
 
 # ---- 4. 静态资源版本号 ------------------------------------------------------
 def test_static_asset_versions_match_index_html():
-    assert 'href="/assets/styles.css?v=75"' in INDEX, "styles.css 改动后须升到 ?v=75"
-    assert 'src="/assets/app.js?v=74"' in INDEX, "app.js 未改动，保持 ?v=74 不无谓 bump"
+    assert 'href="/assets/styles.css?v=76"' in INDEX, "styles.css 改动后须升到 ?v=76"
+    assert 'src="/assets/app.js?v=75"' in INDEX, "app.js 已改，升到 ?v=75"
     assert 'href="/assets/styles.css?v=74"' not in INDEX, "旧版 ?v=74 生效引用须已同步"

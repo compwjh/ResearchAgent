@@ -763,7 +763,10 @@ def test_safe_scope_rejections_have_closed_classification_and_schema_paths(
 
 def test_safe_scope_depth_rejection_uses_unknown_path_segments_without_echoing_keys():
     nested = "value"
-    for _ in range(8):
+    # The shared depth ceiling was raised to 24 to admit registry-normalized
+    # capability snapshots (measured max depth 11), so keep this contract on a
+    # clearly pathological payload that still exceeds the finite ceiling.
+    for _ in range(50):
         nested = {"private_data_branch": nested}
 
     with pytest.raises(PlanOutputInvalid) as caught:

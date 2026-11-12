@@ -43,7 +43,7 @@ UNDECORATED = re.compile(r"(?<![\w.-])secondary-button(?![\w-])(?!\s+btn-outline
 BASELINE_COUNTS = {
     "index.html": 25,
     "app.js": 29,
-    "research-tasks.js": 11,
+    "research-tasks.js": 12,  # +1：研究页会话计划 4 字段推荐候选按钮（secondary-button btn-outline research-plan-choice）
     "literature-maps.js": 58,
 }
 
@@ -193,9 +193,9 @@ def test_xss_sensitive_textcontent_is_kept_verbatim() -> None:
 # ---- 4. task boundaries ------------------------------------------------------
 def test_asset_versions_are_frozen() -> None:
     for marker in (
-        'href="/assets/styles.css?v=75"',
-        'src="/assets/app.js?v=74"',
-        'src="/assets/research-tasks.js?v=26"',
+        'href="/assets/styles.css?v=76"',
+        'src="/assets/app.js?v=75"',
+        'src="/assets/research-tasks.js?v=28"',
         'src="/assets/literature-maps.js?v=47"',
         'src="/assets/conversation-research.js?v=3"',
         'href="/assets/literature-maps.css?v=34"',

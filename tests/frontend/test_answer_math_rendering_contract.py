@@ -32,7 +32,7 @@ def test_katex_assets_are_local_and_loaded_before_app():
     assert "/assets/vendor/katex/katex.min.js?v=1" in INDEX
 
     katex_js = INDEX.index('src="/assets/vendor/katex/katex.min.js?v=1"')
-    app_js = INDEX.index("src=\"/assets/app.js?v=74\"")
+    app_js = INDEX.index("src=\"/assets/app.js?v=75\"")
     assert katex_js < app_js
 
     assert "cdn.jsdelivr.net" not in INDEX

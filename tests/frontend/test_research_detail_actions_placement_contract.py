@@ -12,7 +12,7 @@
   3. 内联 <style id="research-tasks-inline-style"> 与 styles.css 两处主规则
      都含右上角布局声明（两列 grid + 按钮组第 2 列靠右顶部对齐）；
   4. 两处 <=760px 断点都有单列覆盖（内联主规则层叠顺序更高，不同步会压住窄屏）；
-  5. 静态资源版本号 styles.css?v=75 / app.js?v=74 生效引用唯一且一致，
+  5. 静态资源版本号 styles.css?v=76 / app.js?v=75 生效引用唯一且一致，
      旧生效引用已同步、历史兼容 marker 不被误改。
 
 已知行为变化（如实保留，不补偿）：按钮组随 #research-tabpanel-tasks 一起，
@@ -215,12 +215,12 @@ def test_both_stylesheets_collapse_head_to_single_column_on_narrow_screens():
 
 # ---- 5. 版本号一致 ---------------------------------------------------------
 def test_asset_versions_are_synchronised():
-    assert 'href="/assets/styles.css?v=75"' in INDEX, "改了 styles.css，生效引用须升到 ?v=75"
-    assert 'src="/assets/app.js?v=74"' in INDEX, "app.js 未改，保持 ?v=74 不无谓 bump"
+    assert 'href="/assets/styles.css?v=76"' in INDEX, "改了 styles.css，生效引用须升到 ?v=76"
+    assert 'src="/assets/app.js?v=75"' in INDEX, "app.js 已改，升到 ?v=75"
     assert 'href="/assets/styles.css?v=74"' not in INDEX, "旧生效引用 ?v=74 须已同步"
     live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     live_app = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
-    assert live_css == ["75"], f"生效 styles.css 版本唯一且为 75：{live_css}"
-    assert live_app == ["74"], f"生效 app.js 版本唯一且为 74：{live_app}"
+    assert live_css == ["76"], f"生效 styles.css 版本唯一且为 76：{live_css}"
+    assert live_app == ["75"], f"生效 app.js 版本唯一且为 75：{live_app}"
     # 历史兼容 marker 注释保持原样（不因升版本被误删）
     assert "styles.css?v=62" in INDEX and "app.js?v=31" in INDEX, "历史兼容 marker 不动"

@@ -177,11 +177,11 @@ def test_new_code_uses_text_only_and_preserves_dom_ids() -> None:
 def test_asset_versions_are_frozen_for_this_release_batch() -> None:
     """本任务与 B/C/D/F 同属一个发布批次，共用同一组版本号，不单独 bump。"""
     for ref in (
-        'href="/assets/styles.css?v=75"',
-        'src="/assets/app.js?v=74"',
+        'href="/assets/styles.css?v=76"',
+        'src="/assets/app.js?v=75"',
         'href="/assets/literature-maps.css?v=34"',
         'src="/assets/literature-maps.js?v=47"',
-        'src="/assets/research-tasks.js?v=26"',
+        'src="/assets/research-tasks.js?v=28"',
         'src="/assets/research-session-ui.js?v=4"',
         'src="/assets/conversation-research.js?v=3"',
     ):

@@ -392,6 +392,11 @@ class PlanApprovalService:
             "report_structure": scope.get("report_structure", json.loads(old.report_structure_json)),
             "safe_summary": json.loads(old.safety_summary_json), "source_refs": scope.get("source_refs", []),
         }
+        raw_safe_summary = scope.get("safe_summary")
+        # author_plan -> _validate_bounded_sections requires safe_summary to be
+        # a dict; ignore any other shape so a malformed scope keeps the old value.
+        if isinstance(raw_safe_summary, dict):
+            revised["safe_summary"] = raw_safe_summary
         revised["output_hash"] = plan_output_hash(revised)
         return self.author_plan(session.research_session_id, owner_id, revised)
 
@@ -467,9 +472,21 @@ class PlanApprovalService:
             for capability in capabilities:
                 if not isinstance(capability, dict):
                     raise ValueError("capability must be an object")
-                skill_name = capability.get("skill") or capability.get("skill_name")
+                raw_skill = capability.get("skill") or capability.get("skill_name")
                 tools = capability.get("tools", [])
-                if not isinstance(skill_name, str) or not isinstance(tools, list):
+                if not isinstance(tools, list) or not isinstance(raw_skill, (str, dict)):
+                    raise ValueError("capability requires skill and tools")
+                # ``_revise_plan`` falls untouched capabilities back to the
+                # already-normalized snapshot persisted in the DB, where
+                # ``skill`` is a registry dict and ``tools`` is a list of tool
+                # dicts.  Recover the registered names so normalization stays
+                # idempotent without feeding dicts into the name-based lookup.
+                skill_name = raw_skill.get("name") if isinstance(raw_skill, dict) else raw_skill
+                tool_names = [
+                    (tool.get("name") or tool.get("entry")) if isinstance(tool, dict) else tool
+                    for tool in tools
+                ]
+                if not isinstance(skill_name, str):
                     raise ValueError("capability requires skill and tools")
                 skill = self.skill_registry.get_skill(skill_name)
                 if skill is None:
@@ -482,7 +499,7 @@ class PlanApprovalService:
                     "enabled": True, "source_ref": skill.name, "tools": list(skill.tools),
                 }
                 tool_snapshots = []
-                for name in tools:
+                for name in tool_names:
                     if not isinstance(name, str) or name not in skill.tools:
                         raise ValueError("tool is outside Skill declaration")
                     tool = self.tool_registry.get_tool(name)
@@ -545,7 +562,7 @@ class PlanApprovalService:
             raise ResearchCommandError("CAPABILITY_NOT_AUTHORIZED", str(exc)) from exc
         allowed = {
             "approve_plan": {"plan_version", "output_hash"},
-            "revise_plan": {"objective", "scope", "work_items", "capabilities", "budget", "report_structure", "source_refs"},
+            "revise_plan": {"objective", "scope", "work_items", "capabilities", "budget", "report_structure", "source_refs", "safe_summary"},
             "cancel_research": set(),
             "approve_capability": {"skill", "skill_name", "tools", "approval_request_id"},
             "approve_resource_extension": {"model_loops", "tool_calls", "seconds", "approval_request_id"},

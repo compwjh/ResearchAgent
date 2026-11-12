@@ -4370,3 +4370,12 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hash-inline { font-family: 'DM Mono', monospace; font-size: .92em; letter-spacing: .01em; }
 .clamp-3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+
+/* 研究页「会话计划」4 个参数字段的推荐候选按钮（限定 #research-view，避免全局污染）。
+   视觉复用 .secondary-button.btn-outline，这里只补最小布局与选中/失败态。 */
+#research-view .research-plan-field-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+#research-view .research-plan-choice { min-height: 24px; padding: 3px 8px; font: 10px/1.35 'DM Mono', monospace; }
+#research-view .research-plan-choice.is-recommended { border-color: var(--accent); }
+#research-view .research-plan-choice.is-loading { cursor: wait; opacity: .7; }
+#research-view .research-plan-choice.is-error { border-color: #efb3b3; color: #a33232; }
+#research-view .research-plan-choice.is-selected, #research-view .research-plan-choice[aria-pressed="true"] { border-color: #acd5b7; background: #f1fbf3; color: #287c43; }
