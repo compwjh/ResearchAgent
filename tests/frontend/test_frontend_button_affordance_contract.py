@@ -42,11 +42,14 @@ TOKEN = re.compile(r"(?<![\w.-])secondary-button(?![\w-])")
 UNDECORATED = re.compile(r"(?<![\w.-])secondary-button(?![\w-])(?!\s+btn-outline)")
 # 合并 spec-047 评测视图后 index.html 新增 3 个 secondary-button
 # （搜索重试 / 刷新历史 / 对比），冻结基线按真实 UI 同步为 28；三者均带 btn-outline。
+# Spec-048：header 移除「新建地图」「刷新状态」两个 secondary-button btn-outline 文字按钮
+# （刷新改为 icon-button literature-map-tool 同族图标按钮，不再带 secondary-button token），
+# literature-maps.js 的 secondary-button token 由 58 精确降为 56，按真实源码同步该基线。
 BASELINE_COUNTS = {
     "index.html": 28,
     "app.js": 29,
     "research-tasks.js": 11,
-    "literature-maps.js": 58,
+    "literature-maps.js": 56,
 }
 
 

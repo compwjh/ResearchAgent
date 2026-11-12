@@ -966,15 +966,6 @@
     heading.append(createElement('h1', '', '自动主题探索'));
     heading.append(createElement('p', 'literature-map-subtitle', '输入主题，保存一张可继续探索的论文关系图。'));
     const headerActions = createElement('div', 'literature-map-header-actions literature-map-job-actions');
-    const refreshButton = createElement('button', 'secondary-button btn-outline', '刷新状态');
-    refreshButton.type = 'button';
-    refreshButton.id = 'literature-map-refresh-button';
-    refreshButton.title = '重新读取地图和作业状态';
-    headerActions.append(refreshButton);
-    const newButton = createElement('button', 'secondary-button btn-outline', '新建地图');
-    newButton.type = 'button';
-    newButton.id = 'literature-map-new-button';
-    headerActions.append(newButton);
     const continueButton = createElement('button', 'secondary-button btn-outline', '继续搜索');
     continueButton.type = 'button';
     continueButton.id = 'literature-map-continue-search';
@@ -1003,11 +994,45 @@
     header.append(heading, headerActions);
     root.append(header);
 
+    const mainTabs = createElement('div', 'literature-map-main-tabs');
+    mainTabs.id = 'literature-map-main-tabs';
+    mainTabs.setAttribute('role', 'tablist');
+    mainTabs.setAttribute('aria-label', '文献地图视图');
+    const mapsTab = createElement('button', 'literature-map-main-tab', '地图');
+    mapsTab.type = 'button';
+    mapsTab.id = 'literature-map-tab-maps';
+    mapsTab.setAttribute('role', 'tab');
+    mapsTab.setAttribute('data-map-tab', 'maps');
+    mapsTab.setAttribute('aria-controls', 'literature-map-tabpanel-maps');
+    mapsTab.setAttribute('aria-selected', 'true');
+    mapsTab.setAttribute('tabindex', '0');
+    const createTab = createElement('button', 'literature-map-main-tab', '新建地图');
+    createTab.type = 'button';
+    createTab.id = 'literature-map-tab-create';
+    createTab.setAttribute('role', 'tab');
+    createTab.setAttribute('data-map-tab', 'create');
+    createTab.setAttribute('aria-controls', 'literature-map-tabpanel-create');
+    createTab.setAttribute('aria-selected', 'false');
+    createTab.setAttribute('tabindex', '-1');
+    mainTabs.append(mapsTab, createTab);
+    root.append(mainTabs);
+
     const notice = createElement('div', 'literature-map-notice');
     notice.id = 'literature-map-status';
     notice.setAttribute('role', 'status');
     notice.setAttribute('aria-live', 'polite');
     root.append(notice);
+
+    const mapsTabPanel = createElement('section', 'literature-map-tabpanel');
+    mapsTabPanel.id = 'literature-map-tabpanel-maps';
+    mapsTabPanel.setAttribute('role', 'tabpanel');
+    mapsTabPanel.setAttribute('aria-labelledby', 'literature-map-tab-maps');
+    const createTabPanel = createElement('section', 'literature-map-tabpanel');
+    createTabPanel.id = 'literature-map-tabpanel-create';
+    createTabPanel.setAttribute('role', 'tabpanel');
+    createTabPanel.setAttribute('aria-labelledby', 'literature-map-tab-create');
+    createTabPanel.hidden = true;
+    root.append(mapsTabPanel, createTabPanel);
 
     const grid = createElement('div', 'literature-map-grid');
     const listPanel = createElement('aside', 'literature-map-panel literature-map-list-panel');
@@ -1152,7 +1177,7 @@
     formActions.append(cancelButton, submitButton);
     form.append(topicLabel, nameLabel, formGrid, filterGrid, formActions);
     createPanel.append(createTitle, form);
-    listPanel.append(createPanel);
+    createTabPanel.append(createPanel);
 
     const canvasPanel = createElement('main', 'literature-map-panel literature-map-canvas-panel');
     const canvasHead = createElement('header', 'literature-map-panel-head literature-map-canvas-head');
@@ -1163,6 +1188,14 @@
     currentMeta.id = 'literature-map-current-meta';
     canvasTitle.append(currentTitle, currentMeta);
     const tools = createElement('div', 'literature-map-tools');
+    const refreshButton = createElement('button', 'icon-button literature-map-tool');
+    refreshButton.type = 'button';
+    refreshButton.id = 'literature-map-refresh-button';
+    refreshButton.title = '重新读取地图和作业状态';
+    refreshButton.setAttribute('aria-label', '刷新状态');
+    const refreshIcon = createElement('span', 'literature-map-refresh-icon');
+    refreshButton.append(refreshIcon);
+    tools.append(refreshButton);
     const mobileListButton = createElement('button', 'secondary-button btn-outline literature-map-mobile-list-open', '地图列表');
     mobileListButton.type = 'button';
     mobileListButton.id = 'literature-map-mobile-list-open';
@@ -1333,7 +1366,7 @@
     detailPanel.append(detail);
 
     grid.append(listPanel, canvasPanel, detailPanel);
-    root.append(grid);
+    mapsTabPanel.append(grid);
     const mobileBackdrop = createElement('button', 'literature-map-mobile-backdrop');
     mobileBackdrop.type = 'button';
     mobileBackdrop.id = 'literature-map-mobile-backdrop';
@@ -1349,7 +1382,7 @@
       refs.detailPanel.setAttribute('aria-hidden', 'true');
     }
     state.mobileViewport = isMobileViewport();
-    bindEvents(newButton, refreshButton, closeDetail);
+    bindEvents(refreshButton, closeDetail);
     state.mounted = true;
     renderMapList();
     loadTags();
@@ -1516,8 +1549,39 @@
     refs.detailPanel?.removeAttribute('aria-hidden');
   }
 
-  function bindEvents(newButton, refreshButton, closeDetail) {
+  const MAP_TAB_IDS = Object.freeze({
+    maps: { tab: 'literature-map-tab-maps', panel: 'literature-map-tabpanel-maps' },
+    create: { tab: 'literature-map-tab-create', panel: 'literature-map-tabpanel-create' },
+  });
+  const MAP_TAB_ORDER = Object.freeze(['maps', 'create']);
+  // 只切 hidden / aria-selected / tabIndex + 可选 focus；面板不重建，表单值往返保留。
+  function activateMapTab(name, focus = false) {
+    const key = MAP_TAB_IDS[name] ? name : 'maps';
+    MAP_TAB_ORDER.forEach((tabKey) => {
+      const ids = MAP_TAB_IDS[tabKey];
+      const selected = tabKey === key;
+      const tab = document.getElementById(ids.tab);
+      const panel = document.getElementById(ids.panel);
+      if (tab) {
+        tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      if (panel) panel.hidden = !selected;
+    });
+    state.createPanelOpen = key === 'create';
+    if (refs.createPanel) refs.createPanel.hidden = key !== 'create';
+    if (focus) {
+      const tab = document.getElementById(MAP_TAB_IDS[key].tab);
+      if (tab && typeof tab.focus === 'function') tab.focus();
+    }
+  }
+
+  function bindEvents(refreshButton, closeDetail) {
+    let refreshSpinTimer = 0;
     refreshButton.addEventListener('click', () => {
+      refreshButton.classList.add('is-spinning');
+      window.clearTimeout(refreshSpinTimer);
+      refreshSpinTimer = window.setTimeout(() => refreshButton.classList.remove('is-spinning'), 700);
       if (state.selectedMapId) selectMap(state.selectedMapId);
       else loadMaps();
     });
@@ -1526,16 +1590,30 @@
     refs.openSavedPreviewButton.addEventListener('click', () => openSavedPreview());
     refs.stopJobButton.addEventListener('click', () => stopCurrentJob());
     refs.retryJobButton.addEventListener('click', () => retryCurrentJob());
-    newButton.addEventListener('click', () => {
-      if (isMobileViewport() && !state.mobile.listOpen) openMobilePanel('list', newButton);
-      if (!refs.createPanel.hidden) {
-        closeCreatePanel();
-      } else {
-        refs.createPanel.hidden = false;
-        state.createPanelOpen = true;
-        refs.topicInput.focus();
-        loadCreateOptions();
-      }
+    MAP_TAB_ORDER.forEach((key) => {
+      const tab = document.getElementById(MAP_TAB_IDS[key].tab);
+      if (!tab) return;
+      tab.addEventListener('click', () => {
+        activateMapTab(key);
+        if (key === 'create') {
+          refs.topicInput.focus();
+          loadCreateOptions();
+        }
+      });
+      tab.addEventListener('keydown', (event) => {
+        const index = MAP_TAB_ORDER.indexOf(key);
+        let nextIndex = index;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % MAP_TAB_ORDER.length;
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + MAP_TAB_ORDER.length) % MAP_TAB_ORDER.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = MAP_TAB_ORDER.length - 1;
+        else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateMapTab(key); if (key === 'create') loadCreateOptions(); return; }
+        else return;
+        if (nextIndex === index) return;
+        event.preventDefault();
+        activateMapTab(MAP_TAB_ORDER[nextIndex], true);
+        if (MAP_TAB_ORDER[nextIndex] === 'create') loadCreateOptions();
+      });
     });
     refs.cancelButton.addEventListener('click', () => {
       closeCreatePanel();
@@ -1676,6 +1754,8 @@
     refs.form.reset();
     refs.limitInput.value = '30';
     refs.projectInput.value = '';
+    // 取消 / 建图成功 / 离开视图统一切回「地图」tab 并聚焦；清理逻辑保留不丢。
+    activateMapTab('maps', true);
   }
 
   function filteredMaps() {

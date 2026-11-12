@@ -137,7 +137,7 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         page.goto(FIXTURE.as_uri(), wait_until="load")
         page.wait_for_selector('[data-map-id="map-fixture"]')
-        page.get_by_role('button', name='新建地图').click()
+        page.get_by_role('tab', name='新建地图').click()
         page.locator('#literature-map-topic').fill('主题筛选夹具')
         page.wait_for_selector('#literature-map-source-options input[value="usenix"]')
         assert page.locator('#literature-map-source-options input[value="semantic_scholar"]').count() == 0
@@ -246,7 +246,7 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
 
         fallback = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         fallback.goto(f'{FIXTURE.as_uri()}?options-fail', wait_until='load')
-        fallback.get_by_role('button', name='新建地图').click()
+        fallback.get_by_role('tab', name='新建地图').click()
         fallback.wait_for_function("document.querySelector('#literature-map-source-notice')?.dataset.state === 'warning'")
         assert '仍可直接建图' in fallback.locator('#literature-map-source-notice').inner_text()
         fallback.locator('#literature-map-topic').fill('通用范围建图')
@@ -260,7 +260,7 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
 
         leave_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         leave_page.goto(f'{FIXTURE.as_uri()}?options-delay', wait_until='load')
-        leave_page.get_by_role('button', name='新建地图').click()
+        leave_page.get_by_role('tab', name='新建地图').click()
         leave_page.locator('#literature-map-topic').fill('离开后不应回写')
         # A2：等 3 个 catalog 请求都挂上可控 gate，再按「关闭 → 迟到响应」的确定顺序推进。
         leave_page.wait_for_function("window.__catalogOptionResolvers.length === 3")
@@ -274,7 +274,7 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
 
         success_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         success_page.goto(f'{FIXTURE.as_uri()}?options-delay', wait_until='load')
-        success_page.get_by_role('button', name='新建地图').click()
+        success_page.get_by_role('tab', name='新建地图').click()
         success_page.locator('#literature-map-topic').fill('创建后不应回写')
         success_page.wait_for_function("window.__catalogOptionResolvers.length === 3")
         success_page.get_by_role('button', name='开始建图').click()
@@ -288,7 +288,7 @@ def test_component_fixture_renders_and_supports_core_interactions() -> None:
 
         truncated_page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         truncated_page.goto(f'{FIXTURE.as_uri()}?projects-truncated', wait_until='load')
-        truncated_page.get_by_role('button', name='新建地图').click()
+        truncated_page.get_by_role('tab', name='新建地图').click()
         truncated_page.wait_for_function("document.querySelector('#literature-map-project-notice')?.textContent.includes('项目列表未加载完')")
         assert '重新打开重试' in truncated_page.locator('#literature-map-project-notice').inner_text()
         truncated_page.close()
@@ -307,7 +307,7 @@ def test_closing_create_panel_reloads_catalog_options_on_reopen() -> None:
         browser = _open_browser_or_skip(playwright)
         page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
         page.goto(FIXTURE.as_uri(), wait_until='load')
-        page.get_by_role('button', name='新建地图').click()
+        page.get_by_role('tab', name='新建地图').click()
         page.wait_for_function(
             "document.querySelectorAll('#literature-map-source-options .literature-map-option').length > 0"
         )
@@ -317,7 +317,7 @@ def test_closing_create_panel_reloads_catalog_options_on_reopen() -> None:
         page.locator('#literature-map-create-cancel').click()
         assert page.locator('#literature-map-source-options .literature-map-option').count() == 0
 
-        page.get_by_role('button', name='新建地图').click()
+        page.get_by_role('tab', name='新建地图').click()
         page.wait_for_function(
             "document.querySelectorAll('#literature-map-source-options .literature-map-option').length > 0"
         )
