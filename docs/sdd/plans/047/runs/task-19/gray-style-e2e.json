@@ -1,0 +1,143 @@
+{
+  "benchmark": "spec-047 追加范围四 真实 Chromium 浏览器 E2E（当前部署版本）",
+  "date": "2026-11-12",
+  "tool": "playwright-cli (Chromium, headed)",
+  "entry_url": "http://127.0.0.1:8000/#evaluation-view",
+  "service": {
+    "pid": 50865,
+    "port": 8000,
+    "health": "GET /api/health -> 200",
+    "start_command": "RERANKER_ENABLED=false ./deploy/start.sh -d"
+  },
+  "live_assets": {
+    "app_js": "/assets/app.js?v=77",
+    "styles_css": "/assets/styles.css?v=76",
+    "v75_marker": "index.html:912 纯属性片段（末尾注释区）",
+    "legacy_markers_preserved": true
+  },
+  "wcag": {
+    "v3_badge": {
+      "fg": "#5f626c",
+      "bg": "#e9eaee",
+      "ratio": 5.063,
+      "pass": true
+    },
+    "v4_title": {
+      "fg": "#5a5d66",
+      "bg": "#f6f6f8",
+      "ratio": 6.0947,
+      "pass": true
+    },
+    "rejected_v3": {
+      "fg": "#6b6e78",
+      "bg": "#e9eaee",
+      "ratio": 4.233,
+      "pass": false
+    },
+    "r1_muted_on_gray": {
+      "fg": "#8b8e96",
+      "bg": "#f6f6f8",
+      "ratio": 3.0365,
+      "note": "既有基线退化，spec §13 裁决非阻塞，未用 opacity/filter 补救"
+    }
+  },
+  "steps": [
+    {
+      "name": "① 入口 / 运行历史回看 chat-quality 22 项 run",
+      "run_id": "eval-009223dbf9f649f4bc3426376431e0b6",
+      "result": "PASS",
+      "observed": {
+        "metric_cards": 22,
+        "status_counts": {
+          "needs_ground_truth": 10,
+          "computed": 12
+        }
+      }
+    },
+    {
+      "name": "② 灰卡 getComputedStyle（V1–V6）",
+      "result": "PASS",
+      "observed": {
+        "borderLeftColor": "rgb(201, 203, 211) = #c9cbd3",
+        "backgroundColor": "rgb(246, 246, 248) = #f6f6f8",
+        "badgeColor": "rgb(95, 98, 108) = #5f626c",
+        "badgeBg": "rgb(233, 234, 238) = #e9eaee",
+        "labelColor": "rgb(90, 93, 102) = #5a5d66",
+        "valueColor": "rgb(139, 142, 150) = var(--muted)",
+        "display": "grid",
+        "visibility": "visible",
+        "opacity": "1"
+      }
+    },
+    {
+      "name": "③ computed 卡仍绿色醒目",
+      "result": "PASS",
+      "observed": {
+        "borderLeftColor": "rgb(40, 124, 67) = #287c43",
+        "backgroundColor": "rgb(255, 255, 255)",
+        "badgeColor": "rgb(109, 93, 252) = 基础紫徽章未变"
+      }
+    },
+    {
+      "name": "④ 灰卡信息不隐藏 / 反伪造",
+      "result": "PASS",
+      "observed": {
+        "gray_text": "召回率@k / — / 缺少标注（needs_ground_truth） / 样本数：0 / 原因：该评测集没有 relevant_doc_ids…",
+        "null_rendered_as_dash": true,
+        "reason_visible": true,
+        "sample_count_zero_visible": true,
+        "no_hidden_cards": true
+      }
+    },
+    {
+      "name": "⑤ 灰卡 <details> 参数与明细可展开",
+      "result": "PASS",
+      "observed": {
+        "total_details": 13,
+        "grey_details": 1,
+        "open_after_click": 1,
+        "param_rows_after_expand": 2
+      }
+    },
+    {
+      "name": "⑥ degraded 未被灰化",
+      "run_id": "eval-a79a15cbd4c64fce964167bbe23abc88",
+      "result": "PASS",
+      "observed": {
+        "borderLeftColor": "rgb(200, 135, 26) = #c8871a",
+        "backgroundColor": "rgb(255, 253, 247) = #fffdf7"
+      }
+    },
+    {
+      "name": "⑦ 切换 rag-retrieval 后检索组恢复 computed 绿卡",
+      "run_id": "eval-cc2b4b91d8ad4c0ba07aafbd99016fe3",
+      "result": "PASS",
+      "observed": {
+        "metric_cards": 22,
+        "status_counts": {
+          "computed": 6,
+          "needs_ground_truth": 16
+        },
+        "recall_at_k": {
+          "status": "computed",
+          "borderLeftColor": "rgb(40, 124, 67)",
+          "backgroundColor": "rgb(255, 255, 255)"
+        }
+      }
+    }
+  ],
+  "artifacts": [
+    "docs/sdd/plans/047/runs/task-19/computed-style-raw.txt",
+    "docs/sdd/plans/047/runs/task-19/gray-initial.yaml",
+    "docs/sdd/plans/047/runs/task-19/gray-final.yaml",
+    "docs/sdd/plans/047/runs/task-19/gray-cards.png"
+  ],
+  "known_non_blocking": [
+    "浏览器控制台 4 个 404 来自其它视图历史会话资源，与评测视图无关",
+    "Langfuse :3000 未启动，导出 span 告警",
+    "V5/V7 --muted 在灰底 3.0365:1 低于 4.5:1，属既有基线退化，spec §13 R1 裁决非阻断",
+    "test_research_detail_actions_placement_contract.py:223 / test_memory_return_global_contract.py:210 的 f-string 失败文案仍写「为 75」，frontend-reviewer 判 P2 非阻塞",
+    "scripts/check_test_layout.py EXIT=1 的 5 项为既有历史编号测试，非本任务引入"
+  ],
+  "conclusion": "PASS"
+}

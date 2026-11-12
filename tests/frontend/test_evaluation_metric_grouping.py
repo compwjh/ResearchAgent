@@ -186,7 +186,7 @@ def test_group_cards_grid_wraps_on_narrow_viewports() -> None:
 
 def test_live_asset_versions_bumped_to_77_and_75() -> None:
     assert INDEX.count('<script src="/assets/app.js?v=77"></script>') == 1
-    assert INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=75">') == 1
+    assert INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=76">') == 1
     # 升版前的两个精确 live 值降级为纯属性片段兼容 marker（不含 <script/<link 标签字面串）
     assert 'src="/assets/app.js?v=75"' in INDEX
     assert 'href="/assets/styles.css?v=72"' in INDEX

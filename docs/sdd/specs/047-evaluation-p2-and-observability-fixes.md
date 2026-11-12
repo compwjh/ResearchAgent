@@ -8,7 +8,7 @@
 > 只能是其一：`待确认` / `已确认` / `实施中` / `已完成` / `阻塞`。
 > 每次变更须同步追加 `docs/sdd/spec-status-changelog.md`（`AGENTS.md` 强制流程第 10 条）——**状态台账由主会话负责，本轮（待确认 spec 编写）不写台账**。
 
-**当前状态：已完成**（追加范围二与「追加范围三」均已收口；追加范围三 2026-11-11 用户「确认，你实施吧」→ `待确认 → 已确认 → 实施中 → 已完成`：Gate 2 需求 §15 / 技术「追加范围三」/ 验收 §15 三份评审与 `architect` 合并裁决均「通过」，最终候选全量回归 `4379 passed / PYTEST_EXIT=0`，真实 API + 浏览器 E2E 通过并部署验证 `/api/health` 200；评审 4 项 P1 裁决与 Go/No-Go 最终结论见文末 §13；spec 主体、追加范围一（D7–D12）与追加范围二的收口结论、三份评审签字与原六块历史记录**逐字保留、不翻案、不回退、不重新开门禁**）
+**当前状态：已完成**（追加范围二与「追加范围三」均已收口；追加范围三 2026-11-11 用户「确认，你实施吧」→ `待确认 → 已确认 → 实施中 → 已完成`：Gate 2 需求 §15 / 技术「追加范围三」/ 验收 §15 三份评审与 `architect` 合并裁决均「通过」，最终候选全量回归 `4379 passed / PYTEST_EXIT=0`，真实 API + 浏览器 E2E 通过并部署验证 `/api/health` 200；评审 4 项 P1 裁决与 Go/No-Go 最终结论见文末 §13；spec 主体、追加范围一（D7–D12）与追加范围二的收口结论、三份评审签字与原六块历史记录**逐字保留、不翻案、不回退、不重新开门禁**）。**新增「追加范围四：不相关指标灰色弱化」见文末；2026-11-12 用户「你处理下合并。然后再实现这个task」构成 `AGENTS.md` 强制流程第 4 条「按这个执行」的等价确认，该子范围 `待确认 → 已确认 → 实施中 → 已完成`，Gate 2 需求评审 §16 / 技术评审「追加范围四」均「通过」（P0=0 / P1=2，强制裁决见文末 §13）；远程合并已完成（PR #4 squash → `origin/main` `cdbb83cc`），设计已按合并后 live `styles.css?v=75` / `app.js?v=77` 与合并后文件行号重基线，现按 task-17/18/19 执行。**
 
 > **追加范围二（2026-11-10 用户二次授权）**：`artifacts/` 目录自解释治理已执行（纯文档代行、三处留痕）；
 > 「评测指标体系细化」的设计已定稿并置于本文件末尾。用户 2026-11-10 明确回复「**我确认 你开发吧**」，
@@ -985,3 +985,214 @@
   选该大模型时仍可能触发 `EVAL_SCORE_TIMEOUT`，按 §8 ⑤ 失败恢复口径提示并可减小 `max_items` 或换更快模型重试。
   判官 10 批与约 100 次真实 `hybrid_search` 未进一步压缩；`chat-quality` 集下检索/意图 10 项按跨 dataset 早退
   保持 `needs_ground_truth` + `reason`（不是关闭态、不是 0 分）。
+
+---
+
+## 追加范围四（2026-11-12 用户提出）：不相关指标灰色弱化
+
+> **本追加范围状态：`已完成`**（`待确认 → 已确认 → 实施中 → 已完成`：2026-11-12 用户「你处理下合并。然后再实现这个task」，构成 `AGENTS.md` 强制流程第 4 条「按这个执行」的等价意思；Gate 2 两份评审「通过」后转 `实施中`）。
+> spec 主体、追加范围一（D7–D12）/ 二 / 三均保持 **`已完成`**，
+> 其收口结论、三份评审签字、原六块历史记录**逐字保留、不翻案、不回退、不重新开门禁**。
+> **不新增 spec 编号 / spec 文件 / `plans/048/`**（沿用用户 2026-11-10「不要新增号码，归为 047 的追加功能」约束）。
+> 按 `AGENTS.md` 强制流程第 3/5 条，本范围改变用户可见的视觉行为（指标卡配色语义），属范围扩大，
+> 用户明确确认前只做计划模式（只读勘察 + 本 spec 追加设计 + 状态台账）；**确认已于 2026-11-12 生效**。
+> 远程合并（PR #4 → `origin/main` `cdbb83cc`）已完成，设计随之按合并后的 live 资源版本、主干新增静态契约与文件行号重基线；
+> Gate 2 需求评审 §16 与技术评审「追加范围四」均「通过」（P0=0 / P1=2，强制裁决见本范围 §13），已完成 task-17/18/19 并经 `tester` 验收签字与 `architect` 合并裁决双签批准收口。
+
+### 0. 用户要求与只读事实基础
+
+用户原话（2026-11-11 附截图、2026-11-12 重发）：「**如果是不相关的指标就用灰色表示**」。
+截图显示 `chat-quality` 评测集下的 `召回率@k` / `准确率@k` 两张 `needs_ground_truth` 卡片：
+紫色左边框、淡紫背景、紫色状态徽章「缺少标注（needs_ground_truth）」、`—`、`样本数：0` 与
+「原因：该评测集没有 relevant_doc_ids…」——视觉上与真实出分的卡片同样醒目，用户希望这类
+「与本次所选评测集无关、根本不该参与本次打分」的维度弱化为中性灰。
+
+只读勘察最初基于当时的部署版本 `2e073374`；远程合并（PR #4 squash → `origin/main` `cdbb83cc`）后已按合并版逐项复核，下表证据行号同步为合并后实际位置（配色 / 选择器 / 契约语义逐字未变）：
+
+| 项 | 现状 | 证据 |
+|---|---|---|
+| 卡片状态来源 | `renderEvaluationMetricCard` 写 `card.dataset.status = metric.status`，卡片本身不新增语义属性 | `frontend/app.js:7746-7749` |
+| 四种状态配色 | `computed` 绿 `#287c43` / `degraded` 橙 `#c8871a` / `needs_ground_truth` **紫 `#6d5dfc` + 背景 `#faf9ff`** / `unavailable` 红 `#b13a3a` | `frontend/styles.css:4391-4394` |
+| 状态徽章 | 所有状态共用 `background: var(--accent-soft)` / `color: var(--accent)`（紫），无按状态区分 | `frontend/styles.css:4400`；`--accent:#6d5dfc` / `--accent-soft:#eeecff` 见 `:1` |
+| 文字 | label 继承 `--ink:#25272b`；samples / detail-row / params 用 `--muted:#8b8e96`；`<summary>` 用 `--accent` 紫 | `frontend/styles.css:1,4395-4405` |
+| 版本与契约 | **合并后** live `app.js?v=77` / `styles.css?v=75`；`_live_versions` 精确断言 `[77]` / `[75]`；主干 UX 重构另引入多处锁 `v=75` 的冻结契约 | `frontend/index.html:8,905`、`tests/frontend/test_evaluation_asset_versions.py:100,118`、`test_evaluation_dataset_count_rendering.py:87`、`test_evaluation_metric_grouping.py:189`、`test_frontend_button_affordance_contract.py:198`、`test_frontend_management_contract.py:79`、`test_frontend_task_d_contract.py:190`、`test_frontend_task_j_contract.py:180`、`test_memory_return_global_contract.py:191`、`test_research_detail_actions_placement_contract.py:218`、`test_research_tab_width_stability_contract.py:125`、`test_research_view_stability_contract.py:180` |
+| 不相关维度来源 | 跨 dataset 早退：`chat-quality` 集下检索 6 项 + 意图 3 项 + `memory_correctness` 等返回 `status=needs_ground_truth`、`value=null`、`sample_count=0`、`detail.reason` 必填 | `backend/app/evaluation/service.py` 早退分支；`docs/sdd/plans/047/runs/task-16/evaluation-samples-api-e2e.json` |
+| 历史红线 | 用户「功能不要降级或者关闭态，我需要看到效果」；`null → —`、reason 可见、`degraded` 卡片不隐藏 | 追加范围二/三 §6、`docs/sdd/plans/047/runs/task-16/browser-e2e.json` |
+
+**设计判断**：`needs_ground_truth` 表示「本次评测集没有该维度真值、本次打分不适用」，
+即用户所说的「不相关指标」；而 `degraded`（真实判官失败）/ `unavailable`（异常）/ `computed`（真实出分）
+都必须保持醒目颜色，否则会把失败伪装成「不适用」，违反「不降级、要看到效果」红线。
+
+### 1. 目标与非目标
+
+**目标**
+
+1. 卡片 `data-status="needs_ground_truth"` 时整卡视觉弱化为**中性灰**（左边框、背景、状态徽章、标题、数值、摘要链接），
+   一眼可与真实出分 / 真实降级的卡片区分。
+2. 灰化只影响**配色**，不影响信息：卡片仍显示、`value` 仍 `—`、`status` 文案与 `sample_count` / `reason` 仍可见、
+   `<details>参数与明细</details>` 仍可点开、对比页按组 delta 仍显示 `—`。
+3. `computed` / `degraded` / `unavailable` 三种状态的现有配色**逐字不变**。
+
+**非目标**：见 §6「明确不做」。
+
+### 2. 数据模型 / 接口
+
+- **无新增数据模型字段、无后端改动、无接口变化**：五端点、22 key、`METRIC_KEYS` / `METRIC_GROUPS`、
+  `status` 取值域、`detail.reason`、`sample_count`、稳定错误码全部不变。
+- 「不相关」判定在**前端 CSS 层**用已有属性选择器 `#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"]` 表达，
+  不新增 `data-relevance` 属性、不改 `frontend/app.js`（最小改动面）。
+- 复用根变量 `--muted:#8b8e96` / `--muted-strong:#5a5d66` / `--line:#e7e7eb`；灰阶新增 3 个字面值
+  （边框 / 背景 / 徽章），不改 `:root` 变量定义。
+
+### 3. 视觉契约（每条对应一条测试）
+
+| # | 元素 | 现状（紫） | 目标（灰） |
+|---|---|---|---|
+| V1 | 卡片左边框 | `4px solid #6d5dfc` | `4px solid #c9cbd3` |
+| V2 | 卡片背景 | `#faf9ff` | `#f6f6f8` |
+| V3 | 状态徽章 | `--accent-soft` / `--accent` 紫 | `background:#e9eaee; color:#6b6e78` |
+| V4 | 标题 `label` | 继承 `--ink` | `color: var(--muted-strong)` |
+| V5 | 数值 `value` | `--ink`（显示 `—`） | `color: var(--muted)` |
+| V6 | `<summary>参数与明细</summary>` | `--accent` 紫 | `color: var(--muted-strong)` |
+| V7 | `samples` / `detail-row` / `params` | `--muted` | 保持 `--muted`（不重复声明） |
+
+- 所有灰化规则必须**带 `[data-status="needs_ground_truth"]` 限定**，不得写成全局 `.evaluation-metric-*` 覆盖。
+- **禁止**用 `opacity` / `filter: grayscale()` / `display:none` / `visibility:hidden` 实现灰化（避免无障碍对比度退化与「关闭态」）。
+- 灰阶对比度：V3 徽章文字 `#6b6e78` 与底 `#e9eaee`、V4 标题 `#5a5d66` 与底 `#f6f6f8` 均须满足 WCAG AA 正文 ≥4.5:1（技术评审复核）。
+
+### 4. 边界（每条之后会变成一条测试）
+
+1. 只有 `needs_ground_truth` 灰化；`computed` 仍 `#287c43`、`degraded` 仍 `#c8871a` + `#fffdf7`、`unavailable` 仍 `#b13a3a` + `#fff8f8`。
+2. 未知 status（旧 run 里出现的新值）不灰化、不报错；沿用基础卡片样式。
+3. 灰卡不隐藏：`value=null → —`、`reason` 非空时可见、`sample_count=0` 显示 0、`<details>` 默认收起且可展开。
+4. 历史 run（6 项旧数据、22 项新数据）与「两次对比」详情页共用 `renderEvaluationMetricCard`，灰化一致生效且不丢卡。
+5. **按合并后基线重基线**：`styles.css?v=75 → ?v=76`，`app.js?v=77` 逐字不动；全部 legacy marker 保留；新增 `styles.css?v=75` 兼容 marker 为
+   **纯属性片段**（不含 `<script` / `<link` 标签字面串），不污染 `_live_versions` 正则。
+6. 静态契约精确断言同步为 `[77]` / `[76]`，只改期望值、不删断言、不放宽：`test_evaluation_asset_versions.py:100,118`
+   的 `_live_versions("styles.css") == [75] → [76]`；`test_evaluation_dataset_count_rendering.py:87` 与
+   `test_evaluation_metric_grouping.py:189` 的完整 `<link ... v=75>` 计数断言同步为 `v=76`。
+   主干新增的 `styles.css?v=75` 冻结断言均为 `in INDEX` 字符串断言，按本项目既有的纯属性兼容 marker 口径
+   （与合并时 `app.js?v=74` marker 一致）由新增 `v=75` marker 继续满足；技术评审须复核「精确 live 断言」
+   与「marker 满足的字符串断言」两类是否都已覆盖，不得让精确断言靠 marker 静默失效。
+7. 无 `innerHTML`、无新 class、DOM 契约与 `app.js` 零改动；`node --check frontend/app.js` 仍 0。
+
+### 5. 产品使用步骤（六要素）
+
+1. **入口**：打开 `http://127.0.0.1:8000/#evaluation-view`，第 9 个「评测」视图。
+2. **点击后提示**：快速复现可在「运行历史」点任一 `chat-quality` run（如 `eval-009223db…`）回看；
+   或选 `chat-quality` + `qwen3.5:9b` + `baseline` 点「开始评分」，状态栏显示「评分中… / 正在 / 100 条样本」。
+3. **等待条件与提示**：回看立即渲染；新打分等待 HTTP 200（约 8–10 分钟），完成后 5 组标题 + 22 张卡出现。
+4. **下一步（验收点）**：「检索质量」「意图识别」两组 10 张 `needs_ground_truth` 卡呈中性灰（灰左边框 / 浅灰背景 / 灰徽章 / 灰标题），
+   「回答质量」「生成可用性」「安全」组 computed 卡仍绿色醒目；点灰卡「参数与明细」仍能展开，`原因：…` 仍可读；
+   切到 `rag-retrieval` 集后检索组恢复绿色 computed。
+5. **失败恢复**：若仍见紫色卡片 → 检查 `index.html` live `styles.css?v=76` 与浏览器缓存（硬刷新 `Cmd+Shift+R`）；
+   若灰卡文字难读或被隐藏 → 回滚本范围 CSS 规则并回到 `待确认` 重新确认视觉契约；
+   `degraded` / `unavailable` 若被灰化属 P1，必须修复。
+6. **产物查看路径**：`docs/sdd/plans/047/runs/task-17/`（实现交接）、`runs/task-18/`（评审与单端回归）、
+   `runs/task-19/`（浏览器 snapshot / 截图 / `gray-style-e2e.json`）、`docs/sdd/reviews/047-*-gray-*.md`、
+   验收 §16、状态台账与复盘。
+
+### 6. 明确不做（划出范围）
+
+- 不隐藏 / 不折叠 / 不删除任何灰卡；不把 `needs_ground_truth` 改成 `computed` 或伪造 0 分。
+- 不把 `degraded`（真实降级）/ `unavailable`（异常）/ `computed`（真实出分）灰化；不改变其文案与 `detail.reason`。
+- 不改后端、不动 22 key 与 5 group、不加新字段 / 新端点 / 新依赖、不改 `frontend/app.js`、不改 `:root` 变量定义。
+- 不灰化分组标题、不灰化按组 delta 行、不引入图表库 / 第三方 CSS、不用 `opacity` / `filter`。
+- 不重开追加范围一/二/三的门禁、不翻案、不重新请求那三段确认；不新增 spec 编号 / `plans/048/`。
+- 不 push、不合 main、不 force push。
+
+### 7. 验证方式
+
+- **定向（Task 阶段，单端）**：`node --check frontend/app.js`；`.venv/bin/python -m pytest -q tests/frontend/`（含新增灰阶契约用例）；
+  `git diff --check`；静态断言 V1–V7 与边界 1–7 逐条覆盖。后端代码零改动 → **不跑后端 pytest**（`AGENTS.md` 前后端分派原则）。
+- **真实浏览器 E2E（当前部署版本）**：Playwright CLI / Chromium 打开评测视图，读 `getComputedStyle` 复核
+  `borderLeftColor` / `backgroundColor` / 徽章 `color` 确为灰阶；computed 卡仍绿；灰卡 `reason` 与 `<details>` 展开可读；
+  落盘 snapshot / 截图 / `gray-style-e2e.json`。
+- **部署验证**：`GET /api/health` 200、首页 200、`index.html` live `styles.css?v=76`；服务已在跑则只需硬刷新
+  （静态文件磁盘读取、无需重启）。
+- **Spec 收口**：按 `AGENTS.md`「全量回归只在 Spec 收口阶段启动」执行一次最终候选全量回归并记录命令 / 退出码 / 通过数量；
+  若技术评审依据「单端改动只跑该端回归」裁定裁剪，须在评审结论写明依据并落盘。
+- **人工验收准备度**：十项至少九项通过，无 P0/P1、无关键产物缺失；验收评审 §16 `tester` 签字 +
+  `architect` 合并裁决签字后才转 `已完成`。
+
+### 8. 执行配置
+
+> 沿用本 spec §274–287「执行配置」的现行 RACI 表与「型号唯一真源 = `.codebuddy/agents/<role>.md` 的 `model` 字段」规则，
+> 本追加范围**不新增 / 不改模型列**，避免同一规则在两处复述（`AGENTS.md` 单一落点原则）；架构师行填「自身」。
+
+| 角色 | 本范围参与情况 | 上下文上限 | 分派方式 | 职责 |
+|---|---|---|---|---|
+| 架构师 `architect`（评审 / 合并裁决） | 参与 | 200k | 主会话（自身） | 编写本追加范围、需求/技术评审、合并裁决、落地校验 |
+| 文档/产品步骤 `doc-updater` | **不适用**（产品步骤已由主会话在本 §5 一次写全，不单独分派） | — | — | — |
+| 开发 `frontend-dev` | 参与（唯一编码角色） | 按 agent 档位 | `Task(frontend-dev)` | 纯 CSS 灰化 + `?v=76` + 静态契约用例 |
+| 评审 `frontend-reviewer` / 单端回归 `frontend-tester` | 参与 | 按 agent 档位 | 两次独立 `Task` | DOM/版本/XSS 三项必查、前端域回归 |
+| 跨端验收 `tester` | 参与 | 按 agent 档位 | `Task(tester)` | 验收 §16 结论与签字 |
+| 后端开发 / 后端评审 / 后端回归 | **不适用**（后端代码零改动，按「单端改动只分派该端」不分派） | — | — | — |
+
+> 本项目不存在 `junior-dev`；本范围纯前端，只派 `frontend-dev`，不派通吃 agent。
+
+### 9. 任务计划（确认后创建，当前不建文件避免死链）
+
+| 编号 | 任务 | 分派角色 | 文档（确认后创建） |
+|---|---|---|---|
+| 17 | 灰阶视觉契约 + `styles.css?v=76` + 静态契约用例 | `frontend-dev` | `plans/047/task-17-evaluation-irrelevant-metric-gray-style.md` |
+| 18 | 前端代码评审 + 单端回归（版本 / XSS / 反伪造复核） | `frontend-reviewer` · `frontend-tester` | `plans/047/task-18-evaluation-gray-style-review.md` |
+| 19 | 真实浏览器 E2E + 部署验证 + 验收签字 + 台账 / 复盘 / 本地 commit | `tester` · `architect` · 主会话 | `plans/047/task-19-evaluation-gray-style-e2e.md` |
+
+> 依赖单向 17 → 18 → 19；索引 `plans/047/README.md` 在确认后追加「追加范围四」段落并回填状态。
+
+### 10. 评审记录（初始一律「待评审（未执行）」）
+
+- 需求评审：`docs/sdd/reviews/047-requirement-review.md` §16（**通过**，P0=0 / P1=0；2026-11-12 独立 `architect`）
+- 技术评审：`docs/sdd/reviews/047-tech-review.md`「追加范围四技术评审」（**通过，附强制约束**，P0=0 / P1=2；裁决回填见本范围 §13）
+- 验收评审：`docs/sdd/reviews/047-acceptance-review.md` §16（**通过**，P0=0 / P1=0，十项准备度 10/10；`tester` 验收签字 R 已填）
+- 代码评审：`docs/sdd/reviews/047-frontend-gray-style-review.md`（**APPROVE**，P0=0 / P1=0 / P2=1）
+- 合并裁决：`docs/sdd/plans/047/runs/task-19/merge-decision.md`（**批准收口**，`architect` 签字 A 已填）
+
+### 11. 变更日志
+
+| 时间 | 角色 | 动作 |
+|---|---|---|
+| 2026-11-12 | 架构师 `architect`（自身） | 计划模式只读勘察（用户截图 + `app.js:7502-7567` / `styles.css:1,4219-4235` / 4 处静态契约 / 当前 live 版本），追加本范围设计并置 `待确认`；台账同步；不改业务代码、不新建 task 文档、不跑会改变项目状态的命令，停止等待用户确认 |
+| 2026-11-12 | 架构师 `architect`（自身） | 远程合并完成（PR #4 squash → `origin/main` `cdbb83cc`）。按合并后的真实基线重基线本追加范围：live `styles.css?v=73` 已变为 `v=75`（主干 UX 重构带来 5 个新提交），故升版目标改为 `v=75 → v=76`；评测 CSS/JS 证据行号同步为 `styles.css:4391-4405` / `app.js:7746-7749`；静态契约清单由 4 处扩充为主干新增的 11 处冻结断言，并区分「精确 live 断言」与「marker 满足的字符串断言」两类处置口径。只读复核，未改业务代码。 |
+| 2026-11-12 | 架构师 `architect`（自身） | 用户「你处理下合并。然后再实现这个task」构成 `AGENTS.md` 强制流程第 4 条的等价确认，本追加范围 `待确认 → 已确认`；确认前「不改业务代码、不新建 task 文档」约束自此时解除。状态台账同步。主体 `已完成` 与追加范围一/二/三的收口结论、三份评审签字逐字保留、不翻案、不回退、不重新开门禁。下一步按 Gate 2 分派独立需求 / 技术评审，通过后转 `实施中` 并创建 task-17/18/19。 |
+| 2026-11-12 | 主会话（编排 / 纯文档代行） | 收口 DoD 全部满足：需求 §16 / 技术「追加范围四」/ 验收 §16 三份评审真实结论（均通过）、`tester` 验收签字 R 与 `architect` 合并裁决签字 A 已填（`runs/task-19/merge-decision.md`）、状态台账已追加、变更日志与引用路径齐全（0 断链）、复盘与人工验收详情已落盘。最终候选全量回归 `4557 passed, 2 skipped / PYTEST_EXIT=0`，真实 Chromium E2E 7 步 PASS，部署验证 4 项 200，单端 `614 passed`。追加范围四 `实施中 → 已完成`；spec 主体与追加范围一/二/三收口结论逐字保留、不翻案、不重新开门禁。闭环后本地 commit，不 push、不合 main、不 force push。 |
+
+### 12. 六条自检
+
+①V1–V7 与边界 1–7 均可写成静态契约断言；②spec 只写需求与验收，实施细节留给 task-17/18/19；
+③任务文档确认后创建，当前无占位死链；④范围划死（§1 非目标 / §3 契约 / §6 明确不做）；
+⑤执行配置沿用单一落点、架构师「自身」、五行齐全且不引用不存在的角色；⑥§5 六要素可映射到 §7 验收点。
+
+### 13. Gate 2 技术评审裁决（强制覆盖 §3 V3 与 §4 边界 6）
+
+> 2026-11-12 `architect` 独立产出需求评审 `047-requirement-review.md` §16（**通过**，P0=0 / P1=0）与
+> 技术评审 `047-tech-review.md`「追加范围四技术评审」（**通过，附强制约束**，P0=0 / P1=2）。两项 P1 均为
+> spec 内部口径与事实偏差，按 `AGENTS.md`「已确认范围内小缺陷追加到当前 Task」留在 task-17/18/19 闭环，
+> **不改用户目标 / 数据模型 / 公开接口 / 用户行为，不回 `待确认`、不重新请求确认**。
+> 本节裁决**强制覆盖** §3 表格 V3 与 §4 边界 6 的原文；下游实现与验收只认本节与两份落盘评审。
+
+**裁决 1（P1-1 / WCAG AA）**：§3 V3 徽章 `color:#6b6e78` 对底 `#e9eaee` 实测 **4.2330:1 < 4.5:1，作废**；
+统一改为 **`color:#5f626c`**（对 `#e9eaee` 为 **5.0630:1**），背景 `#e9eaee` 不变。V4 保持 `var(--muted-strong)`
+（`#5a5d66` 对 `#f6f6f8` 为 6.0947:1，达标）。task-17 静态契约与 task-19 `getComputedStyle` 均按裁决值复核。
+非阻塞登记 R1：V5/V7 沿用 `--muted` 在灰底为 3.0365:1（较现状 3.1306:1 轻微退化），属既有基线问题，本范围不扩范围，
+task-19 须如实记录且严禁 `opacity` / `filter` 补救。
+
+**裁决 2（P1-2 / 静态契约精确断言清单）**：升 `styles.css?v=75 → ?v=76` 后须同步的**精确 live 断言为 6 处**（非 §4 所写 4 处）：
+
+1. `tests/frontend/test_evaluation_asset_versions.py:100` — `_live_versions("styles.css") == [75] → [76]`
+2. `tests/frontend/test_evaluation_asset_versions.py:118` — 同上
+3. `tests/frontend/test_evaluation_dataset_count_rendering.py:87` — 完整 `<link ... v=75>` 计数 → `v=76`
+4. `tests/frontend/test_evaluation_metric_grouping.py:189` — 同上
+5. `tests/frontend/test_research_detail_actions_placement_contract.py:223` — `live_css == ["75"] → ["76"]`
+6. `tests/frontend/test_memory_return_global_contract.py:210` — `live_css == ["75"] → ["76"]`
+
+其余 9 处 `in INDEX` 字符串冻结断言由新增 `styles.css?v=75` **纯属性片段**兼容 marker 继续满足（沿用合并时
+`app.js?v=74` marker 的既有口径），不删断言、不改正则、不放宽；2 处范围断言（`>=57` / `>68`）升版后自然通过。
+**新 marker 必须放在 `frontend/index.html` 末尾注释区（`index.html:907-911` 之后），不得插入 `<head>`**，
+否则会污染 `test_frontend_map_header_actions_readability.py:298-302` 取第一个 `styles.css?v=` 匹配的 `active_version` 语义。
+`app.js?v=77` 与 app.js 相关精确断言全部不动。
+
+**状态流转**：`已确认 → 实施中 → 已完成`（台账同步；2026-11-12 验收 §16 与 `runs/task-19/merge-decision.md` 双签批准收口）。task-17/18/19 文档由主会话代行创建（纯文档，三处留痕：
+产出文档头部、本节记录、状态台账）；含 `.py` / `.js` / `.html` / `.css` 的实现一律分派 `frontend-dev`，
+评审分派 `frontend-reviewer` / `frontend-tester`，验收分派 `tester`。

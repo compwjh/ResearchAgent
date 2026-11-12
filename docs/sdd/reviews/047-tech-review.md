@@ -558,3 +558,139 @@ P2①/②/③ **全部复用 `backend/eval_042/`** 的 CLI（`cli.py`）/ runner
 ### 五、边界与纪律声明
 
 本评审为追加范围三**技术评审**，结论独立；前序「追加范围技术评审」「追加范围二技术评审」「补充复核」（`本文件:219-406`）及其 P0=0 / P1=0 结论逐字保留、未改写、不翻案。评审阶段**未改** spec 正文 / `backend/**` / `frontend/**` / 测试 / `.env` / 状态台账 / 任何业务代码，**未写状态台账**（主会话负责），**未 git commit / push / 合 main**，未新建 spec 编号 / spec 文件 / `plans/048/`，未把不存在的能力（100 条批量化、`<details>` 折叠、`?v=76`）写成已实现，未 mock 冒充真实打分或真实浏览器 E2E。所有 `文件:行号` 均经本轮 Read / Grep / 只读 python 统计核实；`spec:731` 的 rag ≈48s 与 e2e 实测 57.109s/33.606s 的量级差异已在 2.8 如实标注，未以「应该没问题」略过。需求评审见 [需求评审 §15](./047-requirement-review.md)；进展日志 `.codebuddy/agent-logs/spec-047/task-00/architect/20261111-020922.md`。下游实现与验收只认落盘文档：本评审 + 需求评审 §15 + spec 追加范围三章节 + `plans/047/` task-14/15/16。
+
+---
+
+## 追加范围四技术评审（不相关指标灰色弱化）
+
+> **评审者**：`architect`（架构师·Gate 2 独立评审子代理，技术评审总控 + 合并裁决，非主模型代行）。
+> **角色**：架构师（对模块划分与跨端边界做决策、需求/技术评审、PR 合并裁决；不替 dev 写业务实现、不 push / 合 main）。
+> **模型**：`hy4`（唯一真源 `.codebuddy/agents/architect.md` 的 `model` 字段；spec §8 `spec:1118-1132` 不在 spec 复述型号、架构师行填「自身」）。
+> **分派方式**：`Task(architect)` 独立一次（Gate 2 独立只读评审；本轮仅写两份评审结论与进展日志）。
+> **证据时点**：2026-11-12 05:53–06:05（全程只读 Read / Grep + 只读 python WCAG 复算）；`origin/main = cdbb83cc`、HEAD `cdbb83cc`、分支 `feature/spec-047-unrelated-metric-greyout`（本轮 `git rev-parse` / `git branch --show-current` 只读核实）。
+> **评审对象**：[`spec-047`](../specs/047-evaluation-p2-and-observability-fixes.md)「追加范围四」整章（§0–§12，`spec:991-1164`）｜ 配套：[需求评审 §16](./047-requirement-review.md)。
+> **核实方式**：逐文件 Read / Grep + 一次只读 python 按 WCAG 2.x 相对亮度公式复算；所有 `文件:行号` 均为本轮真实读到的证据，不引用记忆、不编造行号；未跑真实 API / 真实浏览器 E2E、未 mock 冒充实测。前序「追加范围技术评审」「追加范围二技术评审」「追加范围三技术评审」（本文件追加前 `:219-560`）及其 P0/P1 结论逐字保留、未改写、不翻案、不回退、不重新开门禁；本章为**纯末尾追加**。
+
+### 一、结论
+
+**通过（附强制约束）** ｜ **P0 = 0，P1 = 2**（无阻塞项；2 项「必须修复但非阻塞」）。
+
+判定依据：纯 CSS 灰化方案方向成立——状态语义取自既有 `card.dataset.status`、四状态配色彼此独立、属性选择器可覆盖 V1–V7 全部后代、灰卡信息层（`—` / reason / `sample_count` / `<details>`）全在 DOM 中且不因配色改变而丢失、零后端 / 零 `app.js` / 零接口变化（第二节、第三节）；`?v=75→?v=76` + 纯属性 marker 口径与 `_live_versions` 前缀正则互不污染（第五节）；§8 执行配置沿用单一落点、架构师「自身」、纯前端单端分派成立（第六节）。**不存在「方案根本不成立 / 必须推倒 / 需用户重新确认」的 P0**。
+
+但核实到 **2 项 spec 与事实的偏差 / spec 内部口径冲突**，若不落盘裁决会直接导致 task-18 单端回归红灯与 task-19 WCAG 复核失败，故计为 **P1**：① V3 徽章配色实测 4.2330:1 < spec 自定的 4.5:1；② §4 边界 6 声称「精确 live 断言 4 处」实为 6 处、漏列 2 处正则精确断言。二者均可由本评审给出书面裁决 + task-17 采纳 + task-18/19 复验闭环，不改用户诉求、不推倒方案、不触发重新开门禁，**不构成打回**；按「追加范围三技术评审」§四与本文件追加前 `:219-560` 既定口径，R（非阻塞强制项）与 C（spec 已写明的强制项）不计入 P1。
+
+下游只认落盘文档：spec 追加范围四章节 + 本评审 + [需求评审 §16](./047-requirement-review.md) + `plans/047/` task-17/18/19（确认后创建）。
+
+### 二、数据模型 / 接口 / 模块拆分与文件边界
+
+| 核实点 | 证据 | 结论 |
+|---|---|---|
+| 状态来源 | `frontend/app.js:7746-7750`：`card.className='evaluation-metric-card'`、`card.dataset.status = String(metric.status \|\| 'unavailable')`；`app.js:7734-7744` `formatEvaluationMetricValue` 非 computed / `null` → `'—'` | ✅ 「不相关」判定完全复用既有 `data-status`，无新增属性、无第二套渲染分支；`metric.status` 取值域由后端 `contracts.py` 决定，前端零改动 |
+| 四状态配色彼此独立 | `frontend/styles.css:4391` computed `#287c43`、`:4392` degraded `#c8871a` + `#fffdf7`、`:4393` **needs_ground_truth `#6d5dfc` + `#faf9ff`**、`:4394` unavailable `#b13a3a` + `#fff8f8` | ✅ 灰化只需改 `:4393` 一行（或新增同选择器后写规则），其余三状态**逐字不动**即可满足 §4 边界 1；`computed`/`degraded`/`unavailable` 不灰化的红线有结构保障 |
+| 徽章 / 标题 / 数值 / 摘要的紫色来源 | `styles.css:4400` `.evaluation-metric-status{background:var(--accent-soft);color:var(--accent)}`、`:4395` label 无 color（继承 `--ink`）、`:4396` value `color:var(--ink)`、`:4405` `.evaluation-metric-params > summary{color:var(--accent)}` | ✅ V3/V4/V5/V6 的目标色均可通过「带 `[data-status="needs_ground_truth"]` 限定的后代选择器」覆盖，无需新 class |
+| 变量唯一性 | `styles.css:1` `:root{--ink:#25272b;--muted:#8b8e96;--muted-strong:#5a5d66;--accent:#6d5dfc;--accent-soft:#eeecff;--line:#e7e7eb}`；全文件 Grep `--muted-strong:` 仅此 1 处定义，无第二份 `:root` 覆盖 | ✅ WCAG 复算所用 `#5a5d66` / `#8b8e96` 取值唯一；§2「复用根变量、不改 `:root`」成立 |
+| 容器与作用域 | `frontend/index.html:776` `<section class="main-area" id="evaluation-view" hidden ...>`；`styles.css:4390-4406` 评测规则全部带 `#evaluation-view` 前缀；Grep `data-status` 其它命中均为 `.conversation-*` / `#research-view *` 等不同作用域，无 `!important` 作用于 `.evaluation-metric-*` | ✅ 选择器 `#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"]` 可命中且**不全局污染**（回归清单前端第 1/4 条） |
+| 接口 / 数据模型 | `spec:1038-1045`：五端点、22 key、`METRIC_KEYS`/`METRIC_GROUPS`、`status` 取值域、`detail.reason`、`sample_count`、稳定错误码全部不变 | ✅ **零后端改动、零接口变化、零新增字段**；无并发 / 事务 / 外键 / SSRF 面（本次改动不触碰任何后端代码，回归清单后端第 5–14 条**不适用**，属「无改动面」而非「未检查」） |
+| 唯一改动面 | `frontend/styles.css`（灰化规则）、`frontend/index.html`（`:8` live `?v=76` + 末尾注释区新增 `v=75` 纯属性 marker）、`tests/frontend/*.py`（6 处精确断言期望值 + 新增灰阶契约用例） | ✅ 模块拆分清晰、`app.js` 零改动；**复用既有实现、无第二套框架**（回归清单第 9 条） |
+
+### 三、纯 CSS 方案可行性（V1–V7 / 边界 1–4、7）
+
+**3.1 状态语义判定成立且未踩红线**：`needs_ground_truth` = 本次评测集无该维度真值 / 本次打分不适用（`spec:1022-1024`、后端跨 dataset 早退 `service.py` 早退分支、`docs/sdd/plans/047/runs/task-16/evaluation-samples-api-e2e.json`）；`computed`（真实出分）/ `degraded`（真实判官失败）/ `unavailable`（异常）必须保持醒目，否则把失败伪装成「不适用」、违反用户「不降级、要看到效果」红线。四状态配色在 `styles.css:4391-4394` 各自独立，灰化只命中 `needs_ground_truth` 一行，**结构上不可能误灰其余三态**；未知 status 因 `app.js:7749` 兜底为字符串、CSS 为精确属性匹配（`[data-status="needs_ground_truth"]`），自动沿用基础卡片样式，不灰化、不报错（边界 2）。✅
+
+**3.2 选择器可覆盖 V1–V7 且不写全局覆盖 / 不用 `opacity` / `filter` / `display:none`**：
+
+| # | 元素 | 灰化规则（须带状态限定） | 特异性核对 |
+|---|---|---|---|
+| V1/V2 | 卡片左边框 / 背景 | 直接改 `styles.css:4393` 现有规则为 `border-left:4px solid #c9cbd3; background:#f6f6f8`（同选择器、同位置，最干净）；或新增同选择器规则后写覆盖 | `#evaluation-view`(id) + `.evaluation-metric-card`(class) + `[data-status]`(attr)，与 `:4393` 等同；不触碰 `:4391/:4392/:4394` |
+| V3 | 徽章 | `#evaluation-view .evaluation-metric-card[data-status="needs_ground_truth"] .evaluation-metric-status{background:#e9eaee;color:...}` | 高于 `:4400`（id+class），✅ 可覆盖 |
+| V4 | 标题 | `... .evaluation-metric-label{color:var(--muted-strong)}` | `:4395` 无 color 声明（继承 `--ink`），直接生效 ✅ |
+| V5 | 数值 | `... .evaluation-metric-value{color:var(--muted)}` | 高于 `:4396`（id+class），✅ |
+| V6 | `<summary>` | **必须写成** `... .evaluation-metric-params > summary{color:var(--muted-strong)}` | `:4405` 为 `#evaluation-view .evaluation-metric-params > summary`（id+class+element）；若只写 `.evaluation-metric-card[data-status=...] summary`（少 `> `、少 `.evaluation-metric-params`）**特异性可能不足以压过 `:4405` 的紫色**，这是本方案唯一的实现陷阱，落盘提示 dev 与 frontend-reviewer 重点复核 |
+| V7 | samples / detail-row / params | 不重复声明，保持 `--muted`（`:4401/:4403/:4404` 已如此，`spec:1057`） | ✅ 不新增规则即满足；展开后 `.evaluation-metric-param-row`（`:4406`）保持 `var(--ink)` 深墨色，在灰底上对比度高，不属灰化范围、无风险 |
+
+全部规则带 `[data-status="needs_ground_truth"]` 限定，无全局 `.evaluation-metric-*` 覆盖；`opacity` / `filter:grayscale()` / `display:none` / `visibility:hidden` 均被 §3 明令禁止且方案不需要——这既是无障碍要求（避免整体降对比度与「关闭态」），也让灰卡保留可交互性。✅
+
+**3.3 灰卡信息不丢（边界 3、4）**：本轮 Read `app.js:7787-7790` 状态徽章（`textContent` 含 status 文案与原始 status 串）、`:7792-7796` `样本数：${sampleCount}`（`sample_count=0` 显示 0）、`:7800-7817` `原因：${detailObject.reason}` 在 `<details>` **外**的关键信息层、`:7819-7835` 原生 `<details class="evaluation-metric-params"><summary>参数与明细</summary>` 默认收起可展开、全段 `createElement` + `textContent` 无 `innerHTML`；`:7734-7744` `value=null → '—'`。配色变更不触碰任何 DOM 生成逻辑，故 `—` / reason / `sample_count` / `<details>` 展开全部保留。`:7866-7872` 卡片视图 / 运行回看 / 对比视图共用 `appendEvaluationGroupedRows` + 同一 `renderEvaluationMetricCard`，历史 6 项 / 22 项 run 与「两次对比」灰化一致、不丢卡。✅ 边界 7（无 `innerHTML`、无新 class、`app.js` 零改动、`node --check` 仍 0）。
+
+### 四、WCAG AA 对比度只读复算（引出 P1-1）
+
+按 WCAG 2.x 相对亮度 `L = 0.2126·R + 0.7152·G + 0.0722·B`（各通道先按 `c<=0.03928 ? c/12.92 : ((c+0.055)/1.055)^2.4` 线性化），对比度 `(L亮+0.05)/(L暗+0.05)`，只读 python 复算：
+
+| 组合 | 前景 / 背景 | 实测比值 | AA 正文 ≥4.5:1 | 结论 |
+|---|---|---|---|---|
+| **V3 徽章（目标）** | `#6b6e78` / `#e9eaee` | **4.2330:1** | ❌ FAIL | **P1-1** |
+| **V4 标题（目标）** | `var(--muted-strong)` `#5a5d66` / `#f6f6f8` | **6.0947:1** | ✅ PASS | 达标 |
+| V3 现状（对照） | `#6d5dfc` / `--accent-soft #eeecff` | 3.9115:1 | ❌ FAIL | 现状即不达标；灰化后 4.2330 虽有改善仍未过线 |
+| V5/V7 沿用 `--muted`（对照） | `#8b8e96` / 现状紫底 `#faf9ff` → 目标灰底 `#f6f6f8` | 3.1306:1 → 3.0365:1 | ❌ FAIL | 既有基线问题，**灰化引入约 0.09 的轻微退化**（非 spec §3 承诺范围，见 R1） |
+| V6 `<summary>`（目标） | `#5a5d66` / `#f6f6f8` | 6.0947:1 | ✅ PASS | 达标 |
+| V1 边框（非文字） | `#c9cbd3` / `#f6f6f8` | 1.5005:1 | — | 装饰性边框、非文本，AA 正文阈值不适用（仅作记录） |
+
+补充：徽章字号 `10px 'DM Mono'`（`styles.css:4400`），远低于 WCAG「大字」阈值（18pt≈24px / 加粗 14pt≈18.66px），**必须按正文 4.5:1 判定**，不能以 3:1 大字阈值开脱。
+
+**达标替代色复算（同法）**：保持徽章底 `#e9eaee`，文字 `#646771`→4.6953:1、`#5f626c`→**5.0630:1**、`#5a5d66`→5.4720:1；或保持文字 `#6b6e78`，徽章底改 `#f2f3f6`→4.5863:1、`#f5f6f8`→4.7060:1。
+
+**P1-1 架构裁决（下游只认本落盘口径，不改 spec 正文、不回用户）**：spec §3 表格 V3 的 `#6b6e78` 与同节末行自定的「V3/V4 均须 ≥4.5:1」互相冲突，照抄实现必在 task-19 `getComputedStyle` 复核失败。裁决 **V3 徽章取 `color:#5f626c; background:#e9eaee`（5.0630:1，留 0.56 余量，仍为中性灰、色相不变）**；备选 `color:#5a5d66`（5.4720:1）或保留文字改底 `#f2f3f6`（4.5863:1）。§3 的「V1–V7 每条对应一条测试」相应改为断言达标色值，V4 维持 `var(--muted-strong)` 不变。task-19 E2E 须实测徽章 `color`/`backgroundColor` 并书面记录比值 ≥4.5:1。此调整只动一个字面值，不改用户诉求（「灰色表示」）、不改方案结构、不需用户重新拍板（§6 明确不做未锁定该色值，色值属 spec 设计细节而非用户原话）。
+
+**R1（非阻塞强制项，不计 P1）**：V5/V7 沿用 `--muted:#8b8e96` 在目标灰底上 3.0365:1，低于 4.5:1 且较现状紫底（3.1306:1）轻微退化。此为**既有基线问题**（现状紫卡该文字本就不达标），spec §3 只对 V3/V4 承诺 ≥4.5:1，V7 明确「保持 `--muted`（不重复声明）」。裁决：本次**不扩范围**去改 `--muted`（会动 `:root`、违反 §6），但 task-19 E2E 须一并记录该实测值，且**严禁**用 `opacity`/`filter` 等整体降透明度方式灰化（会进一步压低该值，§3 已禁）。若后续要根治，另立范围处理。
+
+### 五、版本与静态契约清单逐条核实（引出 P1-2）
+
+**5.1 基线（本轮 Read 核实）**：`frontend/index.html:8` live `<link rel="stylesheet" href="/assets/styles.css?v=75">`、`:905` live `<script src="/assets/app.js?v=77">`；`:907-911` 五个 HTML 注释均为**纯属性片段**兼容 marker（`src="/assets/app.js?v=76" href="/assets/styles.css?v=73"` 等，不含 `<script`/`<link` 标签字面串）。合并后主干把 `v=75` 冻结在多个静态契约中，spec §4 边界 5 处置为：升 `?v=75→?v=76`、`app.js?v=77` 逐字不动、新增 `styles.css?v=75` 纯属性片段 marker。
+
+**5.2 `_live_versions` / `live_css` 正则口径**：`test_evaluation_asset_versions.py:58-64` `re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)`（app.js 同理为 `<script src=` 前缀），`:95-100`/`:117-118` 精确断言 `== [77]`/`== [75]`。该正则要求 `<link rel="stylesheet" href=` **标签前缀**，注释内纯属性片段（`href="..."`）不含该前缀，**不会被误算成第二个 live 标签**——spec §4 边界 5「不污染 `_live_versions` 正则」成立，与 `test_evaluation_asset_versions.py:103-115`（`marker_line` 须含 `<!--`/`-->`、不得含 `<script`/`<link`）的守卫一致。✅
+
+**5.3 精确 live 断言全清单**（Grep 全扫 `tests/frontend/*.py` 的 `v=75` / `_live_versions` / `INDEX.count` / `re.findall(r'<link ...')` / `== ["75"]` / `active_version` / `live ==`，共 **6 处**，逐条核实）：
+
+| # | 文件:行号 | 断言 | 升 v=76 后 | spec §4 边界 6 |
+|---|---|---|---|---|
+| 1 | `test_evaluation_asset_versions.py:100` | `_live_versions("styles.css") == [75]` | 须改 `[76]`，否则失败 | ✅ 已列 |
+| 2 | `test_evaluation_asset_versions.py:118` | `_live_versions("styles.css") == [75]` | 须改 `[76]`，否则失败 | ✅ 已列 |
+| 3 | `test_evaluation_dataset_count_rendering.py:87` | `INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=75">') == 1` | 须改 `v=76`，否则失败 | ✅ 已列 |
+| 4 | `test_evaluation_metric_grouping.py:189` | `INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=75">') == 1` | 须改 `v=76`，否则失败 | ✅ 已列 |
+| 5 | **`test_research_detail_actions_placement_contract.py:221-223`** | `live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)`；`assert live_css == ["75"]` | 须改 `["76"]`，否则失败 | ❌ **漏列** |
+| 6 | **`test_memory_return_global_contract.py:207-210`** | 同正则；`assert live_css == ["75"]` | 须改 `["76"]`，否则失败 | ❌ **漏列** |
+
+spec §0 事实表（`spec:1018`）确实列出了 `test_research_detail_actions_placement_contract.py:218` 与 `test_memory_return_global_contract.py:191`，但那两处是 `assert 'href="/assets/styles.css?v=75"' in INDEX` 的**字符串冻结断言**；同文件更下方另有上表 5/6 两处**正则精确 live 断言**未被看见，导致 §4 边界 6 误判「主干新增冻结断言均为 `in INDEX` 字符串断言、精确断言只同步 4 处」。**结论：精确 live 断言实为 6 处，spec 少列 2 处。**
+
+**5.4 是否存在靠 marker「静默失效」的精确断言 —— 结论：否，且这正是必须同步 6 处的理由**。6 处精确断言全部基于完整 `<link ...>` / `<script ...>` 标签前缀（`INDEX.count('<link ...>')`、`_live_versions` 正则、`live_css = re.findall(r'<link ...')`）；新增的 `v=75` 纯属性 marker 不含标签前缀，**无法使任何一条精确断言满足**，因此它们不会「靠 marker 静默通过」——升版后值变为 76 / `["76"]`，会**响亮失败**（符合 regression-guard 第 12 条「断言不得恒真、不得可静默失效」的要求）。反过来说，一旦漏同步第 5/6 处，task-18 `pytest -q tests/frontend/` 必然红灯。真正保证 live 版本唯一性的是这 6 处精确断言（外加 `test_evaluation_strategy_label_rendering.py:107-108` 的 app.js live 正则 `== ["77"]`，本次不动）。
+
+**5.5 其余断言分类（不需改 / 靠 marker 满足 / 升版后仍 PASS）**：
+
+- **`in INDEX` 字符串冻结断言（9 处，靠新增 `v=75` 纯属性 marker 继续满足，不改期望值）**：`test_frontend_button_affordance_contract.py:198`（元组循环 `assert marker in INDEX`，本轮 Read 核实）、`test_frontend_management_contract.py:79`、`test_frontend_task_d_contract.py:190`、`test_frontend_task_j_contract.py:180`（元组循环，本轮 Read 核实）、`test_memory_return_global_contract.py:191`、`test_research_detail_actions_placement_contract.py:218`、`test_research_tab_width_stability_contract.py:125`、`test_research_view_stability_contract.py:180`、`test_frontend_map_header_actions_readability.py:284`（`STYLES_VERSION=75` 的 f-string `in INDEX`）。与项目合并时 `app.js?v=74` marker 的既有纯属性口径一致，spec §4 边界 6 的处置成立。此类断言在 marker 口径下语义弱化为「文件提及即通过」，属既有设计（非本次引入），真正防静默失效的是 5.3 的 6 处精确断言。
+- **范围断言（升 v=76 后仍 PASS，不改）**：`test_frontend_literature_map_contract.py:31-33` `int(style_versions[-1]) >= 57`（76≥57 ✅）、`test_frontend_map_header_actions_readability.py:298-302` `active_version > 68`（76>68 ✅）。后者 `re.search(r'href="(?:/assets/)?styles\.css\?v=(\d+)"', INDEX)` 取**第一个**匹配且不限定 `<link>` 前缀，故新 marker **必须放在末尾注释区**（`index.html:907-911` 之后）、不得塞进 head，否则会污染其 `active_version` 语义（虽 75>68 侥幸仍 PASS，但语义被破坏）。
+- **app.js 相关断言（本次不动 `app.js?v=77`，全部不受影响）**：`test_evaluation_strategy_label_rendering.py:98-111`（`v=74`/`v=75`/`v=73` 纯属性 marker 与 `live == ["77"]`）、`test_evaluation_asset_versions.py:99/117`（`== [77]`）、`test_evaluation_metric_grouping.py:188/191`、`test_evaluation_dataset_count_rendering.py:85/88-95`（`app.js?v=76` marker 恰好 1 条 —— 新增的是 `styles.css?v=75` marker，不含 `app.js?v=76` 字样，`len(lines)==1` 不受影响）。
+- **旧 marker 保留断言（不动）**：`test_evaluation_asset_versions.py:67-92` 的 `>=73`/`>=71`、`LEGACY_MARKERS`（`:15-46`）、`:88-92` `INDEX.count('...v=71')==1`；`test_evaluation_metric_grouping.py:207` `INDEX.count('href="/assets/styles.css?v=71"') == 1`。新增 `v=75` marker 不会使这些计数变成 2。
+- **`<script src=` 计数守卫与 marker 纯属性约束**：`test_memory_return_global_contract.py:179`、`test_frontend_button_affordance_contract.py:209` 均 `INDEX.count("<script src=") == 10`。新 marker 须为**纯属性片段、不含 `<script`/`<link` 字面串**，否则计数变 11 并同时污染 `_live_versions`/`live_css` 正则——与 `test_evaluation_asset_versions.py:103-115` 守卫口径一致。此外 **`test_evaluation_asset_versions.py:107`** 以 `next(line for line in INDEX.splitlines() if 'app.js?v=75' in line)` 取 marker 行并断言该行同时含 `src="/assets/app.js?v=75"` 与 `href="/assets/styles.css?v=72"`（`:112-113`）：故**新增的 `styles.css?v=75` marker 必须独立成行、不得含 `app.js?v=75` 字样**，否则会抢走该 `next()` 命中并使 `:113` 失败。落盘为 task-17 实现约束。
+- **`not in INDEX` 断言**：`test_research_detail_actions_placement_contract.py:220` `assert 'href="/assets/styles.css?v=74"' not in INDEX`，本次不涉及 v=74，仍满足。
+
+**5.6 P1-2 架构裁决（下游只认本落盘口径）**：task-17 须同步 **6 处**精确断言（`test_evaluation_asset_versions.py:100,118` → `[76]`；`test_evaluation_dataset_count_rendering.py:87`、`test_evaluation_metric_grouping.py:189` → `v=76`；**`test_research_detail_actions_placement_contract.py:223`、`test_memory_return_global_contract.py:210` → `["76"]`**），「只改期望值、不删断言、不放宽」；新增 `styles.css?v=75` 兼容 marker 必须为 HTML 注释内纯属性片段、独立成行、置于末尾注释区；`app.js?v=77` 与全部 legacy marker 逐字不动。task-18 单端回归须逐文件复核 6 处，不得只跑 spec 列出的 4 处。
+
+### 六、模型与上下文预算（§8 执行配置）
+
+- `spec:1118-1132` §8 明确「沿用本 spec §274–287 执行配置的现行 RACI 表与『型号唯一真源 = `.codebuddy/agents/<role>.md` 的 `model` 字段』规则，本追加范围**不新增 / 不改模型列**，避免同一规则在两处复述（`AGENTS.md` 单一落点原则）；架构师行填「自身」」。经核实：架构师 `architect` 档位真源 `model: hy4`、上下文上限 200k、分派「主会话（自身）」；`doc-updater` 标「不适用」（§5 六要素已由主会话一次写全，不单独分派）；唯一编码角色 `frontend-dev`；`frontend-reviewer`/`frontend-tester` 两次独立 `Task`；`tester` 验收 §16；后端三角色标「不适用」（后端零改动，按「单端改动只分派该端」不分派）；无 `junior-dev`（`ROLE-ONBOARDING.md:44-51`）。✅ **沿用单一落点、不新增第二份模型清单、架构师「自身」、五行齐全、不引用不存在的角色**，与 coding-standards 的 KISS/YAGNI 一致。
+- §7「后端代码零改动 → 不跑后端 pytest」与 §9 任务 17→18→19 单向依赖、纯前端分派、单端回归一致；「全量回归只在 Spec 收口阶段启动」且「若单端改动裁定裁剪须在评审结论写明依据并落盘」——本评审据此**落盘依据**：本次改动面仅 `frontend/styles.css`、`frontend/index.html` 与 `tests/frontend/*.py`，无 `backend/**` 变更、无接口 / 数据模型 / 稳定错误码变化，故 task-17/18 只跑前端定向 `node --check` + `pytest -q tests/frontend/` + `git diff --check`，**不跑后端 pytest**；Spec 收口阶段再按 `AGENTS.md` 执行一次最终候选全量回归。✅
+
+### 七、范围边界逐条核实（用户指定第 5 点）
+
+| 约束 | 核实结论 |
+|---|---|
+| 零后端 | ✅ §2 无数据模型 / 接口变化；改动面不含 `backend/**` |
+| 零 `app.js` 改动 | ✅ `app.js:7746-7750` 已提供 `data-status`，无需改；§4 边界 7、`node --check` 仍 0 |
+| 无新 class / 无 `innerHTML` | ✅ 全部选择器复用 `styles.css:4390-4406` 既有 class；`app.js:7746-7836` 全 `createElement`+`textContent`，`test_evaluation_metric_grouping.py:155-159` 已有 `assert "innerHTML" not in module` 守卫 |
+| 不改 `:root` | ✅ 复用 `--muted`/`--muted-strong`；灰阶字面值只写在 `[data-status]` 规则内 |
+| 不隐藏灰卡 / 不伪造 0 分 | ✅ 方案不写 `display:none`/`visibility:hidden`/`opacity`；`value=null→'—'`（`app.js:7734-7744`）、`sample_count=0` 如实显示、reason 可见；`degraded`/`unavailable`/`computed` 不灰化 |
+| 任务 17→18→19 单向依赖 | ✅ `spec:1134-1142`：17 灰阶 CSS + `?v=76` + 静态契约用例 → 18 前端评审 + 单端回归 → 19 浏览器 E2E + 部署验证 + 验收签字；依赖单向、无环 |
+| 纯前端分派 / 单端回归 | ✅ §8、§9、§7 一致（见第六节） |
+
+### 八、P0 / P1 清单、放行前置与阻塞判定
+
+- **P0 = 0**：第二至七节逐条核实成立——状态语义、纯 CSS 可行性、灰卡信息不丢、零后端 / 零 `app.js`、`_live_versions` 正则口径、选择器作用域、§8 执行配置均有代码 / 文件证据；无「方案根本不成立 / 必须推倒 / 需用户重新确认」的阻塞项。**不判打回**，[需求评审 §16](./047-requirement-review.md) 同为「通过」。
+- **P1 = 2**（均为「必须修复但非阻塞」，逐条证据 + 裁决 + 可执行修复见第四、五节）：
+  1. **P1-1｜V3 徽章 WCAG 不达标**：`#6b6e78`/`#e9eaee` 实测 **4.2330:1 < 4.5:1**，与 spec §3 自定约束冲突（V4 `#5a5d66`/`#f6f6f8` = **6.0947:1** 达标）→ 裁决 V3 改 `color:#5f626c`（5.0630:1）并保持底 `#e9eaee`，或等价达标组合；task-17 灰阶契约断言改用达标色值，task-19 E2E 实测 `getComputedStyle` 并记录比值。
+  2. **P1-2｜静态契约精确断言清单漏列 2 处**：spec §4 边界 6「精确断言只同步 4 处」实为 **6 处**，漏列 `test_research_detail_actions_placement_contract.py:223` 与 `test_memory_return_global_contract.py:210` 的 `live_css == ["75"]`（正则精确断言、marker 无法使其满足）→ 须一并同步为 `["76"]`，给出 文件:行号；task-18 须复核 6 处。
+- **为什么不判打回**：两项均属「spec 与当前代码 / 测试事实的偏差或 spec 内部口径冲突」，可通过「本评审落盘裁决 + task-17 采纳 + task-18/19 复验」闭环；均不改用户「不相关的指标用灰色表示」的诉求（P1-1 只是把灰调深、P1-2 只是补全断言清单）、不推倒纯 CSS 方案、不翻案 spec 主体 `已完成`、不重开追加范围一/二/三门禁、不触发再次请求用户确认。与「追加范围三技术评审」§四（P0=0 / P1=4、P1 不构成打回）及本文件追加前 `:219-560` 既定口径一致。R1（V5/V7 `--muted` 既有基线对比度）、5.5 的实现约束、C 类 spec 已写明强制项按既有口径**不计入 P1**。
+- **放行前置（硬）**：Gate 2 判定为**通过（附强制约束）**，可与需求评审 §16 共同放行转 `实施中` 并创建 task-17/18/19。但 task-17 **必须以本评审落盘的「V3 达标色值 + 6 处精确断言清单」为实现输入，不得照抄 spec §3 的 `#6b6e78` 与 §4 边界 6 的「4 处」**（下游只认落盘文档）；未落实则 task-18 回归 / task-19 WCAG 复核必然红灯、验收 §16 不得签字。若坚持照抄不达标色值，按 spec §5 失败恢复第 2 条退回重新确认视觉契约——该路径由 spec 自身预留，本评审不额外扩范围。
+
+### 九、边界与纪律声明
+
+本评审为追加范围四**技术评审**，结论独立；前序「追加范围技术评审」「追加范围二技术评审」「追加范围三技术评审」（本文件追加前 `:219-560`）及其 P0 / P1 结论逐字保留、未改写、不翻案。评审阶段**未改** spec 正文 / `backend/**` / `frontend/**` / 测试 / 配置 / `.env` / 状态台账 / 历史评审结论 / 任何业务代码，**未跑真实 API / 真实浏览器 E2E**（本轮仅只读 Read / Grep 与一次只读 python WCAG 相对亮度复算），**未 git commit / push / 合 main / reset / stash**（仅执行 `git rev-parse` / `git branch --show-current` / `git status --porcelain` 等只读命令核实基线）；工作区既有的 `M docs/sdd/spec-status-changelog.md`、`M docs/sdd/specs/047-*.md` 为主会话计划模式重基线 / 台账追加产物，本评审未触碰。未新建 spec 编号 / spec 文件 / `plans/048/`，未把不存在的能力（`?v=76`、灰卡实现、6 处断言已同步）写成已实现，未 mock 冒充实测。所有 `文件:行号` / `spec:行号` 均经本轮 Read / Grep 核实；WCAG 数值与静态契约 6 处清单均为本轮实算 / 全扫所得，未以「应该没问题」略过。需求评审见 [需求评审 §16](./047-requirement-review.md)；进展日志 `.codebuddy/agent-logs/spec-047/task-17/architect/20261112-055321.md`。下游实现与验收只认落盘文档：本评审 + 需求评审 §16 + spec 追加范围四章节 + `plans/047/` task-17/18/19。

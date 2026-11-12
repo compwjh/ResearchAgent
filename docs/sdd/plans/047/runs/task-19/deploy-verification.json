@@ -1,0 +1,27 @@
+{
+  "service": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "pid": 50865,
+    "start_command": "RERANKER_ENABLED=false ./deploy/start.sh -d"
+  },
+  "checks": {
+    "health": {
+      "status": 200,
+      "body": "{\"status\":\"ok\",\"model\":\"qwen3.8:27b\",\"models\":[\"qwen3.8:27b-q4_K_M\",\"qwen3.8:27b-mlx\",\"qwen3.8-27b-q4:latest\",\"qwen3.8:2"
+    },
+    "index": {
+      "status": 200,
+      "live_stylesheet": "<link rel=\"stylesheet\" href=\"/assets/styles.css?v=76\">"
+    },
+    "styles_css_v76": {
+      "status": 200,
+      "needs_ground_truth_rules": 6
+    },
+    "evaluation_options": {
+      "status": 200,
+      "datasets": 3
+    }
+  },
+  "conclusion": "PASS"
+}

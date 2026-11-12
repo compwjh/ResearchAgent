@@ -84,7 +84,7 @@ def test_object_branch_appends_item_count_text_and_keeps_id_value() -> None:
 def test_dataset_count_bumps_live_app_js_and_adds_pure_attribute_marker() -> None:
     assert INDEX.count('<script src="/assets/app.js?v=77"></script>') == 1
     # 合并远程 main 后 live CSS 为 v=75；v=73 保留在下方纯属性兼容 marker
-    assert INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=75">') == 1
+    assert INDEX.count('<link rel="stylesheet" href="/assets/styles.css?v=76">') == 1
     lines = [line for line in INDEX.splitlines() if "app.js?v=76" in line]
     assert len(lines) == 1, "升版前的 v=76 须降级为恰好 1 条兼容 marker"
     marker = lines[0]
