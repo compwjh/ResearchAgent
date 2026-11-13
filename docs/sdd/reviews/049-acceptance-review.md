@@ -136,7 +136,7 @@ VERIFICATION REPORT：Build 不适用（纯前端交互修正，`spec:19,27`）�
 ## 7. 签字栏
 
 - **验收签字 `tester`（跨端验收总控）· 签字 R**：通过（见 §1）。本签字仅代表跨端验收判定，不代表合并裁决。
-- **开发主管签字 `architect` · 签字 A**：待架构师合并裁决填写（本分派不代签，留空）。
+- **开发主管签字 `architect` · 签字 A**：批准收口（`Task(architect)` 独立裁决，P0=0 / P1=0 / P2=0；落点 `docs/sdd/plans/049/runs/task-04/merge-decision.md` §2）。签字 R 与签字 A 并列、非自批。
 
 ## 8. 交付边界
 
