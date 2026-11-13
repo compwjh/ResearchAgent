@@ -43,7 +43,7 @@ def _function_body(source: str, signature: str) -> str:
 def test_live_asset_versions_are_exactly_bumped() -> None:
     js_live = re.findall(r'<script src="/assets/literature-maps\.js\?v=(\d+)"></script>', INDEX)
     css_live = re.findall(r'<link rel="stylesheet" href="/assets/literature-maps\.css\?v=(\d+)">', INDEX)
-    assert js_live == ["48"], f"live literature-maps.js 必须恰为 v=48，实际 {js_live}"
+    assert js_live == ["49"], f"live literature-maps.js 必须恰为 v=49，实际 {js_live}"
     assert css_live == ["36"], f"live literature-maps.css 必须恰为 v=36，实际 {css_live}"
     # app.js / styles.css 不受本次改动影响（C8 明确不升这两个资源）。
     assert '<script src="/assets/app.js?v=77"></script>' in INDEX
@@ -149,6 +149,23 @@ def test_refresh_button_is_textless_icon_button_in_canvas_tools() -> None:
     assert "refreshButton.append(refreshIcon)" in body
     assert "innerHTML" not in body, "图标只能用 CSS 形状，不得 innerHTML"
     assert "refreshButton.addEventListener('click'" in MAP_JS, "刷新事件链仍绑定 refreshButton"
+    # 刷新旋转 Promise 收尾静态契约：点击回调无 setTimeout 旋转移除、.finally 移除
+    # is-spinning、.catch 兜底 reject。
+    click_block = re.search(
+        r"refreshButton\.addEventListener\('click', \(\) => \{([\s\S]*?)\n\s*\}\);",
+        MAP_JS,
+    )
+    assert click_block, "刷新按钮点击回调块须存在"
+    click_body = click_block.group(1)
+    assert "setTimeout" not in click_body, "点击回调不得含 setTimeout 旋转移除"
+    assert "clearTimeout" not in click_body, "点击回调不得含 clearTimeout"
+    assert "refreshSpinTimer" not in click_body, "点击回调不得保留 refreshSpinTimer"
+    assert ".finally(" in click_body, "刷新 Promise 须以 .finally 收尾"
+    assert re.search(
+        r"\.finally\(\(\) => refreshButton\.classList\.remove\('is-spinning'\)\)",
+        click_body,
+    ), ".finally 内须执行 classList.remove('is-spinning')"
+    assert ".catch(" in click_body, "selectMap 的 reject 须有兜底，避免 unhandled rejection"
 
 
 def test_no_legacy_text_button_or_header_new_button_remains() -> None:

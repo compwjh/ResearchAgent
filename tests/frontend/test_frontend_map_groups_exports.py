@@ -50,7 +50,7 @@ def test_groups_and_export_contract_is_wired_without_html_injection() -> None:
 def test_export_asset_versions_are_synchronised() -> None:
     fixture = FIXTURE.read_text(encoding="utf-8")
     assert "/literature-maps.css?v=36" in fixture
-    assert "/literature-maps.js?v=48" in fixture
+    assert "/literature-maps.js?v=49" in fixture
     assert re.findall(r"literature-maps\.js\?v=(\d+)", INDEX)[-1] == "47"
     assert re.findall(r"literature-maps\.css\?v=(\d+)", INDEX)[-1] == "34"
 

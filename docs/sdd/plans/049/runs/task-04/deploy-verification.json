@@ -1,0 +1,33 @@
+{
+  "spec": "049",
+  "task": "04",
+  "base": "http://127.0.0.1:8000",
+  "command": "curl -s -o /dev/null -w '%{http_code}' <url>；curl -s / 提取 HTML",
+  "status_codes": {
+    "/api/health": 200,
+    "/": 200,
+    "/assets/literature-maps.js?v=49": 200,
+    "/assets/literature-maps.css?v=36": 200
+  },
+  "homepage": {
+    "live_script": [
+      "/assets/literature-maps.js?v=49"
+    ],
+    "live_link": [
+      "/assets/literature-maps.css?v=36"
+    ],
+    "last_js_marker": "47",
+    "last_css_marker": "34",
+    "marker_comment_lines": [
+      "<!-- Spec048 compatibility marker: src=\"/assets/literature-maps.js?v=47\" -->",
+      "<!-- Spec048 compatibility marker: href=\"/assets/literature-maps.css?v=34\" -->"
+    ]
+  },
+  "checks": {
+    "four_status_codes_all_200": true,
+    "live_v49_v36": true,
+    "marker_47_34_last": true,
+    "marker_not_loaded_as_asset": true
+  },
+  "conclusion": "PASS"
+}

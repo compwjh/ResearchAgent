@@ -1577,13 +1577,14 @@
   }
 
   function bindEvents(refreshButton, closeDetail) {
-    let refreshSpinTimer = 0;
     refreshButton.addEventListener('click', () => {
       refreshButton.classList.add('is-spinning');
-      window.clearTimeout(refreshSpinTimer);
-      refreshSpinTimer = window.setTimeout(() => refreshButton.classList.remove('is-spinning'), 700);
-      if (state.selectedMapId) selectMap(state.selectedMapId);
-      else loadMaps();
+      if (state.selectedMapId) selectMap(state.selectedMapId)
+        .finally(() => refreshButton.classList.remove('is-spinning'))
+        .catch(() => {});
+      else loadMaps()
+        .finally(() => refreshButton.classList.remove('is-spinning'))
+        .catch(() => {});
     });
     refs.continueButton.addEventListener('click', () => openPreview('topic'));
     refs.refreshPreviewButton.addEventListener('click', () => openPreview('refresh'));
