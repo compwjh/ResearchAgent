@@ -88,3 +88,15 @@
 ## 11. 引用路径
 
 `docs/sdd/specs/049-known-nonblocking-followup-cleanup.md`（`已完成`）、`docs/sdd/plans/049/README.md`、task-02/03/04（`已完成`）、`runs/decision-ledger.md`、`docs/sdd/retro/2026-11-13-spec049-nonblocking-followup-closure.md`、`docs/sdd/spec-status-changelog.md`（`实施中 → 已完成`）、`artifacts/spec-049-nonblocking-manual-e2e.md`。
+
+## 12. 收口执行结果
+
+| 项 | 结果 |
+|---|---|
+| 本地提交链 | `feat(spec-049): 定案已知非阻塞项并修正刷新旋转反馈`（32 文件）→ `docs(spec-049): 回填验收报告签字 A 结论`（1 文件）→ 收口一致性修正（签字栏表述 + 本文件 §12）；以 `git log` 为准 |
+| 本地 `HEAD` / `origin/main` / 远端 `main` | 三者一致 |
+| 远端引用更新 | `PATCH git/refs/heads/main`，`force=false`，两次均 `sha_match=true` / `tree_match=true` |
+| 签字栏 | 签字 R（`tester`）与签字 A（`architect`）在 `049-acceptance-review.md` §7 与 `merge-decision.md` §2 并列、非自批 |
+| 部署复验 | `/api/health`、`/`、`js?v=49`、`css?v=36` 均 200；ruff `Found 185 errors` 保持基线 |
+
+`merge-decision.md` §3 的「待回填」与 `049-requirement-review.md:84` 的「保持待评审至 Gate 5」为评审当时快照，按不翻案原则逐字保留；实际收口动作见 spec「任务计划」「评审记录」「变更日志」与本文件 §12。
