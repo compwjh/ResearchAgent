@@ -620,3 +620,7 @@
 - 2026-11-05（Asia/Shanghai）｜Spec030 跨论文证据矩阵与深度研究报告（人工验收阶段 UI 缺陷修复）：已完成 → 已完成（保持 READY_FOR_USER，用户人工验收仍待执行）。用户反馈 `/c/<id>#research-view` 向下滚动出现视图重叠与侧栏透叠；根因是 `frontend/app.js` 的 `showView()` 未把 `#research-view` 纳入互斥，致 `#chat` 与研究视图同显、第二个 `.main-area` 被栅格挤入侧栏列（页面高 8734px）。`frontend-dev` 修复并补 2 个前端测试，`frontend-reviewer` 复审通过（0 阻塞）、`frontend-tester` 单端回归 READY；主会话真实浏览器复测：切到研究视图后唯一可见主区、rect [238,-32,1042,6681]、overlapX=false，切回对话仅 chat。主会话代行纯文档同步（spec 评审记录、变更日志、本台账），无业务代码改动；报告与实现同分支同提交，本地 ff 合并 main，未 push。
 
 - 2026-11-05（Asia/Shanghai）｜Spec043 交互式文献地图与自动主题探索（人工验收阶段 UX 缺陷修复）：已完成 → 已完成（保持用户人工验收待执行）。用户反馈打开地图即出现「节点样式」设置浮层，要求点击才弹出。根因有两层：`frontend/literature-maps.js` 在桌面默认及视口切换时强制展开 `<details>`；`frontend/literature-maps.css` 给 fieldset 显式 `display:flex`，使折叠态内容仍渲染（16×383 竖条）。两轮修复由 `frontend-dev` 完成（`literature-maps.js?v=38`、`literature-maps.css?v=26`、全部版本断言同步、2 个新测试），`frontend-reviewer` 两轮复审通过（0 阻塞）、`frontend-tester` 两轮回归 READY，主会话真实浏览器复测通过（折叠 display:none/0×0、点击展开 flex/416×47、700↔1280 切换仍折叠）。主会话代行纯文档同步（spec 评审记录、变更日志、本台账），无业务代码改动；报告与实现同分支同提交，本地 ff 合并 main，未 push。
+
+- 2026-11-08（Asia/Shanghai）｜Spec046 Agent 执行防护、事实核验与 4B 后训练：未建档 → 待确认。主会话将用户确认的三轮设计决策整理为 Spec 与两个交付阶段的 Task，需求和技术评审尚未执行，仅更新文档。
+
+- 2026-11-13（Asia/Shanghai）｜Spec046 Agent 执行防护、事实核验与 PIGuard：待确认 → 待确认。将已完成本机复训的 PIGuard 纳入接入方案，明确模型产物、运行契约及验收；需求与技术评审、运行时实现及公开测试待执行。主会话代行纯文档整理。
