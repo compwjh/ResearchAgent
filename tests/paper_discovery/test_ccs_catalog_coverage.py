@@ -14,7 +14,7 @@ import httpx
 from backend.app.paper_discovery.infrastructure.ccs_publication_source import CcsPublicationSource
 
 ROOT = Path(__file__).parents[2]
-AUDIT = ROOT / "artifacts" / "task-07" / "ccs-coverage.md"
+AUDIT = ROOT / "artifacts" / "spec-032" / "task-07" / "ccs-coverage.md"
 
 
 def _source() -> CcsPublicationSource:

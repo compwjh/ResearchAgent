@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-11-09T19:03:22.650979+00:00",
+  "url": "http://127.0.0.1:8000/#evaluation-view",
+  "browser": "playwright-cli",
+  "health_http": 200,
+  "snapshots": [
+    "eval-initial.yaml",
+    "eval-scored.yaml",
+    "eval-intent.yaml"
+  ],
+  "screenshot": "eval-scored.png",
+  "dom_controls": {
+    "view": "#evaluation-view",
+    "strategy": "#evaluation-strategy-select",
+    "model": "#evaluation-model-select",
+    "dataset": "#evaluation-dataset-select",
+    "score_button": "#evaluation-score-button",
+    "metric_cards": "#evaluation-metrics .evaluation-metric-card"
+  },
+  "case_rag": {
+    "selection": [
+      "baseline",
+      "qwen3.5:9b",
+      "rag-retrieval"
+    ],
+    "cards": [
+      {
+        "label": "召回率@k",
+        "value": 0.3333,
+        "status": "computed",
+        "sample_count": 3
+      },
+      {
+        "label": "准确率@k",
+        "value": 0.0667,
+        "status": "computed",
+        "sample_count": 3
+      },
+      {
+        "label": "MRR@k",
+        "value": 0.3333,
+        "status": "computed",
+        "sample_count": 3
+      }
+    ]
+  },
+  "case_intent": {
+    "selection": [
+      "baseline",
+      "qwen3.5:9b",
+      "intent-classification"
+    ],
+    "cards": [
+      {
+        "label": "意图识别准确率",
+        "value": 1.0,
+        "status": "computed",
+        "sample_count": 3
+      }
+    ]
+  },
+  "console_errors": [
+    "4 x 404 /api/conversations/{id} from other views historical sessions, unrelated to evaluation"
+  ],
+  "known_ui_defect_found": "[object Object] in run history / compare option text (strategy is object); handed back to frontend-dev",
+  "verdict": "PASS (main scoring path visible in real browser)"
+}

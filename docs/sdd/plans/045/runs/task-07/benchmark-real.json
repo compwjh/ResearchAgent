@@ -1,0 +1,67 @@
+{
+  "question": "用一句话说明什么是性能基准。",
+  "model": "qwen3.5:9b",
+  "runs": 1,
+  "routes": {
+    "langchain": {
+      "samples": [
+        {
+          "ttft_ms": 27756.266,
+          "load_ms": 0.0,
+          "prompt_eval_ms": 0.0,
+          "eval_ms": 0.0,
+          "total_ms": 0.0,
+          "overhead_ms": 0.0,
+          "client_wall_ms": 28451.276,
+          "tokens_per_sec": 0.0,
+          "is_cold_start": 0.0
+        }
+      ],
+      "avg": {
+        "overhead_ms": 0.0,
+        "tokens_per_sec": 0.0,
+        "is_cold_start": 0.0,
+        "ttft_ms": 27756.266,
+        "client_wall_ms": 28451.276,
+        "eval_ms": 0.0,
+        "prompt_eval_ms": 0.0,
+        "load_ms": 0.0,
+        "total_ms": 0.0
+      },
+      "errors": []
+    },
+    "direct": {
+      "samples": [
+        {
+          "ttft_ms": 39960.904,
+          "load_ms": 5.376,
+          "prompt_eval_ms": 77.245,
+          "eval_ms": 40486.374,
+          "total_ms": 40584.774,
+          "overhead_ms": 8.533,
+          "client_wall_ms": 40593.307,
+          "tokens_per_sec": 38.704,
+          "is_cold_start": 0.0
+        }
+      ],
+      "avg": {
+        "overhead_ms": 8.533,
+        "tokens_per_sec": 38.704,
+        "is_cold_start": 0.0,
+        "ttft_ms": 39960.904,
+        "client_wall_ms": 40593.307,
+        "eval_ms": 40486.374,
+        "prompt_eval_ms": 77.245,
+        "load_ms": 5.376,
+        "total_ms": 40584.774
+      },
+      "errors": []
+    }
+  },
+  "diff": {
+    "ttft_ms": -12204.638,
+    "client_wall_ms": -12142.031,
+    "overhead_ms": -8.533,
+    "total_ms": -40584.774
+  }
+}

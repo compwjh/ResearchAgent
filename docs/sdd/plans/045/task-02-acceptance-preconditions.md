@@ -1,11 +1,11 @@
 > 关联：[spec-045](../../specs/045-evaluation-observability-hardening.md) ｜ 索引：[README](./README.md)
-> 依赖：任务 01；当前状态：`待执行`
+> 依赖：任务 01；当前状态：`已完成`（2026-11-08 接手机器真实取证）
 
 # Task 02 — 验收前置：启用 Langfuse + 可复现样本 + 真实 E2E
 
 ## 状态与一句话目标
 
-`待执行`。在受控环境里让 Langfuse 与真实 Ollama 都处于可用状态，产出一批可复现样本，
+`已完成`。在受控环境里让 Langfuse 与真实 Ollama 都处于可用状态，产出一批可复现样本，
 并跑通一次非 mock 的端到端，作为 spec-045 全部后续任务的**验收硬前置**。
 本任务由验收执行者完成，**不由开发任务代劳**（Q9 裁决）。
 
@@ -156,3 +156,25 @@
 1. 用户清理磁盘（如 JetBrains 日志）或提供 ≥10Gi 可用空间后，重启 web/worker 验证 `dual`；
 2. 或改用已部署的远端 Langfuse；
 3. 或明确接受真实 E2E 长期挂起，在验收结论声明证据 ②③④ 缺失。
+
+## 接手机器执行结果（2026-11-08，Apple M3 Max / arm64）
+
+**状态：已完成。** 发送方记录的三大阻塞（events_only 404、磁盘不足、基础设施缺失）在本机均不成立。
+
+| 验收点 | 真实结果 |
+|---|---|
+| Langfuse 可用 | 8123/5432/6379/9002 全 OK；web 3000 + worker 3030 LISTEN；`/api/public/health`、`/traces`、`/scores` 均 200（**dual 生效**） |
+| 样本可复现 | `--send` 20 条，`fixture_id=spec013-task06-20261108T060158Z`，Langfuse 可查 |
+| 真实 E2E | `POST /api/conversations/messages` HTTP 200、`status=completed`；trace `98b91aa39d22b54a50f6dba1364eccdd` 含 `phase:prefill/load/overhead/decode` 四段 span + GENERATION |
+| 配置可回退 | 根 `.env` 本为 gitignored 运行态文件，未改已提交内容；关闭只需 `LANGFUSE_ENABLED=false` 并重启 |
+| CLI 评测 | `eval_042` 真实 `--export` → `report.json`/`report.md` 五类指纹齐全，score 真实回写 |
+| score 幂等 | 重跑前后 `totalItems 979 → 979`，零新增 |
+
+主服务已重启（`com.researchagent.recovery8000`，PID 37370），`/` 与 `/api/health` 均 200。
+首次用 `qwen3.5:9b` 因能力缓存不含 `off` 报 `REASONING_EFFORT_UNSUPPORTED`（调用参数问题，非缺陷），
+改用 `qwen3.8:27b` 成功。
+
+**命令全文、实体 ID、产物路径与未完成项**：[`runs/task-02/evidence.md`](./runs/task-02/evidence.md)。
+
+> 仍有 Q10 证据 ①（红绿汇总）与 ④（瀑布图浏览器截图）留待 Task 08；
+> Task 07 未落地、Task 08 未执行，故 spec **不判 `已完成`**。

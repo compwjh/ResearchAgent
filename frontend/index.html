@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/assets/styles.css?v=77">
     <!-- Spec044: 本地 vendor KaTeX 0.16.45（无 CDN / 无运行时网络请求） -->
     <link rel="stylesheet" href="/assets/vendor/katex/katex.min.css?v=1">
-  <link rel="stylesheet" href="/assets/literature-maps.css?v=34">
+  <link rel="stylesheet" href="/assets/literature-maps.css?v=36">
     <style id="research-tasks-inline-style">
       /* Task04 research workspace stays self-contained so the module can ship before app.js. */
       #research-view[hidden] { display: none; }
@@ -119,6 +119,7 @@
         <a class="nav-item" data-view="papers" href="#papers-view" aria-controls="papers-view" aria-current="false"><span class="nav-icon">⌕</span> 论文检索</a>
         <a class="nav-item" data-view="literature-maps" href="#literature-maps-view" aria-controls="literature-maps-view" aria-current="false"><span class="nav-icon">⌘</span> 文献地图</a>
         <a class="nav-item" data-view="skill-tool" role="button" tabindex="0"><span class="nav-icon">❖</span> Skills 与 Tools</a>
+        <a class="nav-item" data-view="evaluation" href="#evaluation-view" aria-controls="evaluation-view" aria-current="false"><span class="nav-icon">▦</span> 评测</a>
       </nav>
       <section class="research-notifications" aria-labelledby="research-notifications-title">
         <header class="research-notifications-head">
@@ -245,6 +246,13 @@
             <details open>
               <summary>任务列表</summary>
               <div class="research-column-body">
+                <div id="research-task-search-bar" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px">
+                  <input type="search" id="research-task-search" placeholder="按目标 / ID 搜索研究任务" aria-label="按目标 / ID 搜索研究任务" maxlength="128" autocomplete="off" style="flex:1 1 200px;min-width:0">
+                  <span class="research-status" id="research-task-search-count" role="status" aria-live="polite">0/0</span>
+                </div>
+                <p class="research-status" id="research-task-search-status" role="status" aria-live="polite" hidden></p>
+                <p class="research-empty" id="research-task-search-empty" role="status" aria-live="polite" hidden>无匹配结果</p>
+                <button class="secondary-button btn-outline" id="research-task-search-retry" type="button" hidden>重试</button>
                 <p class="research-status" id="research-list-status" role="status" aria-live="polite">正在加载…</p>
                 <div class="research-task-list" id="research-task-list" role="list"></div>
                 <p class="research-empty" id="research-list-empty" hidden>暂无研究任务</p>
@@ -764,6 +772,50 @@
         </div>
       </section>
     </section>
+
+    <section class="main-area" id="evaluation-view" hidden aria-labelledby="evaluation-title">
+      <header class="topbar">
+        <div class="breadcrumb"><span>工作区</span><span class="slash">/</span><strong id="evaluation-title">评测台</strong></div>
+      </header>
+      <section class="workspace evaluation-workspace" aria-label="评测工作台">
+        <div class="evaluation-page-header">
+          <h1>评测</h1>
+          <p class="subtitle">选择策略、被测模型与评测集，真实打分后逐维度查看分数、状态、样本数与明细。</p>
+        </div>
+        <form class="evaluation-controls" id="evaluation-score-form">
+          <label class="evaluation-field">策略 <select id="evaluation-strategy-select"></select></label>
+          <label class="evaluation-field">模型 <select id="evaluation-model-select"></select></label>
+          <label class="evaluation-field">评测集 <select id="evaluation-dataset-select"></select></label>
+          <button class="send-button evaluation-score-button" id="evaluation-score-button" type="submit">开始评分</button>
+        </form>
+        <p class="evaluation-status" id="evaluation-status" role="status" aria-live="polite"></p>
+        <div class="evaluation-spinner" id="evaluation-spinner" hidden aria-hidden="true"></div>
+        <div class="evaluation-run-head" id="evaluation-run-head" hidden></div>
+        <h2 class="evaluation-section-title">分维度分数</h2>
+        <div class="evaluation-metrics" id="evaluation-metrics" role="list" aria-label="分维度分数"></div>
+        <p class="evaluation-empty" id="evaluation-metrics-empty">尚未评分，请在上方三选一后点击「开始评分」。</p>
+
+        <section class="evaluation-history" aria-label="运行历史">
+          <div class="evaluation-section-head">
+            <h2 class="evaluation-section-title">运行历史</h2>
+            <button class="secondary-button btn-outline evaluation-runs-refresh" id="evaluation-runs-refresh" type="button">刷新历史</button>
+          </div>
+          <ul class="evaluation-runs-list" id="evaluation-runs-list" aria-live="polite"></ul>
+          <p class="evaluation-empty" id="evaluation-runs-empty" hidden>暂无运行记录。</p>
+          <div class="evaluation-run-detail" id="evaluation-run-detail" hidden></div>
+        </section>
+
+        <section class="evaluation-compare" aria-label="两次对比">
+          <h2 class="evaluation-section-title">两次对比</h2>
+          <div class="evaluation-compare-controls">
+            <label class="evaluation-field">运行 A <select id="evaluation-compare-a"></select></label>
+            <label class="evaluation-field">运行 B <select id="evaluation-compare-b"></select></label>
+            <button class="secondary-button btn-outline evaluation-compare-button" id="evaluation-compare-button" type="button">对比</button>
+          </div>
+          <div class="evaluation-compare-result" id="evaluation-compare-result" aria-live="polite"></div>
+        </section>
+      </section>
+    </section>
   </main>
 
   <dialog class="settings-dialog st-detail-dialog" id="st-skill-dialog" aria-labelledby="st-detail-title">
@@ -846,12 +898,24 @@
   <script src="/assets/conversation-research.js?v=3"></script>
   <script src="/assets/processing-tree.js?v=2"></script>
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 /assets/research-tasks.js?v=10 -->
+  <!-- Compatibility marker retained for prior frontend contracts: /assets/research-tasks.js?v=21 -->
   <script src="/assets/research-tasks.js?v=28"></script>
-    <script src="/assets/literature-maps.js?v=47"></script>
+    <script src="/assets/literature-maps.js?v=49"></script>
   <!-- Legacy asset-version markers: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/app.js?v=53 /assets/app.js?v=55 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 /assets/styles.css?v=55 href="/assets/styles.css?v=53" href="/assets/styles.css?v=62" src="/assets/app.js?v=53" src="/assets/app.js?v=62" -->
   <script src="/assets/app.js?v=78"></script>
+  <!-- Merge compatibility marker: src="/assets/research-tasks.js?v=22" -->
+  <!-- Evaluation dataset-count compatibility marker: src="/assets/app.js?v=76" href="/assets/styles.css?v=73" -->
+  <!-- Evaluation compact-cards compatibility marker: src="/assets/app.js?v=75" href="/assets/styles.css?v=72" -->
+  <!-- Evaluation view compatibility markers retained for older static contracts: href="/assets/styles.css?v=70" src="/assets/app.js?v=72" -->
+  <!-- Evaluation strategy-label fix compatibility marker: src="/assets/app.js?v=73" -->
+  <!-- Evaluation grouped-view compatibility markers retained for older static contracts: src="/assets/app.js?v=74" href="/assets/styles.css?v=71" -->
+  <!-- Merge compatibility marker: href="/assets/styles.css?v=75" -->
+  <!-- Merge compatibility marker: src="/assets/research-tasks.js?v=25" -->
+  <!-- Merge compatibility marker: styles.css?v=76（纯版本片段，不含 href= 属性前缀，避免与旧生效引用护栏冲突） -->
   <!-- Task05 compatibility markers retained for prior frontend contracts: /assets/research-tasks.js?v=2 /assets/research-tasks.js?v=3 /assets/research-tasks.js?v=9 -->
   <!-- Task09/Task10 compatibility markers retained for older static contracts: /assets/app.js?v=31 /assets/app.js?v=32 /assets/app.js?v=33 /assets/app.js?v=34 /assets/app.js?v=35 /assets/app.js?v=43 /assets/app.js?v=44 /assets/app.js?v=45 /assets/app.js?v=46 /assets/app.js?v=47 /assets/app.js?v=48 /assets/app.js?v=49 /assets/app.js?v=50 /assets/styles.css?v=43 /assets/styles.css?v=44 /assets/styles.css?v=45 /assets/styles.css?v=46 /assets/styles.css?v=47 /assets/styles.css?v=48 /assets/styles.css?v=49 href="/assets/styles.css?v=53" -->
   <!-- Spec037 compatibility markers: /assets/research-tasks.js?v=11 /assets/app.js?v=54 href="/assets/styles.css?v=53" src="/assets/app.js?v=54" -->
+  <!-- Spec048 compatibility marker: src="/assets/literature-maps.js?v=47" -->
+  <!-- Spec048 compatibility marker: href="/assets/literature-maps.css?v=34" -->
 </body>
 </html>

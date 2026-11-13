@@ -2,7 +2,16 @@
 
 ## 状态
 
-**当前状态：已确认**
+**当前状态：已完成**（2026-11-08 收口）
+
+> **收口记录（2026-11-08）**：Task 02 硬前置真实消解、Task 03–07 全部落地、Task 08 集成验收通过。
+> 最终全量回归 `4112 passed, 2 skipped, 67 subtests`，`PYTEST_EXIT=0`；Q10 四类证据 4/4 齐全
+> （索引 `docs/sdd/plans/045/runs/task-08/q10-evidence-index.md`）；
+> 需求/技术/验收三份评审均通过，架构师已签字，准备度 9/10、P0=0/P1=0；
+> 当前部署版本（`/api/health` 200 / PID 65665）真实 chat `completed`、kb-ask 单条 trace 9 observations。
+> 复盘 `docs/sdd/retro/2026-11-08-spec045-evaluation-observability-closure.md`。
+> **不 push、不合 main**，`origin/main` 仍 `1b26c76c`；状态流转见 `docs/sdd/spec-status-changelog.md`。
+> 12 条已声明边界（P2 三项、值级脱敏、`--force` 非幂等、无覆盖率配置等）如实保留，见验收评审。
 
 > 本 spec 由主会话于 2026-11-08 编写，编号取当前最大 spec 043 + 2 = 045（044 已由其他 agent 占用）。
 > **2026-11-08 确认记录**：`docs/sdd/reviews/045-requirement-review.md` 与
@@ -106,6 +115,14 @@
 | 10 | 事件表 retention（时间/行数清理 + VACUUM）+ `processing-steps` 分页 | 能力补齐 | F14/F15 | 长跑不膨胀、长会话不拖慢页面 | 07 |
 | 11 | 真实 SDK 集成/升版冒烟 + 并发/流中断 ContextVar 测试 + `--send`/dashboard 脚本契约测试 | 能力补齐 | F6/F16 | 升版或重建看板不会静默破坏瀑布图 | 08 |
 
+> **实施阶段裁决回填（2026-11-08，Task 07）**：第 06 项 Q3 允许的「打通或删除」二选一，
+> 已在 [`task-07`](../plans/045/task-07-retention-and-benchmark-card.md) 裁决为 **A 打通**。
+> 前置真实基准 `scripts/bench_ollama_routes.py` 已跑通（`runs/task-07/benchmark-real.json`），
+> 故不触发「跑不起来则删除」的回退。打通方式限于：把真实测量结果按前端既有白名单映射为
+> `benchmark_summary`，经既有 `ResearchStore.append_event` 事件通道送达前端；
+> **不新增业务端点、不新增 SSE 事件类型、不改 `diff` 口径、不填占位指标值、不改前端文件**。
+> 该裁决不改变本 spec 的目标、数据模型或公开接口，属已确认范围内的实现细化。
+
 ### 明确不做（划出范围，防自由发挥）
 
 - **P2 三项不做**：① 人工标注 gold 集（`human_agree_rate` 仍为 `null`，评测只能算相对回归）；
@@ -113,12 +130,15 @@
   ③ 在线实时评测（spec-042 第一期明确不做）。
 - **不做分数口径架构决策**（Q1 已把 P2 排除）；不做「自动提升模型回答质量」——本 spec 只做测量与观测。
 - **本期不改任何业务代码**（`.py`/`.js`/`.html`/`.css`），不启用 Langfuse、不改 `.env`、不跑评测、不改配置。
+  > **阶段说明（2026-11-08 接手回填）**：本条是 Q8 对**设计阶段**的约束。用户随后明确确认「开始工作」并授权按 `deploy/langfuse/README.md` 部署后，实施阶段的边界以用户后续授权为准（台账有逐条记录）：Task 03–06 的业务代码已落地、Langfuse 已启用、真实评测已跑通。原文保留作历史裁决记录，不作为实施阶段约束。
 - **不重构 SDK 接入方式**、不改变上报字段与瀑布图语义（Q7 边界）：
   封装只收拢私有符号访问并加显式降级告警。
 - **不修改根 `CONTEXT.md`**、不修改 `docs/sdd/context/CONTEXT.md`、
   **不新建 `CONTEXT-MAP.md`** 或第三份 context 文件（Q4）。
 - **不新建 `CONTEXT-MAP.md` 式的多语境重构**，不做 retention 的历史数据迁移，不改 SSE 事件协议。
 - 不 push、不合 main（`AGENTS.md:138`）。
+
+> 后续由 047 承接（2026-11-09 用户确认）：本节「P2 三项不做」及 `--force` 非幂等等已声明边界，作为增量后续由 [`spec-047`](./047-evaluation-p2-and-observability-fixes.md) 处理；本 spec `已完成` 状态与已签字验收结论不变，此处仅作范围指针、不作翻案。
 
 ### 验收（Q9 / Q10）
 
@@ -293,22 +313,27 @@
 ## 任务计划
 
 > 本章是**任务索引**。任务 01 默认是本 spec 的编写，不另建 task 文件（模板约定）。
-> Q11 裁决：本期即创建 `docs/sdd/plans/045/` 的 README 与 task-02..08 共 7 份文档，
-> 状态均为 `待执行`——它们是实施计划文档，**不是本期执行内容**。
+> Q11 裁决：本期即创建 `docs/sdd/plans/045/` 的 README 与 task-02..08 共 7 份文档。
+> 下表为 **2026-11-08 接手机器核实后的真实进度**（设计阶段原文保留于 `HANDOVER.md` 历史记录）。
 
 | 编号 | 任务 | 任务文档 | 依赖 | 状态 |
 |---|---|---|---|---|
-| 01 | 编写 spec-045（含 grill with docs 分析、两份调研记录、ADR 0002） | 本文件 | — | 完成（文档阶段，spec 状态仍 `待确认`） |
-| 02 | 验收前置：启用 Langfuse + 造可复现样本 + 跑通一次真实 E2E | [`task-02-acceptance-preconditions.md`](../plans/045/task-02-acceptance-preconditions.md) | 01 | 待执行 |
-| 03 | 评测可信度：fallback 生效 + 合并判官编排 + 可复现基线 | [`task-03-evaluation-reproducibility.md`](../plans/045/task-03-evaluation-reproducibility.md) | 02 | 待执行 |
-| 04 | 评测结果可靠性：score 幂等 + 报告目录文件锁 | [`task-04-score-idempotency.md`](../plans/045/task-04-score-idempotency.md) | 02 | 待执行 |
-| 05 | 观测采样与上报解耦：trace 级采样 + flush 出 SSE + 私有 SDK 兼容层 | [`task-05-observability-decoupling.md`](../plans/045/task-05-observability-decoupling.md) | 02 | 待执行 |
-| 06 | 链路标识与脱敏：统一 trace_id + 脱敏归一 + payload 上限 + thinking 上报 | [`task-06-trace-identity-and-redaction.md`](../plans/045/task-06-trace-identity-and-redaction.md) | 02 | 待执行 |
-| 07 | 数据生命周期与面板：retention + 分页 + 基准卡片收口 | [`task-07-retention-and-benchmark-card.md`](../plans/045/task-07-retention-and-benchmark-card.md) | 02 | 待执行 |
-| 08 | 真实集成测试与验收：真 SDK 冒烟、并发/流中断、四类证据集、签字复盘 | [`task-08-integration-tests-and-acceptance.md`](../plans/045/task-08-integration-tests-and-acceptance.md) | 03–07 | 待执行 |
+| 01 | 编写 spec-045（含 grill with docs 分析、两份调研记录、ADR 0002） | 本文件 | — | 完成（spec 已 `已确认`） |
+| 02 | 验收前置：启用 Langfuse + 造可复现样本 + 跑通一次真实 E2E | [`task-02-acceptance-preconditions.md`](../plans/045/task-02-acceptance-preconditions.md) | 01 | **已完成**（接手机器真实取证） |
+| 03 | 评测可信度：fallback 生效 + 合并判官编排 + 可复现基线 | [`task-03-evaluation-reproducibility.md`](../plans/045/task-03-evaluation-reproducibility.md) | 02 | 代码与契约测试完成；Q10 ② 真实产物已补 |
+| 04 | 评测结果可靠性：score 幂等 + 报告目录文件锁 | [`task-04-score-idempotency.md`](../plans/045/task-04-score-idempotency.md) | 02 | **已完成**（真实重跑 score delta=0） |
+| 05 | 观测采样与上报解耦：trace 级采样 + flush 出 SSE + 私有 SDK 兼容层 | [`task-05-observability-decoupling.md`](../plans/045/task-05-observability-decoupling.md) | 02 | 代码与契约测试完成；四段 span 已取证 |
+| 06 | 链路标识与脱敏：统一 trace_id + 脱敏归一 + payload 上限 + thinking 上报 | [`task-06-trace-identity-and-redaction.md`](../plans/045/task-06-trace-identity-and-redaction.md) | 02 | **已完成** |
+| 07 | 数据生命周期与面板：retention + 分页 + 基准卡片收口 | [`task-07-retention-and-benchmark-card.md`](../plans/045/task-07-retention-and-benchmark-card.md) | 02 | **已完成**（A 裁决打通；retention/分页/四项指标真机取证；后端评审通过） |
+| 08 | 真实集成测试与验收：真 SDK 冒烟、并发/流中断、四类证据集、签字复盘 | [`task-08-integration-tests-and-acceptance.md`](../plans/045/task-08-integration-tests-and-acceptance.md) | 03–07 | **已完成**（Q10 4/4、全量 4112 passed、三评审双签、部署 E2E） |
 
 > 任务 02 按 Q9 是**验收硬前置**，由验收执行者完成，不由开发任务代劳；
 > 任务 03–07 相互独立，可在 02 就绪后并行；任务 08 汇总验收。
+> 接手机器证据：[`runs/task-02/evidence.md`](../plans/045/runs/task-02/evidence.md) 与
+> [`HANDOVER.md` 第 8 节](../plans/045/HANDOVER.md)。
+> **Task 07 / 08 均已完成**；Q10 四类证据 4/4 齐全（`runs/task-08/q10-evidence-index.md`）、
+> 三份评审通过并双签、当前部署版本真实 E2E 成功，spec 已转 `已完成`。
+> **不 push、不合 main**，`origin/main` 仍 `1b26c76c`。
 
 ## 关联文档
 

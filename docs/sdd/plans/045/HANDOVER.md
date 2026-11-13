@@ -74,7 +74,54 @@
 5. 续做 **Task 04**（把 `post_score_idempotent` 接入 `runner` + 跑红绿测试）、**06**、**07**、**08**。
 6. 按 spec-045「验收」四类证据集（红绿测试 / 评测产物 / 可查 trace / 瀑布图）归档并签字。
 
-## 8. 范围红线（不可越界）
+## 8. 接手机器执行结果（2026-11-08，Apple M3 Max / arm64）
+
+> 接收方已 `git pull origin main` 获取 `1b26c76c`。本机与发送方环境不同：
+> arm64、brew `/opt/homebrew`、磁盘可用 297Gi；发送方的两大阻塞
+> （`events_only` 404、Next `.next` 撑爆磁盘）在本机**均不成立**。
+
+### 已消解：Task 02 验收硬前置
+
+| 项 | 真实结果 |
+|---|---|
+| 基础设施 | `start-infra.sh` → 8123/5432/6379/9002 全 [OK] |
+| Langfuse | `start-langfuse.sh` → Node 24.19.0，web 3000 + worker 3030 LISTEN，`/api/public/health` 200 |
+| **dual 模式** | `/api/public/traces`、`/api/public/scores` 均 **200**（发送方 404 阻塞解除） |
+| 主服务 | `launchctl` 重启 `com.researchagent.recovery8000`，PID 37370，`/` 与 `/api/health` 200 |
+| 可复现样本 | `generate_observability_fixtures.py --send` → 20 条 sent，Langfuse 可查 |
+| 真实 E2E | 真实 SSE `status=completed` + trace `98b91aa3…` 含 **四段 phase span** |
+| 真实评测 | `eval_042` CLI → `report.json`/`report.md`，**五类指纹齐全**，score 真实回写 |
+| score 幂等 | 重跑后 `totalItems 979 → 979`，**delta=0**，无新 `eval042-*` score |
+
+证据与命令全文：`runs/task-02/evidence.md`，产物同目录。
+
+### 口径更正（本文档第 3 节已过时，以此为准）
+
+只读核实 + 定向测试 `214 passed` 证明：
+
+- **Task 04 已收口**，非「半完成」：`backend/eval_042/runner.py:563` 已调用
+  `post_score_idempotent`，`tests/evaluation/test_task04_idempotency.py` 存在且通过；
+  上面真实重跑的 `delta=0` 是运行时证据。
+- **Task 06 已完成**，非「待执行（骨架在）」：`spans.py` 已接入 `redaction`、
+  `ensure_request_id`、thinking 正文与 payload 上限，观测侧测试通过。
+- **Task 07 已完成**（2026-11-08 接手方收口，非「未落地」）：retention + `cursor`/`limit` 分页 +
+  `benchmark_summary` A 裁决打通均落地；真实 API 分页、真实 Chromium 四项指标截图、
+  后端评审通过，证据见 `runs/task-07/`。本节上方第 3 节表格为设计阶段历史记录。
+- **Task 08 已完成**（2026-11-08 接手方收口，非「未执行」）：Q10 四类证据 4/4 齐全
+  （索引 `runs/task-08/q10-evidence-index.md`）、最终全量回归 `4112 passed / EXIT=0`、
+  三份评审通过且架构师签字、准备度 9/10、当前部署版本真实 E2E 成功。
+  期间还修复了真 SDK 冒烟暴露的 kb-ask trace 归属分裂（单条 trace 9 observations）。
+
+因此 spec **已于 2026-11-08 收口转 `已完成`**；本节第 3 节表格保留作设计阶段历史记录。
+`spec-status-changelog.md` 末条记录了 `实施中 → 已完成`。
+
+### 接手方模型档位
+
+10 个 `.codebuddy/agents/*.md` 的 `model: hy4` 为用户临时决策（台账有记录），
+本文档第 6 节称「是否还原以接收方指示为准」；**用户未指示，故保持不动**，
+未写回 `AGENTS.md` 或任何流程文档，不作为正式配置固化。
+
+## 9. 范围红线（不可越界）
 
 - **P2 三项不做**：人工 gold 集、`quality_score` 与 Langfuse score 口径统一、在线实时评测。
 - 不改根 `CONTEXT.md`、不改 `docs/sdd/context/CONTEXT.md`、不新建 `CONTEXT-MAP.md`。

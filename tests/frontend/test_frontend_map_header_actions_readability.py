@@ -10,7 +10,8 @@
 2. **全局 `.secondary-button` 基础规则不被改动**（该 class 被会话、项目、论文、技能等视图复用）；
 3. 4 个按钮的 id / 文案 / 默认显隐与事件绑定不变（只改样式，不改交互）；
 4. 资源版本号已同步到生产页与同名 fixture，当前生效值见下方常量：
-   `MAP_CSS_VERSION`（literature-maps.css?v=34）、`APP_JS_VERSION`（app.js?v=78）、
+   `MAP_CSS_VERSION`（literature-maps.css?v=36，spec-048 升级且与 fixture 一致）、
+   `APP_JS_VERSION`（app.js?v=78，合并后生产页唯一生效值）、
    `STYLES_VERSION`（styles.css?v=77，因新增 `#kb-view` 失败态/提示样式）。
 """
 
@@ -24,13 +25,12 @@ INDEX = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
 STYLES = (ROOT / "frontend/styles.css").read_text(encoding="utf-8")
 MAP_CSS = (ROOT / "frontend/literature-maps.css").read_text(encoding="utf-8")
 MAP_JS = (ROOT / "frontend/literature-maps.js").read_text(encoding="utf-8")
-MAP_CSS_VERSION = 34
+MAP_CSS_VERSION = 36
 APP_JS_VERSION = 78
-# styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用现为 75。
+# styles.css 本批次新增 #kb-view 失败态/提示样式，生效引用现为 77。
 STYLES_VERSION = 77
 HEADER_ACTION_IDS = (
     "literature-map-refresh-button",
-    "literature-map-new-button",
     "literature-map-continue-search",
     "literature-map-refresh-preview",
 )
@@ -236,8 +236,6 @@ def test_map_overrides_never_target_bare_secondary_button():
 def test_four_header_buttons_keep_id_text_and_hidden_contract():
     assert "createElement('div', 'literature-map-header-actions literature-map-job-actions')" in MAP_JS
     expected = {
-        "literature-map-refresh-button": ("刷新状态", False),
-        "literature-map-new-button": ("新建地图", False),
         "literature-map-continue-search": ("继续搜索", True),
         "literature-map-refresh-preview": ("刷新预览", True),
     }
@@ -256,6 +254,20 @@ def test_four_header_buttons_keep_id_text_and_hidden_contract():
                 rf"id = '{button_id}';\s*\n\s*\w+\.hidden = true;",
                 MAP_JS,
             ), f"按钮 {button_id} 默认必须仍是 hidden=true"
+    # C6：刷新按钮从 header 文字按钮改为画布工具区「无可见文字 + aria-label」图标按钮。
+    # 原逐字正则 createElement('button','secondary-button btn-outline','刷新状态')
+    # 按新契约改写为下列三条（均逐字比对真实源码，可失败，非恒真）。
+    assert re.search(
+        r"const refreshButton = createElement\('button', 'icon-button literature-map-tool'\);",
+        MAP_JS,
+    ), "刷新按钮必须以两参数 createElement 创建（无可见文字参数）"
+    assert "createElement('button', 'secondary-button btn-outline', '刷新状态')" not in MAP_JS, (
+        "header 不得再出现带可见文字的「刷新状态」文字按钮"
+    )
+    assert re.search(
+        r"refreshButton\.setAttribute\('aria-label', '刷新状态'\);",
+        MAP_JS,
+    ), '刷新按钮必须新增 aria-label="刷新状态" 作为可访问名称'
     for button_id in HEADER_ACTION_IDS:
         assert button_id in MAP_JS
 
@@ -264,7 +276,6 @@ def test_header_button_event_bindings_are_unchanged():
     # 样式改动不得顺手改事件绑定：4 个按钮仍绑定到既有处理函数。
     pairs = {
         "literature-map-refresh-button": "refreshButton",
-        "literature-map-new-button": "newButton",
         "literature-map-continue-search": "continueButton",
         "literature-map-refresh-preview": "refreshPreviewButton",
     }
@@ -280,7 +291,7 @@ def test_header_button_event_bindings_are_unchanged():
 def test_index_pins_updated_asset_versions():
     assert f'/assets/literature-maps.css?v={MAP_CSS_VERSION}"' in INDEX
     assert f'src="/assets/app.js?v={APP_JS_VERSION}"' in INDEX
-    # styles.css 本批次新增了 #kb-view 的失败态/提示样式，生效引用现为 71。
+    # styles.css 本批次新增了 #kb-view 的失败态/提示样式，生效引用现为 77。
     assert f'/assets/styles.css?v={STYLES_VERSION}"' in INDEX, (
         f"styles.css 内容已变，生效引用必须同步升至 {STYLES_VERSION}"
     )

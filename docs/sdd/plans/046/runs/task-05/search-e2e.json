@@ -1,0 +1,43 @@
+{
+  "url": "http://127.0.0.1:8000/#research-view",
+  "baseline": {
+    "sessions": 100,
+    "count": "100/100"
+  },
+  "m1": {
+    "selectedTaskId": "2eb327f2cefb5fc7b5ac60e0454294f6",
+    "eventsLoaded": 40,
+    "sessions": 101,
+    "status": "已定位并选中历史任务 2eb327f2cefb5fc7b5ac60e0454294f6",
+    "count": "1/101",
+    "sectionHidden": false,
+    "metrics": [
+      "中位 TTFT：38478.93 ms",
+      "吞吐：19.73 tokens/s",
+      "峰值内存：106070016 bytes",
+      "失败率：0 %"
+    ],
+    "copyButtons": 1
+  },
+  "m2": {
+    "query": "b11cae14",
+    "count": "1/101",
+    "cards": 1,
+    "emptyHidden": true
+  },
+  "m3": {
+    "status": "未找到该任务，请检查 ID",
+    "retryHidden": false,
+    "cards": 1
+  },
+  "apiRequestCount": 17,
+  "apiStatusCodes": {
+    "200": 16,
+    "404": 1
+  },
+  "taskDetailApi": [
+    200,
+    200
+  ],
+  "pageErrors": []
+}

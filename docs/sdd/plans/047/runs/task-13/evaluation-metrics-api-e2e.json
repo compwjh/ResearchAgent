@@ -1,0 +1,2587 @@
+{
+  "spec": "047",
+  "scope": "追加范围二：评测指标体系细化（22 指标 / 5 分组）",
+  "generated_at": "2026-11-10T00:44:23.984551Z",
+  "service": "http://127.0.0.1:8000",
+  "service_start_command": "RERANKER_ENABLED=false ./deploy/start.sh -d",
+  "model_under_test": "qwen3.5:9b",
+  "judge_model": "qwen3.5:9b (backend/eval_042/config.py::PRIMARY_JUDGE)",
+  "run_ids": {
+    "score-rag-baseline": "eval-01420acf62aa40bf9ad035c9fc35a251",
+    "score-rag-topk10": "eval-5fdf023e2fa446c5aeb0021754de2f07",
+    "score-intent-baseline": "eval-1b65bc9ddb76444787782e416272f3ec",
+    "score-chat-quality": "eval-1cae839cd91a412ea647b5c8e3eb829d",
+    "run-detail": "eval-01420acf62aa40bf9ad035c9fc35a251"
+  },
+  "records": [
+    {
+      "label": "health",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/api/health",
+        "body": null
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 0.042,
+        "body": {
+          "status": "ok",
+          "model": "qwen3.8:27b",
+          "models": [
+            "qwen3.8:27b-q4_K_M",
+            "qwen3.8:27b-mlx",
+            "qwen3.8-27b-q4:latest",
+            "qwen3.8:27b",
+            "oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU",
+            "qwen3.8:27b-q4",
+            "dengcao/Qwen3-Reranker-0.6B:Q8_0",
+            "bge-m3:latest",
+            "deepseek-coder-v2:16b",
+            "qwen3.5:9b",
+            "deepseek-coder:33b"
+          ],
+          "paper_discovery_enabled": true
+        }
+      }
+    },
+    {
+      "label": "options",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/api/evaluation/options",
+        "body": null
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 0.005,
+        "body": {
+          "strategies": [
+            {
+              "id": "baseline",
+              "label": "基线（v1 / top_k=5 / reranker=off）",
+              "chunker": "v1",
+              "top_k": 5,
+              "reranker": "off"
+            },
+            {
+              "id": "chunker-v2",
+              "label": "切分 v2（top_k=5 / reranker=off）",
+              "chunker": "v2",
+              "top_k": 5,
+              "reranker": "off"
+            },
+            {
+              "id": "topk-10",
+              "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+              "chunker": "v1",
+              "top_k": 10,
+              "reranker": "off"
+            },
+            {
+              "id": "rerank-on",
+              "label": "启用重排（v1 / top_k=5 / reranker=on）",
+              "chunker": "v1",
+              "top_k": 5,
+              "reranker": "on"
+            }
+          ],
+          "models": [
+            "qwen3.8:27b-q4_K_M",
+            "qwen3.8:27b-mlx",
+            "qwen3.8-27b-q4:latest",
+            "qwen3.8:27b",
+            "oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU",
+            "qwen3.8:27b-q4",
+            "dengcao/Qwen3-Reranker-0.6B:Q8_0",
+            "bge-m3:latest",
+            "deepseek-coder-v2:16b",
+            "qwen3.5:9b",
+            "deepseek-coder:33b",
+            "deepseek:deepseek-flash"
+          ],
+          "datasets": [
+            {
+              "id": "rag-retrieval",
+              "label": "RAG 检索召回",
+              "item_count": 8,
+              "source": "builtin-fixture",
+              "synthetic": true,
+              "label_source": "kb-derived:retrieval-rank"
+            },
+            {
+              "id": "intent-classification",
+              "label": "意图识别分类",
+              "item_count": 16,
+              "source": "builtin-fixture",
+              "synthetic": true,
+              "label_source": "registry-derived"
+            },
+            {
+              "id": "chat-quality",
+              "label": "回答质量（既有判官轨迹）",
+              "item_count": 24,
+              "source": "builtin-fixture",
+              "synthetic": true,
+              "label_source": "frozen-trace-reference"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "score-rag-baseline",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/evaluation/score",
+        "body": {
+          "strategy_id": "baseline",
+          "model": "qwen3.5:9b",
+          "dataset_id": "rag-retrieval",
+          "max_items": 2
+        }
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 57.109,
+        "body": {
+          "run_id": "eval-01420acf62aa40bf9ad035c9fc35a251",
+          "metrics": [
+            {
+              "key": "recall@k",
+              "label": "召回率@k",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "precision@k",
+              "label": "准确率@k",
+              "group": "retrieval",
+              "value": 0.1,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "mrr@k",
+              "label": "MRR@k",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "intent_accuracy",
+              "label": "意图识别准确率",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "chat_quality",
+              "label": "回答质量（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+              }
+            },
+            {
+              "key": "memory_correctness",
+              "label": "记忆正确性（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+              }
+            },
+            {
+              "key": "hit_rate@k",
+              "label": "命中率@k",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "ndcg@k",
+              "label": "nDCG@k（二值相关性）",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "retrieval_relevance",
+              "label": "检索片段相关性",
+              "group": "retrieval",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "rubric": "batch-retrieval-relevance",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "context_source": "hybrid_search(Hit.text)",
+                "strategy_id": "baseline",
+                "top_k": 5,
+                "chunker": "v1",
+                "effective_max_items": 2,
+                "model_participates": false,
+                "model_participates_reason": "检索片段相关性由固定判官判定，所选被测模型不参与本维度",
+                "per_item_scores": {
+                  "0": 1.0,
+                  "1": 1.0
+                }
+              }
+            },
+            {
+              "key": "intent_macro_f1",
+              "label": "意图宏平均 F1",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "intent_confusion_count",
+              "label": "意图误判样本数",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "answer_relevance",
+              "label": "回答切题度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "conciseness",
+              "label": "回答简洁度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "helpfulness",
+              "label": "回答有用性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "groundedness",
+              "label": "回答有据性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "hallucination_free",
+              "label": "无幻觉比例",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_exact_match",
+              "label": "回答字面完全一致率",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "levenshtein_similarity",
+              "label": "回答编辑相似度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "generation_success_rate",
+              "label": "实时生成成功率",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_length_avg",
+              "label": "实时回答平均字符数",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "toxicity_free",
+              "label": "无有害内容比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "pii_leakage_free",
+              "label": "无个人信息泄漏比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            }
+          ],
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "created_at": "2026-11-10T00:41:43.268674Z",
+          "judge_model": "qwen3.5:9b"
+        }
+      }
+    },
+    {
+      "label": "score-rag-topk10",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/evaluation/score",
+        "body": {
+          "strategy_id": "topk-10",
+          "model": "qwen3.5:9b",
+          "dataset_id": "rag-retrieval",
+          "max_items": 2
+        }
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 33.606,
+        "body": {
+          "run_id": "eval-5fdf023e2fa446c5aeb0021754de2f07",
+          "metrics": [
+            {
+              "key": "recall@k",
+              "label": "召回率@k",
+              "group": "retrieval",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 10,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "topk-10",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 2,
+                "first_relevant_ranks": [
+                  1,
+                  6
+                ],
+                "effective_k": 10,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "precision@k",
+              "label": "准确率@k",
+              "group": "retrieval",
+              "value": 0.1,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 10,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "topk-10",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 2,
+                "first_relevant_ranks": [
+                  1,
+                  6
+                ],
+                "effective_k": 10,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "mrr@k",
+              "label": "MRR@k",
+              "group": "retrieval",
+              "value": 0.5833333333333334,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 10,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "topk-10",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 2,
+                "first_relevant_ranks": [
+                  1,
+                  6
+                ],
+                "effective_k": 10,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "intent_accuracy",
+              "label": "意图识别准确率",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "chat_quality",
+              "label": "回答质量（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+              }
+            },
+            {
+              "key": "memory_correctness",
+              "label": "记忆正确性（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+              }
+            },
+            {
+              "key": "hit_rate@k",
+              "label": "命中率@k",
+              "group": "retrieval",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 10,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "topk-10",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 2,
+                "first_relevant_ranks": [
+                  1,
+                  6
+                ],
+                "effective_k": 10,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "ndcg@k",
+              "label": "nDCG@k（二值相关性）",
+              "group": "retrieval",
+              "value": 0.6781035935540111,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 10,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "topk-10",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 2,
+                "first_relevant_ranks": [
+                  1,
+                  6
+                ],
+                "effective_k": 10,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "retrieval_relevance",
+              "label": "检索片段相关性",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "rubric": "batch-retrieval-relevance",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "context_source": "hybrid_search(Hit.text)",
+                "strategy_id": "topk-10",
+                "top_k": 10,
+                "chunker": "v1",
+                "effective_max_items": 2,
+                "model_participates": false,
+                "model_participates_reason": "检索片段相关性由固定判官判定，所选被测模型不参与本维度",
+                "per_item_scores": {
+                  "0": 1.0,
+                  "1": 0.0
+                }
+              }
+            },
+            {
+              "key": "intent_macro_f1",
+              "label": "意图宏平均 F1",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "intent_confusion_count",
+              "label": "意图误判样本数",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "answer_relevance",
+              "label": "回答切题度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "conciseness",
+              "label": "回答简洁度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "helpfulness",
+              "label": "回答有用性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "groundedness",
+              "label": "回答有据性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "hallucination_free",
+              "label": "无幻觉比例",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_exact_match",
+              "label": "回答字面完全一致率",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "levenshtein_similarity",
+              "label": "回答编辑相似度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "generation_success_rate",
+              "label": "实时生成成功率",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_length_avg",
+              "label": "实时回答平均字符数",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "toxicity_free",
+              "label": "无有害内容比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "pii_leakage_free",
+              "label": "无个人信息泄漏比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            }
+          ],
+          "strategy": {
+            "id": "topk-10",
+            "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 10,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "created_at": "2026-11-10T00:42:16.876982Z",
+          "judge_model": "qwen3.5:9b"
+        }
+      }
+    },
+    {
+      "label": "score-intent-baseline",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/evaluation/score",
+        "body": {
+          "strategy_id": "baseline",
+          "model": "qwen3.5:9b",
+          "dataset_id": "intent-classification",
+          "max_items": 2
+        }
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 0.046,
+        "body": {
+          "run_id": "eval-1b65bc9ddb76444787782e416272f3ec",
+          "metrics": [
+            {
+              "key": "recall@k",
+              "label": "召回率@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "precision@k",
+              "label": "准确率@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "mrr@k",
+              "label": "MRR@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "intent_accuracy",
+              "label": "意图识别准确率",
+              "group": "intent",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "detector": "backend.app.skills.intent.detect_skill",
+                "registry": "backend.app.skills.registry.build_default_tool_registry",
+                "prediction_sources": [
+                  "rule",
+                  "rule"
+                ],
+                "matched": 2,
+                "generation_model_used": false,
+                "model_participates": false,
+                "model_participates_reason": "意图识别走 detect_skill 的规则优先 + 模块固定 LLM 兜底，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "chat_quality",
+              "label": "回答质量（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+              }
+            },
+            {
+              "key": "memory_correctness",
+              "label": "记忆正确性（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+              }
+            },
+            {
+              "key": "hit_rate@k",
+              "label": "命中率@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "ndcg@k",
+              "label": "nDCG@k（二值相关性）",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "retrieval_relevance",
+              "label": "检索片段相关性",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "intent_macro_f1",
+              "label": "意图宏平均 F1",
+              "group": "intent",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "detector": "backend.app.skills.intent.detect_skill",
+                "registry": "backend.app.skills.registry.build_default_tool_registry",
+                "prediction_sources": [
+                  "rule",
+                  "rule"
+                ],
+                "matched": 2,
+                "generation_model_used": false,
+                "model_participates": false,
+                "model_participates_reason": "意图识别走 detect_skill 的规则优先 + 模块固定 LLM 兜底，所选被测模型不参与本维度",
+                "per_class": {
+                  "paper_discovery": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1": 1.0,
+                    "tp": 1,
+                    "fp": 0,
+                    "fn": 0
+                  },
+                  "search_paper_catalog": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1": 1.0,
+                    "tp": 1,
+                    "fp": 0,
+                    "fn": 0
+                  }
+                },
+                "class_count": 2
+              }
+            },
+            {
+              "key": "intent_confusion_count",
+              "label": "意图误判样本数",
+              "group": "intent",
+              "value": 0.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "detector": "backend.app.skills.intent.detect_skill",
+                "registry": "backend.app.skills.registry.build_default_tool_registry",
+                "prediction_sources": [
+                  "rule",
+                  "rule"
+                ],
+                "matched": 2,
+                "generation_model_used": false,
+                "model_participates": false,
+                "model_participates_reason": "意图识别走 detect_skill 的规则优先 + 模块固定 LLM 兜底，所选被测模型不参与本维度",
+                "predictions": [
+                  "paper_discovery",
+                  "search_paper_catalog"
+                ],
+                "expected": [
+                  "paper_discovery",
+                  "search_paper_catalog"
+                ]
+              }
+            },
+            {
+              "key": "answer_relevance",
+              "label": "回答切题度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "conciseness",
+              "label": "回答简洁度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "helpfulness",
+              "label": "回答有用性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "groundedness",
+              "label": "回答有据性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "hallucination_free",
+              "label": "无幻觉比例",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_exact_match",
+              "label": "回答字面完全一致率",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "levenshtein_similarity",
+              "label": "回答编辑相似度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "generation_success_rate",
+              "label": "实时生成成功率",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_length_avg",
+              "label": "实时回答平均字符数",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "toxicity_free",
+              "label": "无有害内容比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "pii_leakage_free",
+              "label": "无个人信息泄漏比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            }
+          ],
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "intent-classification",
+          "created_at": "2026-11-10T00:42:16.927203Z",
+          "judge_model": "qwen3.5:9b"
+        }
+      }
+    },
+    {
+      "label": "score-chat-quality",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/evaluation/score",
+        "body": {
+          "strategy_id": "baseline",
+          "model": "qwen3.5:9b",
+          "dataset_id": "chat-quality",
+          "max_items": 2
+        }
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 127.023,
+        "body": {
+          "run_id": "eval-1cae839cd91a412ea647b5c8e3eb829d",
+          "metrics": [
+            {
+              "key": "recall@k",
+              "label": "召回率@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "precision@k",
+              "label": "准确率@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "mrr@k",
+              "label": "MRR@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "intent_accuracy",
+              "label": "意图识别准确率",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "chat_quality",
+              "label": "回答质量（判官均分）",
+              "group": "answer_quality",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "generation_model_used": true,
+                "answer_source_note": "评分对象由所选被测模型实时生成，判官固定 qwen3.5:9b 打分",
+                "score_mapping": "backend/eval_042/config.py::ENUM_MAPS[chat_quality]",
+                "generated_count": 2,
+                "generation_failures": 0,
+                "unavailable_calls": 0,
+                "trace_count": 2
+              }
+            },
+            {
+              "key": "memory_correctness",
+              "label": "记忆正确性（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "内置 042 集 24 条全部为 chat_quality 且无 prior_context / memory_correctness 标注，缺少可判定的记忆真值",
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b"
+              }
+            },
+            {
+              "key": "hit_rate@k",
+              "label": "命中率@k",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "ndcg@k",
+              "label": "nDCG@k（二值相关性）",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "retrieval_relevance",
+              "label": "检索片段相关性",
+              "group": "retrieval",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+              }
+            },
+            {
+              "key": "intent_macro_f1",
+              "label": "意图宏平均 F1",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "intent_confusion_count",
+              "label": "意图误判样本数",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "answer_relevance",
+              "label": "回答切题度",
+              "group": "answer_quality",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "conciseness",
+              "label": "回答简洁度",
+              "group": "answer_quality",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "helpfulness",
+              "label": "回答有用性",
+              "group": "answer_quality",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "groundedness",
+              "label": "回答有据性",
+              "group": "answer_quality",
+              "value": 0.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0,
+                "context_source": "hybrid_search(Hit.text)"
+              }
+            },
+            {
+              "key": "hallucination_free",
+              "label": "无幻觉比例",
+              "group": "answer_quality",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "answer_exact_match",
+              "label": "回答字面完全一致率",
+              "group": "answer_quality",
+              "value": 0.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0,
+                "reference": "frozen-042-output",
+                "note": "字面一致性，不代表回答质量",
+                "reference_note": "042 冻结参考输出仅作字面比对基线，不是质量真值",
+                "evaluated_count": 2
+              }
+            },
+            {
+              "key": "levenshtein_similarity",
+              "label": "回答编辑相似度",
+              "group": "answer_quality",
+              "value": 0.06621294679803547,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0,
+                "reference": "frozen-042-output",
+                "note": "字面一致性，不代表回答质量",
+                "reference_note": "042 冻结参考输出仅作字面比对基线，不是质量真值",
+                "evaluated_count": 2
+              }
+            },
+            {
+              "key": "generation_success_rate",
+              "label": "实时生成成功率",
+              "group": "generation",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "answer_length_avg",
+              "label": "实时回答平均字符数",
+              "group": "generation",
+              "value": 281.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "toxicity_free",
+              "label": "无有害内容比例",
+              "group": "safety",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            },
+            {
+              "key": "pii_leakage_free",
+              "label": "无个人信息泄漏比例",
+              "group": "safety",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "under_test_model": "qwen3.5:9b",
+                "answer_source": "live_generation",
+                "rubric": "joint-rubric-json",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "reference_fixture": "builtin-042-chat-traces",
+                "trace_count": 2,
+                "generated_count": 2,
+                "generation_failures": 0,
+                "generation_failure_types": [],
+                "judge_failures": 0,
+                "context_failures": 0
+              }
+            }
+          ],
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "chat-quality",
+          "created_at": "2026-11-10T00:44:23.938319Z",
+          "judge_model": "qwen3.5:9b"
+        }
+      }
+    },
+    {
+      "label": "runs-list",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/api/evaluation/runs",
+        "body": null
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 0.014,
+        "body": {
+          "runs": [
+            {
+              "run_id": "eval-1cae839cd91a412ea647b5c8e3eb829d",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-10T00:44:23.938319Z"
+            },
+            {
+              "run_id": "eval-1b65bc9ddb76444787782e416272f3ec",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "intent-classification",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-10T00:42:16.927203Z"
+            },
+            {
+              "run_id": "eval-5fdf023e2fa446c5aeb0021754de2f07",
+              "strategy": {
+                "id": "topk-10",
+                "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 10,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-10T00:42:16.876982Z"
+            },
+            {
+              "run_id": "eval-01420acf62aa40bf9ad035c9fc35a251",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-10T00:41:43.268674Z"
+            },
+            {
+              "run_id": "eval-800f56ee6fe646aa8a799c6dcd0d21ba",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-10T00:40:15.033175Z"
+            },
+            {
+              "run_id": "eval-86900b6f767248d7bed7a3c71a7a21dc",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "intent-classification",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T19:02:37.956033Z"
+            },
+            {
+              "run_id": "eval-27bb2cbae2744d329ac831f66f07fceb",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T19:02:18.119027Z"
+            },
+            {
+              "run_id": "eval-3f4604a791974712b7c034b51b4db385",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "intent-classification",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:58:18.179004Z"
+            },
+            {
+              "run_id": "eval-7f2d1cc764ae42feb994e313b706a81c",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:58:18.101708Z"
+            },
+            {
+              "run_id": "eval-3a5b5eee42f14bfb9ee2474713229a52",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.8:27b-q4",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:57:54.098470Z"
+            },
+            {
+              "run_id": "eval-f6e799ae03494733b2f84e18807721d8",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.8:27b",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:56:54.953574Z"
+            },
+            {
+              "run_id": "eval-5064c132930a4fca82ae61cf5c35fd66",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.8:27b",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:55:15.043756Z"
+            },
+            {
+              "run_id": "eval-7bb5da044d40420c993ca0e5f2e012a5",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:54:09.824757Z"
+            },
+            {
+              "run_id": "eval-49e1ea0a1a46490898801b805c9392b5",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "intent-classification",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:40:55.609259Z"
+            },
+            {
+              "run_id": "eval-069122d56ac84fe1ace765e3359095c5",
+              "strategy": {
+                "id": "topk-10",
+                "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 10,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:40:55.599553Z"
+            },
+            {
+              "run_id": "eval-2dfc6775b59b4587a66f2b7478382174",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:40:53.008526Z"
+            },
+            {
+              "run_id": "eval-eb616010db6746dda99e56a3bb7968c1",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:38:50.897069Z"
+            },
+            {
+              "run_id": "eval-3e0ded6d8bb64a9582bd72610860599d",
+              "strategy": {
+                "id": "chunker-v2",
+                "label": "切分 v2（top_k=5 / reranker=off）",
+                "chunker": "v2",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:23:17.117360Z"
+            },
+            {
+              "run_id": "eval-d54f3aec2973437fa8868cf995360abc",
+              "strategy": {
+                "id": "rerank-on",
+                "label": "启用重排（v1 / top_k=5 / reranker=on）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "on"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:23:17.114919Z"
+            },
+            {
+              "run_id": "eval-71356d31f1ed4ba3b9eebd5003461277",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "chat-quality",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:23:05.850868Z"
+            },
+            {
+              "run_id": "eval-f89b5aa12e6549f58fe5309d17285f64",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "intent-classification",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:22:30.847506Z"
+            },
+            {
+              "run_id": "eval-fc99c427d5d840e485ea51131d4dbdeb",
+              "strategy": {
+                "id": "topk-10",
+                "label": "扩大召回（v1 / top_k=10 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 10,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:22:30.840299Z"
+            },
+            {
+              "run_id": "eval-37e5d6d4636544f7962a1d1597f4e764",
+              "strategy": {
+                "id": "baseline",
+                "label": "基线（v1 / top_k=5 / reranker=off）",
+                "chunker": "v1",
+                "top_k": 5,
+                "reranker": "off"
+              },
+              "model": "qwen3.5:9b",
+              "dataset": "rag-retrieval",
+              "judge_model": "qwen3.5:9b",
+              "created_at": "2026-11-09T18:22:22.715183Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "run-detail",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/api/evaluation/runs/eval-01420acf62aa40bf9ad035c9fc35a251",
+        "body": null
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 0.005,
+        "body": {
+          "run_id": "eval-01420acf62aa40bf9ad035c9fc35a251",
+          "metrics": [
+            {
+              "key": "recall@k",
+              "label": "召回率@k",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "precision@k",
+              "label": "准确率@k",
+              "group": "retrieval",
+              "value": 0.1,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "mrr@k",
+              "label": "MRR@k",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "intent_accuracy",
+              "label": "意图识别准确率",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "chat_quality",
+              "label": "回答质量（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+              }
+            },
+            {
+              "key": "memory_correctness",
+              "label": "记忆正确性（判官均分）",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+              }
+            },
+            {
+              "key": "hit_rate@k",
+              "label": "命中率@k",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "ndcg@k",
+              "label": "nDCG@k（二值相关性）",
+              "group": "retrieval",
+              "value": 0.5,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "k": 5,
+                "chunker": "v1",
+                "reranker": "off",
+                "strategy_id": "baseline",
+                "identity": "paper_id,chunker,chunk_index",
+                "effective_max_items": 2,
+                "matched_items": 1,
+                "first_relevant_ranks": [
+                  1,
+                  null
+                ],
+                "effective_k": 5,
+                "ndcg_valid_cases": 2,
+                "ndcg_skipped_cases": 0,
+                "model_participates": false,
+                "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+              }
+            },
+            {
+              "key": "retrieval_relevance",
+              "label": "检索片段相关性",
+              "group": "retrieval",
+              "value": 1.0,
+              "status": "computed",
+              "sample_count": 2,
+              "detail": {
+                "judge_model": "qwen3.5:9b",
+                "rubric": "batch-retrieval-relevance",
+                "score_mapping": "good=1.0/mixed=0.5/poor=0.0",
+                "context_source": "hybrid_search(Hit.text)",
+                "strategy_id": "baseline",
+                "top_k": 5,
+                "chunker": "v1",
+                "effective_max_items": 2,
+                "model_participates": false,
+                "model_participates_reason": "检索片段相关性由固定判官判定，所选被测模型不参与本维度",
+                "per_item_scores": {
+                  "0": 1.0,
+                  "1": 1.0
+                }
+              }
+            },
+            {
+              "key": "intent_macro_f1",
+              "label": "意图宏平均 F1",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "intent_confusion_count",
+              "label": "意图误判样本数",
+              "group": "intent",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+              }
+            },
+            {
+              "key": "answer_relevance",
+              "label": "回答切题度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "conciseness",
+              "label": "回答简洁度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "helpfulness",
+              "label": "回答有用性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "groundedness",
+              "label": "回答有据性",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "hallucination_free",
+              "label": "无幻觉比例",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_exact_match",
+              "label": "回答字面完全一致率",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "levenshtein_similarity",
+              "label": "回答编辑相似度",
+              "group": "answer_quality",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "generation_success_rate",
+              "label": "实时生成成功率",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "answer_length_avg",
+              "label": "实时回答平均字符数",
+              "group": "generation",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "toxicity_free",
+              "label": "无有害内容比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            },
+            {
+              "key": "pii_leakage_free",
+              "label": "无个人信息泄漏比例",
+              "group": "safety",
+              "value": null,
+              "status": "needs_ground_truth",
+              "sample_count": 0,
+              "detail": {
+                "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+              }
+            }
+          ],
+          "strategy": {
+            "id": "baseline",
+            "label": "基线（v1 / top_k=5 / reranker=off）",
+            "chunker": "v1",
+            "top_k": 5,
+            "reranker": "off"
+          },
+          "model": "qwen3.5:9b",
+          "dataset": "rag-retrieval",
+          "created_at": "2026-11-10T00:41:43.268674Z",
+          "judge_model": "qwen3.5:9b"
+        }
+      }
+    },
+    {
+      "label": "compare-same-dataset",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/api/evaluation/compare?a=eval-01420acf62aa40bf9ad035c9fc35a251&b=eval-5fdf023e2fa446c5aeb0021754de2f07",
+        "body": null
+      },
+      "response": {
+        "http_status": 200,
+        "elapsed_seconds": 0.003,
+        "body": {
+          "a": "eval-01420acf62aa40bf9ad035c9fc35a251",
+          "b": "eval-5fdf023e2fa446c5aeb0021754de2f07",
+          "dataset": "rag-retrieval",
+          "judge_model": "qwen3.5:9b",
+          "deltas": [
+            {
+              "key": "recall@k",
+              "label": "召回率@k",
+              "group": "retrieval",
+              "value_a": 0.5,
+              "value_b": 1.0,
+              "delta": 0.5,
+              "status_a": "computed",
+              "status_b": "computed"
+            },
+            {
+              "key": "precision@k",
+              "label": "准确率@k",
+              "group": "retrieval",
+              "value_a": 0.1,
+              "value_b": 0.1,
+              "delta": 0.0,
+              "status_a": "computed",
+              "status_b": "computed"
+            },
+            {
+              "key": "mrr@k",
+              "label": "MRR@k",
+              "group": "retrieval",
+              "value_a": 0.5,
+              "value_b": 0.5833333333333334,
+              "delta": 0.08333333333333337,
+              "status_a": "computed",
+              "status_b": "computed"
+            },
+            {
+              "key": "intent_accuracy",
+              "label": "意图识别准确率",
+              "group": "intent",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "chat_quality",
+              "label": "回答质量（判官均分）",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "memory_correctness",
+              "label": "记忆正确性（判官均分）",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "hit_rate@k",
+              "label": "命中率@k",
+              "group": "retrieval",
+              "value_a": 0.5,
+              "value_b": 1.0,
+              "delta": 0.5,
+              "status_a": "computed",
+              "status_b": "computed"
+            },
+            {
+              "key": "ndcg@k",
+              "label": "nDCG@k（二值相关性）",
+              "group": "retrieval",
+              "value_a": 0.5,
+              "value_b": 0.6781035935540111,
+              "delta": 0.17810359355401106,
+              "status_a": "computed",
+              "status_b": "computed"
+            },
+            {
+              "key": "retrieval_relevance",
+              "label": "检索片段相关性",
+              "group": "retrieval",
+              "value_a": 1.0,
+              "value_b": 0.5,
+              "delta": -0.5,
+              "status_a": "computed",
+              "status_b": "computed"
+            },
+            {
+              "key": "intent_macro_f1",
+              "label": "意图宏平均 F1",
+              "group": "intent",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "intent_confusion_count",
+              "label": "意图误判样本数",
+              "group": "intent",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "answer_relevance",
+              "label": "回答切题度",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "conciseness",
+              "label": "回答简洁度",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "helpfulness",
+              "label": "回答有用性",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "groundedness",
+              "label": "回答有据性",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "hallucination_free",
+              "label": "无幻觉比例",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "answer_exact_match",
+              "label": "回答字面完全一致率",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "levenshtein_similarity",
+              "label": "回答编辑相似度",
+              "group": "answer_quality",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "generation_success_rate",
+              "label": "实时生成成功率",
+              "group": "generation",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "answer_length_avg",
+              "label": "实时回答平均字符数",
+              "group": "generation",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "toxicity_free",
+              "label": "无有害内容比例",
+              "group": "safety",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            },
+            {
+              "key": "pii_leakage_free",
+              "label": "无个人信息泄漏比例",
+              "group": "safety",
+              "value_a": null,
+              "value_b": null,
+              "delta": null,
+              "status_a": "needs_ground_truth",
+              "status_b": "needs_ground_truth"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "compare-cross-dataset",
+      "request": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/api/evaluation/compare?a=eval-01420acf62aa40bf9ad035c9fc35a251&b=eval-1cae839cd91a412ea647b5c8e3eb829d",
+        "body": null
+      },
+      "response": {
+        "http_status": 409,
+        "elapsed_seconds": 0.004,
+        "body": {
+          "error_code": "EVAL_NOT_COMPARABLE",
+          "message": "两次运行不可比较",
+          "retryable": false,
+          "request_id": "a724cbaad5c6469488ae993ce06b9d46",
+          "error": {
+            "code": "EVAL_NOT_COMPARABLE",
+            "message": "两次运行不可比较"
+          }
+        }
+      }
+    },
+    {
+      "label": "invalid-option",
+      "request": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/evaluation/score",
+        "body": {
+          "strategy_id": "nope",
+          "model": "qwen3.5:9b",
+          "dataset_id": "rag-retrieval"
+        }
+      },
+      "response": {
+        "http_status": 404,
+        "elapsed_seconds": 0.002,
+        "body": {
+          "error_code": "EVAL_OPTION_NOT_FOUND",
+          "message": "评测选项不存在",
+          "retryable": false,
+          "request_id": "335d63fa3d48476fbeacd5204162e54a",
+          "error": {
+            "code": "EVAL_OPTION_NOT_FOUND",
+            "message": "评测选项不存在"
+          }
+        }
+      }
+    }
+  ]
+}

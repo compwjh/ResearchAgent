@@ -23,7 +23,7 @@
 
 ## 交接与产出
 
-写 `artifacts/task-08/runtime-integration.md` 与 `artifacts/task-08/runtime-integration-worker-bridge.md`，附 schema 迁移、事件/接口样例、改动文件、命令/退出码与恢复验证。执行结果：Registry 七来源工厂、受控同步 API、SQLite 终态和重启读取已验证；非 `usenix/dblp/all` 来源已通过 `PaperDiscoveryToolFacade` 接入并冻结 `CatalogPaper`/`SearchJob`/`SearchResult`；旧 Graph 行为保持不变。真实外部目录、Ollama/Qdrant 和部署 smoke 留 Task14。
+写 `artifacts/spec-032/task-08/runtime-integration.md` 与 `artifacts/spec-032/task-08/runtime-integration-worker-bridge.md`，附 schema 迁移、事件/接口样例、改动文件、命令/退出码与恢复验证。执行结果：Registry 七来源工厂、受控同步 API、SQLite 终态和重启读取已验证；非 `usenix/dblp/all` 来源已通过 `PaperDiscoveryToolFacade` 接入并冻结 `CatalogPaper`/`SearchJob`/`SearchResult`；旧 Graph 行为保持不变。真实外部目录、Ollama/Qdrant 和部署 smoke 留 Task14。
 
 ## 变更日志
 

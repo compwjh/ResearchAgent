@@ -1,0 +1,46 @@
+{
+  "captured_at": "2026-11-08T23:10:45.199936+00:00",
+  "task": "spec-047 D5 route correction",
+  "env_line": "# OLLAMA_ROUTE=langchain  # spec-047 D5: 注释掉，使用 config.py:134 默认 direct",
+  "backup": ".env.bak.spec047.20261109043121",
+  "service": {
+    "health": 200,
+    "pid": 63038,
+    "url": "http://127.0.0.1:8000"
+  },
+  "chat_e2e": {
+    "status": "completed",
+    "frames": {
+      "meta": 1,
+      "progress": 5,
+      "token": 24,
+      "done": 1
+    },
+    "errors": []
+  },
+  "trace": {
+    "trace_id": "c5dff10a848487988dfa3f5dd26ca7cb",
+    "timestamp": "2026-11-09T07:09:15.760Z",
+    "route": "direct",
+    "phase_spans": [
+      "phase:decode",
+      "phase:load",
+      "phase:overhead",
+      "phase:prefill"
+    ],
+    "scores": {
+      "is_cold_start": 1,
+      "eval_ms": 1737.645,
+      "load_ms": 21094.416583,
+      "prompt_eval_ms": 5020.079,
+      "ttft_ms": 26164.09420897253,
+      "overhead_ms": 5.751333029027592,
+      "tokens_per_sec": 14.387288542826642
+    },
+    "score_filter": "scores endpoint traceId filter is unreliable; locally filtered by score.traceId",
+    "scores_returned": 100,
+    "scores_matched": 7
+  },
+  "note": "另有一条更晚的 langchain trace 来自服务重启前的后台评测窗口，未作为 direct 生效证据",
+  "verdict": "direct 生效，四段 phase span 齐全，7 项指标恢复非零（对照组：langchain 下 6 项为 0）"
+}

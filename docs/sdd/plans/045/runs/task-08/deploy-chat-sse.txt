@@ -1,0 +1,74 @@
+data: {"type": "meta", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 1, "timestamp": "2026-11-08T12:48:56.972512Z", "project_id": null, "conversation_id": "818317de92944e4d8569f0e92c2eb7b0", "user_message_id": "848f829c9abf4da1aa9a8ca1d3beabf1", "assistant_message_id": "56db8c3ce374420d9a5aca111cfc1964", "model": "qwen3.8:27b", "mode": "normal", "reasoning_effort": "off", "capabilities_source": "cache"}
+
+data: {"type": "progress", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 2, "timestamp": "2026-11-08T12:48:56.986071Z", "step_id": "eaf8b656345349efba45b9f02cfa96fa", "kind": "memory_recall", "label": "记忆召回", "status": "running", "summary": null}
+
+data: {"type": "progress", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 3, "timestamp": "2026-11-08T12:48:57.032962Z", "step_id": "eaf8b656345349efba45b9f02cfa96fa", "kind": "memory_recall", "label": "记忆召回", "status": "completed", "summary": "召回 1 条会话摘要、L2 FTS5 命中 5 条"}
+
+data: {"type": "progress", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 4, "timestamp": "2026-11-08T12:48:57.038522Z", "step_id": "7af66e9fb5d64bab9c115ceb5fbca6b5", "kind": "system_rule", "label": "已应用系统规则", "status": "completed", "summary": "已应用系统规则"}
+
+data: {"type": "progress", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 5, "timestamp": "2026-11-08T12:48:57.076232Z", "step_id": "2462e35121b84bc39ebc82a9b180cc9b", "kind": "generation", "label": "回答生成", "status": "running", "summary": null}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 6, "timestamp": "2026-11-08T12:49:25.174532Z", "content": "可"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 7, "timestamp": "2026-11-08T12:49:25.209226Z", "content": "观测"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 8, "timestamp": "2026-11-08T12:49:25.288962Z", "content": "性"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 9, "timestamp": "2026-11-08T12:49:25.372926Z", "content": "是指"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 10, "timestamp": "2026-11-08T12:49:25.452306Z", "content": "通过"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 11, "timestamp": "2026-11-08T12:49:25.531327Z", "content": "收集"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 12, "timestamp": "2026-11-08T12:49:25.614739Z", "content": "和分析"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 13, "timestamp": "2026-11-08T12:49:25.690100Z", "content": "系统的"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 14, "timestamp": "2026-11-08T12:49:25.770490Z", "content": "内部"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 15, "timestamp": "2026-11-08T12:49:25.851708Z", "content": "状态"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 16, "timestamp": "2026-11-08T12:49:25.932356Z", "content": "数据"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 17, "timestamp": "2026-11-08T12:49:26.008947Z", "content": "（"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 18, "timestamp": "2026-11-08T12:49:26.088768Z", "content": "如"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 19, "timestamp": "2026-11-08T12:49:26.172856Z", "content": "日志"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 20, "timestamp": "2026-11-08T12:49:26.251444Z", "content": "、"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 21, "timestamp": "2026-11-08T12:49:26.329661Z", "content": "指标"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 22, "timestamp": "2026-11-08T12:49:26.409580Z", "content": "和"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 23, "timestamp": "2026-11-08T12:49:26.489626Z", "content": "追踪"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 24, "timestamp": "2026-11-08T12:49:26.569139Z", "content": "），"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 25, "timestamp": "2026-11-08T12:49:26.649906Z", "content": "从而"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 26, "timestamp": "2026-11-08T12:49:26.730364Z", "content": "能够"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 27, "timestamp": "2026-11-08T12:49:26.809001Z", "content": "准确"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 28, "timestamp": "2026-11-08T12:49:26.889848Z", "content": "推断"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 29, "timestamp": "2026-11-08T12:49:26.968903Z", "content": "系统"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 30, "timestamp": "2026-11-08T12:49:27.056171Z", "content": "外部"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 31, "timestamp": "2026-11-08T12:49:27.137807Z", "content": "行为和"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 32, "timestamp": "2026-11-08T12:49:27.218732Z", "content": "运行"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 33, "timestamp": "2026-11-08T12:49:27.338653Z", "content": "状况"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 34, "timestamp": "2026-11-08T12:49:27.387665Z", "content": "的能力"}
+
+data: {"type": "token", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 35, "timestamp": "2026-11-08T12:49:27.479987Z", "content": "。"}
+
+data: {"type": "progress", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 36, "timestamp": "2026-11-08T12:49:27.647980Z", "step_id": "2462e35121b84bc39ebc82a9b180cc9b", "kind": "generation", "label": "回答生成", "status": "completed", "summary": "回答已生成"}
+
+data: {"type": "done", "message_id": "56db8c3ce374420d9a5aca111cfc1964", "event_seq": 37, "timestamp": "2026-11-08T12:49:27.660444Z", "conversation_id": "818317de92944e4d8569f0e92c2eb7b0", "status": "completed", "duration_ms": 30682.892916025594, "reasoning_duration_ms": null, "answer_duration_ms": 30682.892916025594}
+

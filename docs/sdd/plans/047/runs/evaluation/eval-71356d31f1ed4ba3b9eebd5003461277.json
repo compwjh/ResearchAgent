@@ -1,0 +1,84 @@
+{
+  "run_id": "eval-71356d31f1ed4ba3b9eebd5003461277",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 1,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b",
+        "answer_source": "frozen_fixture_output",
+        "answer_source_note": "评分对象为内置评测集中冻结的 output，不是本次所选模型实时生成；被测模型仅作运行元数据记录",
+        "score_mapping": "backend/eval_042/config.py::ENUM_MAPS[chat_quality]",
+        "unavailable_calls": 0,
+        "trace_count": 1
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集 24 条全部为 chat_quality 且无 prior_context / memory_correctness 标注，缺少可判定的记忆真值",
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.5:9b"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "baseline",
+    "label": "基线（v1 / top_k=5 / reranker=off）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "off"
+  },
+  "model": "qwen3.5:9b",
+  "dataset": "chat-quality",
+  "created_at": "2026-11-09T18:23:05.850868Z",
+  "judge_model": "qwen3.5:9b"
+}

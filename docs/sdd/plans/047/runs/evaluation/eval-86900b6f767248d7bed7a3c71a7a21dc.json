@@ -1,0 +1,86 @@
+{
+  "run_id": "eval-86900b6f767248d7bed7a3c71a7a21dc",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "value": 1.0,
+      "status": "computed",
+      "sample_count": 3,
+      "detail": {
+        "detector": "backend.app.skills.intent.detect_skill",
+        "registry": "backend.app.skills.registry.build_default_tool_registry",
+        "prediction_sources": [
+          "rule",
+          "rule",
+          "rule"
+        ],
+        "matched": 3,
+        "generation_model_used": false,
+        "model_participates": false,
+        "model_participates_reason": "意图识别走 detect_skill 的规则优先 + 模块固定 LLM 兜底，所选被测模型不参与本维度"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "baseline",
+    "label": "基线（v1 / top_k=5 / reranker=off）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "off"
+  },
+  "model": "qwen3.5:9b",
+  "dataset": "intent-classification",
+  "created_at": "2026-11-09T19:02:37.956033Z",
+  "judge_model": "qwen3.5:9b"
+}

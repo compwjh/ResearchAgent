@@ -1,0 +1,52 @@
+{
+  "date": "2026-11-13",
+  "spec": "048-literature-map-create-tab-and-refresh-icon",
+  "service": {
+    "base_url": "http://127.0.0.1:8000",
+    "port": 8000,
+    "start_command": "./deploy/start.sh -d",
+    "alternate_port_command": "PORT=8300 ./deploy/start.sh -d",
+    "started_by_this_task": false,
+    "note": "复用已在运行的服务；静态资源由磁盘读取，升版后浏览器重新请求即生效，无需重启。"
+  },
+  "http_checks": {
+    "health": {"path": "/api/health", "status": 200},
+    "index": {"path": "/", "status": 200},
+    "literature_maps_css_v36": {"path": "/assets/literature-maps.css?v=36", "status": 200},
+    "literature_maps_js_v48": {"path": "/assets/literature-maps.js?v=48", "status": 200}
+  },
+  "index_live_versions": {
+    "stylesheet": "<link rel=\"stylesheet\" href=\"/assets/literature-maps.css?v=36\">",
+    "script": "<script src=\"/assets/literature-maps.js?v=48\"></script>",
+    "app_js_unchanged": "app.js?v=77",
+    "styles_css_unchanged": "styles.css?v=77",
+    "spec048_compatibility_markers": 2
+  },
+  "browser_e2e": {
+    "script": "docs/sdd/plans/048/runs/task-04/browser_e2e.py",
+    "artifact": "docs/sdd/plans/048/runs/task-04/browser-e2e.json",
+    "screenshots": [
+      "docs/sdd/plans/048/runs/task-04/map-tabs-desktop.png",
+      "docs/sdd/plans/048/runs/task-04/map-tabs-mobile.png"
+    ],
+    "conclusion": "PASS",
+    "checks_passed": 18,
+    "checks_total": 18,
+    "failed_checks": [],
+    "errors": [],
+    "api_responses_captured": 88,
+    "api_sample_entities": [
+      {"endpoint": "/api/literature-maps/tags", "status": 200, "body": "{\"schema_version\":\"literature-map-v1\",\"tags\":[]}"},
+      {"endpoint": "/api/papers/imports", "status": 200, "entity_id": "1a76e369-c638-4f2c-a430-42552a1e7012"},
+      {"endpoint": "/api/research-notifications", "status": 200, "entity_id": "106358f651044dbfae6677f573fa6635"}
+    ]
+  },
+  "known_non_blocking": [
+    "Langfuse :3000 span 导出 transient 告警",
+    "浏览器控制台其它视图 404",
+    "全仓 185 个历史 lint 债务",
+    "无真实 GitHub Actions workflow / 平台 branch protection 未配置",
+    "is-spinning 旋转反馈使用 700ms 定时器而非请求结束回调（P2，非阻塞）"
+  ],
+  "conclusion": "PASS"
+}

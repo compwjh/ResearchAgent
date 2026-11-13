@@ -66,6 +66,10 @@ from backend.app.platform.observability.request_id import (
     bind_request_id,
     reset_request_id,
 )
+
+# spec-045 第 07 项：SSE 跨 yield 段同时复位 request_id 与当前 trace id，
+# 避免生成阶段另起一条 trace。直接从实现模块导入，不改 observability 公开接口。
+from backend.app.platform.observability.trace import bind_trace_context
 from backend.app.platform.ollama import get_available_models
 from backend.app.platform.settings.settings_repository import (
     load_article_settings,
@@ -1081,7 +1085,7 @@ def kb_ask(request: KBAskRequest):
                 # 失败也要留痕：否则失败请求既进不了错误率统计，也丢失了诊断信息。
                 if run.result is not None:
                     try:
-                        bind_request_id(rid)
+                        bind_trace_context(rid)
                         record_ollama_generation(
                             model=request.model,
                             prompt_messages=observation_messages,
@@ -1099,7 +1103,7 @@ def kb_ask(request: KBAskRequest):
                         pass
                 return
             try:
-                bind_request_id(rid)
+                bind_trace_context(rid)
                 record_ollama_generation(
                     model=request.model,
                     prompt_messages=observation_messages,

@@ -1,0 +1,118 @@
+{
+  "run_id": "eval-7f2d1cc764ae42feb994e313b706a81c",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "value": 0.3333333333333333,
+      "status": "computed",
+      "sample_count": 3,
+      "detail": {
+        "k": 5,
+        "chunker": "v1",
+        "reranker": "off",
+        "strategy_id": "baseline",
+        "identity": "paper_id,chunker,chunk_index",
+        "effective_max_items": 3,
+        "matched_items": 1,
+        "first_relevant_ranks": [
+          1,
+          null,
+          null
+        ],
+        "effective_k": 5,
+        "model_participates": false,
+        "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "value": 0.06666666666666667,
+      "status": "computed",
+      "sample_count": 3,
+      "detail": {
+        "k": 5,
+        "chunker": "v1",
+        "reranker": "off",
+        "strategy_id": "baseline",
+        "identity": "paper_id,chunker,chunk_index",
+        "effective_max_items": 3,
+        "matched_items": 1,
+        "first_relevant_ranks": [
+          1,
+          null,
+          null
+        ],
+        "effective_k": 5,
+        "model_participates": false,
+        "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "value": 0.3333333333333333,
+      "status": "computed",
+      "sample_count": 3,
+      "detail": {
+        "k": 5,
+        "chunker": "v1",
+        "reranker": "off",
+        "strategy_id": "baseline",
+        "identity": "paper_id,chunker,chunk_index",
+        "effective_max_items": 3,
+        "matched_items": 1,
+        "first_relevant_ranks": [
+          1,
+          null,
+          null
+        ],
+        "effective_k": 5,
+        "model_participates": false,
+        "model_participates_reason": "检索走固定 embedding 的 hybrid_search，所选被测模型不参与本维度"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "baseline",
+    "label": "基线（v1 / top_k=5 / reranker=off）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "off"
+  },
+  "model": "qwen3.5:9b",
+  "dataset": "rag-retrieval",
+  "created_at": "2026-11-09T18:58:18.101708Z",
+  "judge_model": "qwen3.5:9b"
+}

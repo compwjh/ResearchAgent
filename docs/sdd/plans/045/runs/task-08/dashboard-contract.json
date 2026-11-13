@@ -1,0 +1,105 @@
+{
+  "artifact": "Task 08 --send 与 dashboard 契约测试",
+  "spec": "045 / task-08 / 实施步骤 3",
+  "captured_at": "2026-11-08T10:08:32.768046+00:00",
+  "discipline": {
+    "mock_or_fake_transport": false,
+    "real_reruns": [
+      "scripts/generate_observability_fixtures.py --send (unique fixture_id)",
+      "scripts/setup_langfuse_dashboards.py (default, no --force)"
+    ],
+    "read_only_only": [
+      "scripts/setup_langfuse_dashboards.py --force (destructive; NOT executed)"
+    ],
+    "boundary": "--force 未真实重跑：该路径会删除 6 个真实 dashboard 并新建 40 个 widget（见 finding），属破坏性副作用，按任务要求仅做只读契约核验。"
+  },
+  "send_contract": {
+    "command": "/Users/wjh/ResearchAgent/.venv/bin/python scripts/generate_observability_fixtures.py --send --fixture-id spec045-task08-contract-20261108T1800Z",
+    "exit": 0,
+    "stdout_summary": {
+      "mode": "send",
+      "sample_count": 20,
+      "success_count": 16,
+      "failure_count": 4,
+      "fixture_id": "spec045-task08-contract-20261108T1800Z",
+      "fixture_version": "v1",
+      "send": {
+        "fixture_id": "spec045-task08-contract-20261108T1800Z",
+        "sent_count": 20
+      }
+    },
+    "fixture_id_used": "spec045-task08-contract-20261108T1800Z",
+    "public_api_counts_before": {
+      "traces_http": 200,
+      "traces_totalItems": 385,
+      "scores_http": 200,
+      "scores_totalItems": 1168
+    },
+    "public_api_counts_after": {
+      "traces_http": 200,
+      "traces_totalItems": 405,
+      "scores_http": 200,
+      "scores_totalItems": 1168
+    },
+    "traces_delta": 20,
+    "scores_total_after_ingestion": 1308,
+    "scores_delta_after_ingestion": 140,
+    "ingestion_lag_note": "--send 刚返回时 scores totalItems 仍为 1168（异步 ingestion 未可见）；约 8s 后为 1308，delta=+140=20×7。不得在写入后立即下『score 未写入』结论。",
+    "fixture_trace_query": {
+      "name_filter_http": 200,
+      "name_filtered_totalItems": 40,
+      "traces_matching_new_fixture_id": 20,
+      "score_counts_per_new_trace": [
+        7
+      ],
+      "all_new_traces_have_7_scores": true
+    },
+    "verdict": "PASS — --send 真实重跑 EXIT=0，20 条 trace 可查（+20），每条 7 个 numeric score（+140），score 名称与 SCORE_METRICS 一致；eval 导出按 name=ollama-chat 过滤，fixture 不污染评测数据集。"
+  },
+  "dashboard_contract": {
+    "command": "/Users/wjh/ResearchAgent/.venv/bin/python scripts/setup_langfuse_dashboards.py",
+    "exit": 0,
+    "stdout": "[跳过] 01 TTFT 分解与冷启动对比（已存在，用 --force 重建）\n[跳过] 02 分位数与慢请求（已存在，用 --force 重建）\n[跳过] 03 吞吐与生成速度（已存在，用 --force 重建）\n[跳过] 04 输入规模与延迟相关性（已存在，用 --force 重建）\n[跳过] 05 耗时构成占比（已存在，用 --force 重建）\n[跳过] 06 调用量与延迟趋势（已存在，用 --force 重建）\n\n新建 0 个，跳过 6 个。\n提醒：思考占比 / 成功率 / 错误率依赖自定义 metadata，原生看板无法聚合；真散点与阶段甘特图也无对应图表类型 —— 这些已列入任务 07 自研视图。",
+    "before": {
+      "dashboards_http": 200,
+      "dashboards_totalItems": 6,
+      "widgets_http": 200,
+      "widgets_totalItems": 40
+    },
+    "after": {
+      "dashboards_http": 200,
+      "dashboards_totalItems": 6,
+      "widgets_http": 200,
+      "widgets_totalItems": 40
+    },
+    "dashboard_ids_identical": true,
+    "widget_ids_identical": true,
+    "widget_name_multiset_identical": true,
+    "newly_created_line": [
+      "新建 0 个，跳过 6 个。"
+    ],
+    "duplicate_widget_names": {
+      "预填充 P95": 2,
+      "TTFT P95": 2
+    },
+    "duplicate_names_are_by_design": {
+      "TTFT P95": 2,
+      "预填充 P95": 2
+    },
+    "live_multiset_equals_DASHBOARDS_definition": true,
+    "verdict": "PASS（默认模式）— 幂等重跑『新建 0 个，跳过 6 个』；6 dashboard / 40 widget 的 ID 集合与名称多重集完全不变，无重复 widget。2 个重复名称 (TTFT P95 / 预填充 P95) 是 DASHBOARDS 定义里跨看板复用，非重建产生。"
+  },
+  "finding_force_rebuild_widget_leak": {
+    "status": "DEFECT (reported, not fixed — business code/scripts out of boundary)",
+    "summary": "--force 重建不幂等：每个 --force 重跑会遗留 40 个孤儿 widget 并新建 40 个，widget 总数按 40 递增。",
+    "evidence": [
+      "scripts/setup_langfuse_dashboards.py:274 builder.delete_dashboard(existing[name]) 只删 dashboard；",
+      "scripts/setup_langfuse_dashboards.py:280 [builder.create_widget(widget) for widget in spec['widgets']] 每次重建都新建 widget，脚本全文无 delete_widget 调用；",
+      "vendor/langfuse/packages/shared/prisma/schema.prisma:1542 DashboardWidget 无 dashboardId 外键（仅 projectId），删 dashboard 不级联删 widget；",
+      "public API 提供 DELETE /api/public/unstable/dashboard-widgets/{widgetId}（dashboard-widgets/[widgetId].ts:42）但脚本未使用。"
+    ],
+    "expected": "--force 重建后 widget 总数仍为 40（按 dashboard 名去重复用或重建前先删旧 widget）",
+    "not_executed_reason": "破坏性：会删除当前部署版本的 6 个真实 dashboard，且按代码必然新增 40 个重复 widget。按任务边界只做只读契约核验，明确声明『未真实重跑 --force』。",
+    "reproduce": "LANGFUSE_*=.env 值 .venv/bin/python scripts/setup_langfuse_dashboards.py --force；随后 GET /api/public/unstable/dashboard-widgets?limit=100 观察 totalItems 从 40 变为 80（仅描述预期，未执行）"
+  }
+}

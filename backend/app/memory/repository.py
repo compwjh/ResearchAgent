@@ -48,6 +48,12 @@ EVOLUTION_LEASE_SECONDS = 300
 OWNER_ID = os.getenv("MEMORY_OWNER_ID", "local-user")
 _write_lock = threading.RLock()
 
+# processing-steps 游标分页：复用 encode_cursor/decode_cursor 的 keyset 编码原语，
+# 不引入第二套 base64/版本校验逻辑。
+STEP_CURSOR_KIND = "processing-step"
+PROCESSING_STEPS_DEFAULT_LIMIT = 50
+PROCESSING_STEPS_PAGE_MAX_LIMIT = 200
+
 MEMORY_SCOPES = {"global", "project"}
 # 注：``MEMORY_CATEGORIES`` / ``MEMORY_SOURCE_KINDS`` / ``MEMORY_STATUSES`` 随
 # ``memories`` 表停用一并移除（长期记忆改由 MD 承载，见 spec-038）。
@@ -1701,6 +1707,100 @@ class MemoryRepository:
         with self.connection() as db:
             rows = db.execute("SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id WHERE s.message_id=? AND m.owner_id=? ORDER BY s.started_at, s.logical_sequence", (message_id, owner_id)).fetchall()
         return [self._processing_step_from_row(row) for row in rows]
+
+    def list_processing_steps_page(
+        self,
+        message_id: str,
+        owner_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = PROCESSING_STEPS_DEFAULT_LIMIT,
+    ) -> tuple[list[ProcessingStep], str | None, bool]:
+        """Keyset 分页读取处理步骤；owner 过滤沿用无参读取的同一 JOIN 约束。
+
+        游标由 :func:`encode_cursor` 编码 ``(started_at, step_id)``，只取排序键
+        严格大于锚点的行；多取一行判定 ``has_more``，避免额外 COUNT 查询。
+        无参读取（``list_processing_steps``）保持原 SQL 与扁平返回形状不变。
+        """
+        size = max(1, min(int(limit), PROCESSING_STEPS_PAGE_MAX_LIMIT))
+        anchor = decode_cursor(cursor, STEP_CURSOR_KIND) if cursor else None
+        sql = (
+            "SELECT s.* FROM processing_steps s JOIN messages m ON m.message_id=s.message_id "
+            "WHERE s.message_id=? AND m.owner_id=?"
+        )
+        params: list[object] = [message_id, owner_id]
+        if anchor is not None:
+            sql += " AND (s.started_at > ? OR (s.started_at = ? AND s.step_id > ?))"
+            params.extend([anchor[0], anchor[0], anchor[1]])
+        sql += " ORDER BY s.started_at, s.step_id LIMIT ?"
+        params.append(size + 1)
+        with self.connection() as db:
+            rows = db.execute(sql, tuple(params)).fetchall()
+        has_more = len(rows) > size
+        kept = rows[:size]
+        next_cursor = None
+        if has_more and kept:
+            # 用 DB 原始时间串做锚点，避免 datetime 往返改变字符串格式。
+            last = kept[-1]
+            next_cursor = encode_cursor(STEP_CURSOR_KIND, last["started_at"], last["step_id"])
+        return [self._processing_step_from_row(row) for row in kept], next_cursor, has_more
+
+    def prune_event_tables(
+        self,
+        *,
+        max_age_days: int | None = None,
+        max_rows: int | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        """按「时间 + 行数」保守清理 memory 库两张事件表，返回各表删除行数。
+
+        单一短事务（``BEGIN IMMEDIATE``）：启动时低峰触发，异常由编排层 fail-open。
+        不迁移、不改 schema；阈值来自 ``platform.config``，可经 env 覆盖。
+        memory 库时间戳为 ``_now()`` 的 UTC isoformat（``+00:00``），cutoff 必须同格式
+        才能做字符串比较（research 库用 ``Z`` 格式，见 ``ResearchStore.prune_events``）。
+        """
+        from backend.app.platform import config
+
+        age_days = config.EVENT_RETENTION_MAX_AGE_DAYS if max_age_days is None else int(max_age_days)
+        row_cap = config.EVENT_RETENTION_MAX_ROWS if max_rows is None else int(max_rows)
+        if age_days < 1 or row_cap < 1:
+            raise ValueError("invalid event retention thresholds")
+        reference = now or datetime.now(timezone.utc)
+        cutoff = (reference - timedelta(days=age_days)).isoformat()
+        deleted = {"raw_events": 0, "processing_steps": 0}
+        with self.transaction() as db:
+            raw_excess = max(0, int(db.execute("SELECT COUNT(*) FROM raw_events").fetchone()[0]) - row_cap)
+            cur = db.execute(
+                "DELETE FROM raw_events WHERE created_at < ? OR event_id IN "
+                "(SELECT event_id FROM raw_events ORDER BY created_at, event_id LIMIT ?)",
+                (cutoff, raw_excess),
+            )
+            deleted["raw_events"] = max(int(cur.rowcount), 0)
+
+            step_excess = max(
+                0, int(db.execute("SELECT COUNT(*) FROM processing_steps").fetchone()[0]) - row_cap
+            )
+            # parent_step_id 自引用 ON DELETE RESTRICT：先在同一快照里挑出「不被任何
+            # 子步骤引用」的行，再按 id 删，避免边删边评估触发约束失败。父行会在子行
+            # 于后续清理中被移除后的下一次启动清理里收敛（保守、不破坏处理树）。
+            step_ids = [
+                row["step_id"]
+                for row in db.execute(
+                    "SELECT p.step_id FROM processing_steps p "
+                    "WHERE (p.started_at < ? OR p.step_id IN "
+                    "  (SELECT step_id FROM processing_steps ORDER BY started_at, step_id LIMIT ?)) "
+                    "AND NOT EXISTS (SELECT 1 FROM processing_steps c WHERE c.parent_step_id = p.step_id) "
+                    "ORDER BY p.started_at, p.step_id",
+                    (cutoff, step_excess),
+                ).fetchall()
+            ]
+            if step_ids:
+                db.executemany(
+                    "DELETE FROM processing_steps WHERE step_id=?",
+                    [(step_id,) for step_id in step_ids],
+                )
+            deleted["processing_steps"] = len(step_ids)
+        return deleted
 
     # Spec034 Task07 additive processing-tree/projector seam.  These methods
     # intentionally follow the Spec038 repository above instead of restoring

@@ -1,0 +1,697 @@
+{
+  "dataset_id": "intent-classification",
+  "schema_version": "builtin-evaluation-dataset-v1",
+  "source": "builtin-fixture",
+  "synthetic": true,
+  "label_source": "registry-derived",
+  "label_source_note": "非人工标注、非真实业务数据。消息与 expected_intent 按当前 backend/app/skills/registry.py::build_default_tool_registry() 的 7 个 Tool 名构造；不复用 docs/sdd/plans/023/task-02-toolcall-feasibility/probe_intent.py 中过时的 USENIX 技能名，也不冒充真实用户语料。",
+  "derivation_rule": "保留原有 16 条逐字不变；新增正例 = 指令性动词后紧跟 registry.py 中真实存在的 7 个 Tool 名（14 个固定模板 x 7 个技能），expected_intent 即该名称；负例 = 不存在的拼写、否定式与无关表达，expected_intent='none'。为让 100 条打分不触发 detect_skill 的 LLM 第二跳，负例不点名任何已注册技能名、也不含 ASCII 连字符 token，全部走确定性规则第一跳；不复用过时 USENIX 技能名。",
+  "registry_module": "backend/app/skills/registry.py::build_default_tool_registry",
+  "registry_tool_names": [
+    "paper_discovery",
+    "search_paper_catalog",
+    "download_and_import_paper",
+    "fetch_paper_detail",
+    "kb_search",
+    "kb_ask",
+    "session_search"
+  ],
+  "items": [
+    {
+      "id": "intent-01",
+      "message": "请使用 paper_discovery 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-02",
+      "message": "请使用 search_paper_catalog 技能，查找 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-03",
+      "message": "帮我调用 download_and_import_paper 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-04",
+      "message": "运行 fetch_paper_detail 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-05",
+      "message": "请使用 kb_search 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-06",
+      "message": "请用 kb_ask 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-07",
+      "message": "帮我调用 session_search 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-08",
+      "message": "运行 kb_search 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-09",
+      "message": "你好，请总结一下今天的天气。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-10",
+      "message": "帮我写一个 Python 函数，把列表倒序输出。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-11",
+      "message": "请解释一下 TCP 三次握手的过程。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-12",
+      "message": "今天有什么值得关注的安全研究？",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-13",
+      "message": "把上面这段中文翻译成英文。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-14",
+      "message": "请列举三种常见的数据库索引。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-15",
+      "message": "这段代码的复杂度是多少？",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-16",
+      "message": "帮我整理一份读书笔记的提纲。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-017",
+      "message": "请使用 paper_discovery 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-018",
+      "message": "请使用 search_paper_catalog 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-019",
+      "message": "请使用 download_and_import_paper 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-020",
+      "message": "请使用 fetch_paper_detail 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-021",
+      "message": "请使用 kb_search 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-022",
+      "message": "请使用 kb_ask 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-023",
+      "message": "请使用 session_search 技能，检索 2024 年 USENIX Security 的模糊测试论文。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-024",
+      "message": "帮我调用 paper_discovery 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-025",
+      "message": "帮我调用 search_paper_catalog 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-026",
+      "message": "帮我调用 download_and_import_paper 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-027",
+      "message": "帮我调用 fetch_paper_detail 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-028",
+      "message": "帮我调用 kb_search 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-029",
+      "message": "帮我调用 kb_ask 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-030",
+      "message": "帮我调用 session_search 技能，把选中的候选论文导入知识库。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-031",
+      "message": "运行 paper_discovery 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-032",
+      "message": "运行 search_paper_catalog 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-033",
+      "message": "运行 download_and_import_paper 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-034",
+      "message": "运行 fetch_paper_detail 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-035",
+      "message": "运行 kb_search 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-036",
+      "message": "运行 kb_ask 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-037",
+      "message": "运行 session_search 技能，读取这篇论文的官方详情页摘要。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-038",
+      "message": "请用 paper_discovery 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-039",
+      "message": "请用 search_paper_catalog 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-040",
+      "message": "请用 download_and_import_paper 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-041",
+      "message": "请用 fetch_paper_detail 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-042",
+      "message": "请用 kb_search 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-043",
+      "message": "请用 kb_ask 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-044",
+      "message": "请用 session_search 技能回答：什么是稠密向量与稀疏检索的混合召回？",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-045",
+      "message": "请使用 paper_discovery 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-046",
+      "message": "请使用 search_paper_catalog 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-047",
+      "message": "请使用 download_and_import_paper 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-048",
+      "message": "请使用 fetch_paper_detail 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-049",
+      "message": "请使用 kb_search 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-050",
+      "message": "请使用 kb_ask 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-051",
+      "message": "请使用 session_search 技能，在知识库中检索关于 RAG 切分的片段。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-052",
+      "message": "帮我用 paper_discovery 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-053",
+      "message": "帮我用 search_paper_catalog 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-054",
+      "message": "帮我用 download_and_import_paper 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-055",
+      "message": "帮我用 fetch_paper_detail 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-056",
+      "message": "帮我用 kb_search 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-057",
+      "message": "帮我用 kb_ask 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-058",
+      "message": "帮我用 session_search 技能，找出上次关于离线评测的会话记录。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-059",
+      "message": "调用 paper_discovery 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-060",
+      "message": "调用 search_paper_catalog 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-061",
+      "message": "调用 download_and_import_paper 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-062",
+      "message": "调用 fetch_paper_detail 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-063",
+      "message": "调用 kb_search 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-064",
+      "message": "调用 kb_ask 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-065",
+      "message": "调用 session_search 技能，查一下知识库里关于重排模型的段落。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-066",
+      "message": "请使用 paper_discovery 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-067",
+      "message": "请使用 search_paper_catalog 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-068",
+      "message": "请使用 download_and_import_paper 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-069",
+      "message": "请使用 fetch_paper_detail 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-070",
+      "message": "请使用 kb_search 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-071",
+      "message": "请使用 kb_ask 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-072",
+      "message": "请使用 session_search 技能，列出 DBLP 中关于侧信道攻击的论文目录。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-073",
+      "message": "启用 paper_discovery 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-074",
+      "message": "启用 search_paper_catalog 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-075",
+      "message": "启用 download_and_import_paper 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-076",
+      "message": "启用 fetch_paper_detail 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-077",
+      "message": "启用 kb_search 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-078",
+      "message": "启用 kb_ask 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-079",
+      "message": "启用 session_search 技能，把近期的安全研究候选整理成清单。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-080",
+      "message": "执行 paper_discovery 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-081",
+      "message": "执行 search_paper_catalog 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-082",
+      "message": "执行 download_and_import_paper 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-083",
+      "message": "执行 fetch_paper_detail 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-084",
+      "message": "执行 kb_search 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-085",
+      "message": "执行 kb_ask 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-086",
+      "message": "执行 session_search 技能，核对当前批次论文的元数据字段。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-087",
+      "message": "帮我调用 paper_discovery 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-088",
+      "message": "帮我调用 search_paper_catalog 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-089",
+      "message": "帮我调用 download_and_import_paper 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-090",
+      "message": "帮我调用 fetch_paper_detail 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-091",
+      "message": "帮我调用 kb_search 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-092",
+      "message": "帮我调用 kb_ask 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-093",
+      "message": "帮我调用 session_search 技能，重新检索上一轮命中的片段。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-094",
+      "message": "请使用 paper_discovery 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-095",
+      "message": "请使用 search_paper_catalog 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-096",
+      "message": "请使用 download_and_import_paper 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-097",
+      "message": "请使用 fetch_paper_detail 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-098",
+      "message": "请使用 kb_search 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-099",
+      "message": "请使用 kb_ask 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-100",
+      "message": "请使用 session_search 技能，按年份筛选已发表的系统论文。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-101",
+      "message": "运行 paper_discovery 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-102",
+      "message": "运行 search_paper_catalog 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-103",
+      "message": "运行 download_and_import_paper 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-104",
+      "message": "运行 fetch_paper_detail 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-105",
+      "message": "运行 kb_search 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-106",
+      "message": "运行 kb_ask 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-107",
+      "message": "运行 session_search 技能，检查本地索引中是否存在重复文档。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-108",
+      "message": "请用 paper_discovery 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "paper_discovery"
+    },
+    {
+      "id": "intent-109",
+      "message": "请用 search_paper_catalog 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "search_paper_catalog"
+    },
+    {
+      "id": "intent-110",
+      "message": "请用 download_and_import_paper 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "download_and_import_paper"
+    },
+    {
+      "id": "intent-111",
+      "message": "请用 fetch_paper_detail 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "fetch_paper_detail"
+    },
+    {
+      "id": "intent-112",
+      "message": "请用 kb_search 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "kb_search"
+    },
+    {
+      "id": "intent-113",
+      "message": "请用 kb_ask 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "kb_ask"
+    },
+    {
+      "id": "intent-114",
+      "message": "请用 session_search 技能，导出本次会话里提到的所有引用编号。",
+      "expected_intent": "session_search"
+    },
+    {
+      "id": "intent-115",
+      "message": "papper_discovery 是什么，听说很好用？",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-116",
+      "message": "请不要调用任何技能，直接回答我的问题。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-117",
+      "message": "你好，请总结一下今天的天气。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-118",
+      "message": "帮我写一个把列表倒序输出的 Python 函数。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-119",
+      "message": "请解释一下 TCP 三次握手的过程。",
+      "expected_intent": "none"
+    },
+    {
+      "id": "intent-120",
+      "message": "今天有什么值得关注的安全研究？",
+      "expected_intent": "none"
+    }
+  ],
+  "item_count": 120,
+  "generated_at": "2026-10-06T13:38:17Z",
+  "generator": "scripts/generate_evaluation_samples.py",
+  "kb_snapshot": {
+    "source": "首次生成 POST /api/kb/ask 的 citations 事件；复跑只读 GET /api/kb/health + GET /api/kb/papers 校验冻结身份",
+    "papers": 64,
+    "chunks": 19905,
+    "qdrant": true,
+    "embedding": true,
+    "paper_ids": [
+      "0791f677d9e4458ebe3aafa71ebce9f3",
+      "0b37796f02fd448f86b59f4a6b4b255d",
+      "0df41f1cc9964f1fa14eebd61ffdef2b",
+      "149114d78c0e49728d798cfab5e51ed4",
+      "1a3c542b31734c45a541896a01d71528",
+      "1b967ed8638e46569d36e3f6565c51eb",
+      "1e1613132f0346afb4b1a96602784813",
+      "277758154feb492081ef84d33c5fcab3",
+      "2b891eb6ee0a450ea34aa7b2ad4cd873",
+      "2f002c403d4e49e79b4d2781fea38fc6",
+      "388ff16ff0594a08ad30a35e9d4b59ea",
+      "3f7139602d224bcfa0ae531e4b0bbb07",
+      "413008cc2b8f47b18a0d53c8a7399b02",
+      "43c668ed80f5433892c691c4c9fb5045",
+      "441db9a35e5a4571aadef2af80b0d2e5",
+      "46b3c182d14e46cabe6e23eb0b67793f",
+      "4aee4ac6675241ebabb70b60ddb6bb8c",
+      "527fe0c1515d48c78adec8f4eb7f4979",
+      "55afc3b8f01445429462fe78ed0d4c98",
+      "56fc315e952342158e5ae2f5ef6f01a0",
+      "58fdc057d045489cb997b8434e3afff3",
+      "59a5407cc44445f1ac3d258c19af296f",
+      "6001a8eb6538470bb7d8fc9900b91cf0",
+      "60831e8617294117b7be73d43a1140f7",
+      "6430164d996e495291c2d8ebf02c949e",
+      "6a23687c44704d68a0af8f9ab0972ab6",
+      "6c930cd2d2074485b8d29dbdafb5c462",
+      "732fa292155e40c3b2cc35a3050d298b",
+      "73b95a2a776c4ee7a681fc42710c5ec9",
+      "7dfec772f919481aad9fc3bcbcf96041",
+      "88ef66bf9c7547148d843d6a1e8270bd",
+      "891dc846633846a08ca4be4530415170",
+      "8cd741ab309f49aab79da46cc348d0f2",
+      "91c878c2c086420c85e637354040807b",
+      "929a342c0b8d4c8283198751cae9b327",
+      "9f7fe03d513941798a808270c0992ba6",
+      "a151fcff09944e7cbd1f4086376ae914",
+      "a773435cc0634e40b8a52770631738ee",
+      "a94ba3a045164915ab2153cc0b9807e5",
+      "a95357cf37344160859a812852f7863f",
+      "ae3a1c3f7ee746bba031b06306ff3230",
+      "b840e35b5cd24d7794f47c92aa6b65e4",
+      "b9bc53732fd6440697caa4b8dd1640a4",
+      "bc763528f6444ad6af88513347cc0927",
+      "bfaf307d22a145b88fbf9e200df869b5",
+      "c32fb0eb8c7d402d9b7750ae6e6ccaf4",
+      "c429661f059e459fb688d9b458c6259f",
+      "ca08f540ff2040308cafef4af270ec83",
+      "cacd8936bc074af7a8eb0b2fc9c5df30",
+      "d4dfd2a620384ad5bece27320661f8f0",
+      "d9ba37cf3cef4f8dba3a61222b21e6c2",
+      "dc06fda1ab6d4a2d96e93f4d62228b9d",
+      "dd1e53bd30724ee895aba23dd77926c6",
+      "e32d733688f240b69a8f2e4357b03c1f",
+      "e3b0d5ec6e974d73a42c027792094e34",
+      "e4af3a4ecfe84f98b515b0cac1e28aa6",
+      "eb060bb32f0a44aaa398f98e629c9fef",
+      "f3227d067b734e6cbc8fb3a9ce886191",
+      "f51024342ecd46a7a0c17adefbd67abd",
+      "f72aa1f1a2fb4a308ddc26de9aa739d6",
+      "f997ae8a711e4ab2be4d01882e9d277a",
+      "f9cd6db37ef841c7a25b217b5d537d71",
+      "fa82faf63802431da803e1a99ce1411b",
+      "fba37001e7c448eea75b3e85977d9fe8"
+    ]
+  }
+}

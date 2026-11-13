@@ -1,0 +1,118 @@
+{
+  "trace": {
+    "trace_id": "98b91aa39d22b54a50f6dba1364eccdd",
+    "name": "ollama-chat",
+    "timestamp": "2026-11-08T14:04:12.183Z",
+    "project_id": "local-proj",
+    "environment": "default",
+    "latency": 25.811,
+    "scores_count": 7,
+    "observations_count": 5,
+    "input": {
+      "_redacted": true,
+      "chars": 1065
+    },
+    "output": {
+      "_redacted": true,
+      "chars": 46
+    },
+    "redaction_note": "原始 input/output 含系统提示与召回历史，按 spec-045 F12 脱敏口径仅保留长度，不入库明文。"
+  },
+  "observations": [
+    {
+      "id": "88aac87ac2fbfc53",
+      "type": "GENERATION",
+      "name": "ollama-chat",
+      "trace_id": "98b91aa39d22b54a50f6dba1364eccdd",
+      "start_time": "2026-11-08T14:04:12.183Z",
+      "end_time": "2026-11-08T14:04:12.196Z",
+      "model": "qwen3.8:27b",
+      "completion_start_time": "2026-11-08T14:04:35.973Z",
+      "time_to_first_token": 23.79,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "input": {
+        "_redacted": true,
+        "chars": 1065
+      },
+      "output": {
+        "_redacted": true,
+        "chars": 46
+      },
+      "parent_observation_id": null
+    },
+    {
+      "id": "261a418bfe31aa43",
+      "type": "SPAN",
+      "name": "phase:prefill",
+      "trace_id": "98b91aa39d22b54a50f6dba1364eccdd",
+      "start_time": "2026-11-08T14:04:12.183Z",
+      "end_time": "2026-11-08T14:04:12.183Z",
+      "model": null,
+      "completion_start_time": null,
+      "time_to_first_token": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "input": null,
+      "output": null,
+      "parent_observation_id": "88aac87ac2fbfc53"
+    },
+    {
+      "id": "547f748717996b06",
+      "type": "SPAN",
+      "name": "phase:load",
+      "trace_id": "98b91aa39d22b54a50f6dba1364eccdd",
+      "start_time": "2026-11-08T14:04:12.183Z",
+      "end_time": "2026-11-08T14:04:12.183Z",
+      "model": null,
+      "completion_start_time": null,
+      "time_to_first_token": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "input": null,
+      "output": null,
+      "parent_observation_id": "88aac87ac2fbfc53"
+    },
+    {
+      "id": "cf420cdfc560b28b",
+      "type": "SPAN",
+      "name": "phase:overhead",
+      "trace_id": "98b91aa39d22b54a50f6dba1364eccdd",
+      "start_time": "2026-11-08T14:04:12.183Z",
+      "end_time": "2026-11-08T14:04:37.994Z",
+      "model": null,
+      "completion_start_time": null,
+      "time_to_first_token": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "input": null,
+      "output": null,
+      "parent_observation_id": "88aac87ac2fbfc53"
+    },
+    {
+      "id": "d43412d2419fca37",
+      "type": "SPAN",
+      "name": "phase:decode",
+      "trace_id": "98b91aa39d22b54a50f6dba1364eccdd",
+      "start_time": "2026-11-08T14:04:12.183Z",
+      "end_time": "2026-11-08T14:04:12.183Z",
+      "model": null,
+      "completion_start_time": null,
+      "time_to_first_token": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "input": null,
+      "output": null,
+      "parent_observation_id": "88aac87ac2fbfc53"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 100,
+    "totalItems": 5,
+    "totalPages": 1
+  },
+  "source": "GET /api/public/traces/{id} + /api/public/observations?traceId={id} (HTTP 200)",
+  "captured_at": "2026-11-08",
+  "redaction_note": "仅保留结构与计时字段；四段 phase span 名称与顺序可查证，不含任何 prompt / 召回历史 / 凭据明文。"
+}

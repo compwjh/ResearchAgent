@@ -1,0 +1,104 @@
+{
+  "artifact": "spec-047 task-05 P2② 单向分数映射 — 当前部署版本真实 Langfuse E2E",
+  "captured_at": "2026-11-08T21:57:59+00:00",
+  "langfuse_base": "http://127.0.0.1:3000",
+  "credentials_source": ".env LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (values not recorded)",
+  "discipline": {
+    "mock_or_fake_transport": false,
+    "method": "real POST/GET to deployed Langfuse :3000 via eval_042.score_mapping.map_quality_score -> post_score_idempotent (post_score + find_score_by_id)",
+    "status_recorder": "instrumented offline_guard.offline_urlopen only records response.status; real HTTP requests are unchanged",
+    "no_business_table_write": true,
+    "read_only_equivalent_sample": true,
+    "no_history_migration": true
+  },
+  "input": {
+    "trace_id": "abfe474ba20272ba230a02327bf73024",
+    "trace_is_real_completed": true,
+    "sample": {
+      "decision_id": "qscore-map-e2e-1794175079",
+      "quality_score": 0.8,
+      "created_at": "2026-11-08T21:57:59+00:00"
+    },
+    "score_name": "research_quality_score",
+    "mapping_version": "research-quality-score-map-v1"
+  },
+  "first_map": {
+    "result": {
+      "status": "mapped",
+      "reason": null,
+      "name": "research_quality_score",
+      "value": 0.8,
+      "trace_id": "abfe474ba20272ba230a02327bf73024",
+      "decision_id": "qscore-map-e2e-1794175079",
+      "score_id": "eval042-8bd8fce03feaf51667ffec5bf44876e1"
+    },
+    "post_http_status": 200,
+    "request_response_status_codes": [
+      {
+        "method": "GET",
+        "path": "/api/public/traces",
+        "status": 200
+      },
+      {
+        "method": "GET",
+        "path": "/api/public/scores/eval042-8bd8fce03feaf51667ffec5bf44876e1",
+        "status": 404
+      },
+      {
+        "method": "POST",
+        "path": "/api/public/scores",
+        "status": 200
+      }
+    ]
+  },
+  "exact_id_readback": {
+    "score_id": "eval042-8bd8fce03feaf51667ffec5bf44876e1",
+    "found": true,
+    "http_status": 200,
+    "score": {
+      "id": "eval042-8bd8fce03feaf51667ffec5bf44876e1",
+      "name": "research_quality_score",
+      "value": 0.8,
+      "dataType": "NUMERIC",
+      "traceId": "abfe474ba20272ba230a02327bf73024",
+      "comment": "source=research_model_outcomes.quality_score; decision_id=qscore-map-e2e-1794175079; map_version=research-quality-score-map-v1"
+    }
+  },
+  "idempotent_rerun": {
+    "result": {
+      "status": "mapped",
+      "reason": null,
+      "name": "research_quality_score",
+      "value": 0.8,
+      "trace_id": "abfe474ba20272ba230a02327bf73024",
+      "decision_id": "qscore-map-e2e-1794175079",
+      "score_id": "eval042-8bd8fce03feaf51667ffec5bf44876e1"
+    },
+    "post_count_before": 1,
+    "post_count_after": 1,
+    "delta_posts": 0,
+    "same_score_id": true
+  },
+  "binding_check": {
+    "research_quality_score_count_on_trace": 1,
+    "scores": [
+      {
+        "id": "eval042-8bd8fce03feaf51667ffec5bf44876e1",
+        "name": "research_quality_score",
+        "value": 0.8,
+        "dataType": "NUMERIC",
+        "traceId": "abfe474ba20272ba230a02327bf73024"
+      }
+    ]
+  },
+  "final_status": "verified",
+  "all_http_status_codes": {
+    "posts": [
+      200
+    ],
+    "gets": [
+      200,
+      404
+    ]
+  }
+}

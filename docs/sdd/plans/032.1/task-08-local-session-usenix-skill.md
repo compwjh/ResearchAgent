@@ -76,4 +76,4 @@
 
 - 静态/契约：PASS。脚本路径为 `.codebuddy/skills/usenix-paper-assistant/scripts/search_papers.py` 与 `download_paper.py`；只调用本地产品 API，不接受客户端 URL。Task13 定向测试 `4 passed`，脚本 Ruff、`py_compile` 退出码均为 `0`。
 - 不可达合同：PASS。`--base-url http://127.0.0.1:9` 退出码 `2`，输出中文错误、无 traceback；本轮修复错误文本显示实际 base URL，不再固定误报 8000。
-- 真实服务：PASS（2026-09-20 复跑）。`search_papers.py --base-url http://127.0.0.1:18080 --query agent --years 2024 --limit 3` 返回 `partial` 和 3 个真实候选；随后第三个候选通过 `download_paper.py` 返回 `paper_id=7dfec772f919481aad9fc3bcbcf96041`、`status=indexed`、`existing=false`。首个候选重复导入返回 409，第二个候选返回 424，均符合失败/重复语义并记录在 [`artifacts/task-13/carryover.md`](../032/artifacts/task-13/carryover.md)。
+- 真实服务：PASS（2026-09-20 复跑）。`search_papers.py --base-url http://127.0.0.1:18080 --query agent --years 2024 --limit 3` 返回 `partial` 和 3 个真实候选；随后第三个候选通过 `download_paper.py` 返回 `paper_id=7dfec772f919481aad9fc3bcbcf96041`、`status=indexed`、`existing=false`。首个候选重复导入返回 409，第二个候选返回 424，均符合失败/重复语义并记录在 [`artifacts/spec-032/task-13/carryover.md`](../../../../artifacts/spec-032/task-13/carryover.md)。

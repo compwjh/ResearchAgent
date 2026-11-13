@@ -94,8 +94,8 @@ def test_mobile_map_contract_is_versioned_scoped_and_touch_safe() -> None:
     assert "/assets/literature-maps.js?v=47" in INDEX
     assert "/assets/literature-maps.css?v=34" in INDEX
     assert "/styles.css?v=62" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.js?v=47" in FIXTURE.read_text(encoding="utf-8")
-    assert "/literature-maps.css?v=34" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.js?v=49" in FIXTURE.read_text(encoding="utf-8")
+    assert "/literature-maps.css?v=36" in FIXTURE.read_text(encoding="utf-8")
     for marker in (
         "literature-map-mobile-list-open",
         "literature-map-mobile-backdrop",

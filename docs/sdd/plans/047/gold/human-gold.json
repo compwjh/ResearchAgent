@@ -1,0 +1,5 @@
+{
+  "schema_version": "human-gold-v1",
+  "note": "Spec-047 Task-04 P2① 脱敏人工标注 gold 集。字段仅含 item_id / human_label / annotator / annotated_at / gold_source（+ 顶层 schema_version / note）；不含 input / output / prompt / prior_context / 凭据原文（spec-042:236），明确不复用 docs/sdd/plans/042/task-02-eval-dataset.json。本期用户未提供真实人工标签：items 为空集，禁止 AI 伪造 human_label；human_agree_rate 保持 null、constructed_gold_only=True。真实一致率需由人工标注 >=20 条后回填本文件（gold_source 必须字面为 human），再用 eval_042 CLI 的 --gold <path> 计算（N>=20 最低样本门槛）。",
+  "items": []
+}

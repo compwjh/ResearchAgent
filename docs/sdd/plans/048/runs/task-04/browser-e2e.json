@@ -1,0 +1,580 @@
+{
+  "base": "http://127.0.0.1:8000",
+  "checks": {
+    "tabs_present": true,
+    "default_maps_selected": true,
+    "create_panel_hidden_by_default": true,
+    "maps_panel_visible_by_default": true,
+    "create_panel_visible_after_tab": true,
+    "form_value_preserved_across_tabs": true,
+    "refresh_in_canvas_tools": true,
+    "refresh_no_visible_text": true,
+    "refresh_aria_label": true,
+    "refresh_icon_node": true,
+    "spin_class_after_click": true,
+    "header_new_button_removed": true,
+    "header_other_actions_retained": true,
+    "live_css_v36": true,
+    "live_js_v48": true,
+    "mobile_create_tab_opens_form": true,
+    "mobile_refresh_touch_target_ge_44": true,
+    "mobile_refresh_no_visible_text": true
+  },
+  "api": [
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/papers/imports",
+      "status": 200,
+      "body": "{\"batches\":[{\"batch_id\":\"1a76e369-c638-4f2c-a430-42552a1e7012\",\"search_id\":\"acm-manual-20260922144403614390\",\"status\":\"waiting_login\",\"state\":\"waiting_login\",\"created_at\":\"2026-09-22T14:44:59Z\",\"updated_at\":\"2026-09-22T14:46:08Z\",\"total_count\":1,\"completed_count\":0,\"failed_count\":0,\"waiting_login_co"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/literature-maps/tags",
+      "status": 200,
+      "body": "{\"schema_version\":\"literature-map-v1\",\"tags\":[]}"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-notifications?after_seq=0&limit=100",
+      "status": 200,
+      "body": "{\"notifications\":[{\"notification_id\":\"106358f651044dbfae6677f573fa6635\",\"research_session_id\":\"670adeba6ebb4adfb45f413e093cc3df\",\"research_task_id\":\"7fc66400a3f75df789b62e293aa80ff9\",\"notification_kind\":\"failed\",\"status\":\"unread\",\"subject_version\":1,\"event_seq\":1,\"payload\":{\"error_code\":\"AGENT_OUTPU"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions?limit=100",
+      "status": 200,
+      "body": "{\"research_sessions\":[{\"research_session_id\":\"80ccd8352f474fe6b6c65b8789aa2247\",\"owner_id\":\"local-user\",\"conversation_id\":\"271aade840684c48b2b3188fe690b6dc\",\"trigger_message_id\":\"93f5dc998d314d8db00aec1cb62de3f8\",\"intake_draft_id\":\"ee56091bed3e4f9eb6753ea6d698b37f\",\"status\":\"intake_pending\",\"current"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/kb/papers",
+      "status": 200,
+      "body": "{\"papers\":[{\"authors\":null,\"chunk_count\":107,\"chunkers\":{\"v1\":{\"status\":\"indexed\",\"chunk_count\":107,\"progress\":100,\"error\":null},\"v2\":{\"status\":\"indexed_partial\",\"chunk_count\":289,\"progress\":100,\"error\":\"SOURCE_RANGE_UNRESOLVED\"}},\"conference_id\":null,\"conference_name\":null,\"created_at\":\"2026-09-01T"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/projects?limit=100",
+      "status": 200,
+      "body": "{\"projects\":[{\"project_id\":\"a4a1745f801441188dc1f75b0534be11\",\"owner_id\":\"local-user\",\"name\":\"文件记忆验收 20261026\",\"instructions\":null,\"status\":\"active\",\"created_at\":\"2026-10-26T02:02:36.684346+00:00\",\"updated_at\":\"2026-10-26T02:02:36.684346+00:00\",\"last_activity_at\":\"2026-10-26T02:12:55.037537+00:00\"},"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/literature-maps",
+      "status": 200,
+      "body": "{\"schema_version\":\"literature-map-v1\",\"maps\":[{\"map_id\":\"4ef8c03bffe24797acb090f4095a3a28\",\"name\":\"地图易用性官方目录验证 task10-official-20261027-130257\",\"topic\":\"fuzzing vulnerability discovery\",\"owner_id\":\"local-user\",\"project_id\":null,\"filters\":{\"conference_ids\":[\"usenix-security\"],\"source_ids\":[\"usenix\"],"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/health",
+      "status": 200,
+      "body": "{\"status\":\"ok\",\"model\":\"qwen3.8:27b\",\"models\":[\"qwen3.8:27b-q4_K_M\",\"qwen3.8:27b-mlx\",\"qwen3.8-27b-q4:latest\",\"qwen3.8:27b\",\"oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU\",\"qwen3.8:27b-q4\",\"dengcao/Qwen3-Reranker-0.6B:Q8_0\",\"bge-m3:latest\",\"deepseek-coder-v2:16b\",\"qwen3.5:9b\",\"deepseek-coder:33b\"],\"pap"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/80ccd8352f474fe6b6c65b8789aa2247",
+      "status": 200,
+      "body": "{\"research_session_id\":\"80ccd8352f474fe6b6c65b8789aa2247\",\"owner_id\":\"local-user\",\"conversation_id\":\"271aade840684c48b2b3188fe690b6dc\",\"trigger_message_id\":\"93f5dc998d314d8db00aec1cb62de3f8\",\"intake_draft_id\":\"ee56091bed3e4f9eb6753ea6d698b37f\",\"status\":\"intake_pending\",\"current_plan_version\":0,\"plan"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/670adeba6ebb4adfb45f413e093cc3df",
+      "status": 200,
+      "body": "{\"research_session_id\":\"670adeba6ebb4adfb45f413e093cc3df\",\"owner_id\":\"local-user\",\"conversation_id\":\"e1e320cb5c53461ba5f892d2d25734b2\",\"trigger_message_id\":\"ecce6349c8e857a7830f5fcc44904702\",\"intake_draft_id\":\"a6e5bd05381b4c35ae43e9c63a7019e4\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/3c16035152b3428b8e3ccd5a0f9befaf",
+      "status": 200,
+      "body": "{\"research_session_id\":\"3c16035152b3428b8e3ccd5a0f9befaf\",\"owner_id\":\"local-user\",\"conversation_id\":\"bcfb3317fc8d431dae2243e6318970d7\",\"trigger_message_id\":\"79df6063d3f55a24a1f755f39240077f\",\"intake_draft_id\":\"f0a3e84afbc943299b2943622c56dbde\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/07cb41e7434342ddb18338dba15049ad",
+      "status": 200,
+      "body": "{\"research_session_id\":\"07cb41e7434342ddb18338dba15049ad\",\"owner_id\":\"local-user\",\"conversation_id\":\"f3ae1621d6e84e7f86965effd2c1b5df\",\"trigger_message_id\":\"9cff8eb275f75e719185ac9790ae88da\",\"intake_draft_id\":\"271cabb67d644b3a89ce75140683ae2b\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/c4e0cde215944a89acb7be0e7a421385",
+      "status": 200,
+      "body": "{\"research_session_id\":\"c4e0cde215944a89acb7be0e7a421385\",\"owner_id\":\"local-user\",\"conversation_id\":\"7c7ef0e693384ba0a8ccfdf3b1a7b8f6\",\"trigger_message_id\":\"a8c0beb6fffb5bd294f763e4d71fbfd4\",\"intake_draft_id\":\"b59cad164e524bc496f5279870758ad0\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/d28342c20f0e477ba33cec5a69cc4f13",
+      "status": 200,
+      "body": "{\"research_session_id\":\"d28342c20f0e477ba33cec5a69cc4f13\",\"owner_id\":\"local-user\",\"conversation_id\":\"06ad02aee8d3472ebd3269208e1e75fe\",\"trigger_message_id\":\"3ba5af1424b35ea59a4a8fa835d6b153\",\"intake_draft_id\":\"3bc9ef7370034ad295505fcb334eb127\",\"status\":\"intake_pending\",\"current_plan_version\":0,\"plan"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/51c4dd4c9b4f49d5940e26199a3f2eca",
+      "status": 200,
+      "body": "{\"research_session_id\":\"51c4dd4c9b4f49d5940e26199a3f2eca\",\"owner_id\":\"local-user\",\"conversation_id\":\"344f57aac0194735b5538bff13e58d84\",\"trigger_message_id\":\"326254a544be565f80183b6768011e67\",\"intake_draft_id\":\"3db623e4f5164ffdbc701686f105dd16\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/35fbad7184ae4b929a19b6d7d051c067",
+      "status": 200,
+      "body": "{\"research_session_id\":\"35fbad7184ae4b929a19b6d7d051c067\",\"owner_id\":\"local-user\",\"conversation_id\":\"07582ff5de6c4086923e53cd15b337ec\",\"trigger_message_id\":\"21e2aa57f4695b4cbfecdeda234ea3ad\",\"intake_draft_id\":\"fe6953bfa7304307b62c0d8d6c0ea69c\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/44572d7a7ebc4b91a90f43edd752dba4",
+      "status": 200,
+      "body": "{\"research_session_id\":\"44572d7a7ebc4b91a90f43edd752dba4\",\"owner_id\":\"local-user\",\"conversation_id\":\"ba89f58dcbd348a382085b2f6d993fe2\",\"trigger_message_id\":\"a8aff04c588e54d182018aee37ce4d31\",\"intake_draft_id\":\"442c137e05814d7ab2c666b10dd00d62\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/cced18b3460a40e2a7025f52065dcc7a",
+      "status": 200,
+      "body": "{\"research_session_id\":\"cced18b3460a40e2a7025f52065dcc7a\",\"owner_id\":\"local-user\",\"conversation_id\":\"0c94edbceece4b11b1ab7c117897ee35\",\"trigger_message_id\":\"3744fbda73c25b088576f2cf0c604b0b\",\"intake_draft_id\":\"1d892f3d374049ab8d3c0620890bf43e\",\"status\":\"cancelled\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/2fec01273c0d46c89a602494cad037b5",
+      "status": 200,
+      "body": "{\"research_session_id\":\"2fec01273c0d46c89a602494cad037b5\",\"owner_id\":\"local-user\",\"conversation_id\":\"af8ed5fd94d3448ea759beb08234d676\",\"trigger_message_id\":\"41f944fd48cc5dd190f94e1a488dc5ff\",\"intake_draft_id\":\"787ef2248fd44dfcabad2c286d6475c5\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/967f26dc250b4d35b6b02a94fb088f68",
+      "status": 200,
+      "body": "{\"research_session_id\":\"967f26dc250b4d35b6b02a94fb088f68\",\"owner_id\":\"local-user\",\"conversation_id\":\"9a2454bfd0de46da9759da723f989da5\",\"trigger_message_id\":\"37e145c194a45d5fa40a8d60320451d2\",\"intake_draft_id\":\"e1df5ef7b8694b8594e55c5d584576cf\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/9fe4895ace104befae461fd89df2e401",
+      "status": 200,
+      "body": "{\"research_session_id\":\"9fe4895ace104befae461fd89df2e401\",\"owner_id\":\"local-user\",\"conversation_id\":\"36c3656fcb244a17b462cecbec8caa4a\",\"trigger_message_id\":\"6856bdc548bb5dcd8537633fea122e57\",\"intake_draft_id\":\"83914de369994ee8a9c1b6a519e9e031\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/c2cfd375c0ab47f3bb1747fb6f7fe5a5",
+      "status": 200,
+      "body": "{\"research_session_id\":\"c2cfd375c0ab47f3bb1747fb6f7fe5a5\",\"owner_id\":\"local-user\",\"conversation_id\":\"ae03e929131b4886b799f049812a2c05\",\"trigger_message_id\":\"94b19a0903f75f3fb4bc10cf916089b6\",\"intake_draft_id\":\"cce2a6b05a2a42d2b61c7dad4a1b283b\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/0a6dcf9590724a55bd12cb6172982b92",
+      "status": 200,
+      "body": "{\"research_session_id\":\"0a6dcf9590724a55bd12cb6172982b92\",\"owner_id\":\"local-user\",\"conversation_id\":\"9c5ee9292ebe4ba39f823f77329fb165\",\"trigger_message_id\":\"6505dd296c76456081d0357db065e9f3\",\"intake_draft_id\":\"b81a8c74487949d59c6163d967952506\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/a561682a29fb43c98f16db71e7e47550",
+      "status": 200,
+      "body": "{\"research_session_id\":\"a561682a29fb43c98f16db71e7e47550\",\"owner_id\":\"local-user\",\"conversation_id\":\"3dc0846046444c54b0dda5ecdc75ceb7\",\"trigger_message_id\":\"1259e3e19683441ebfc54239ba097f98\",\"intake_draft_id\":\"0daec95e6fa24f2fa0750bb3c3ff9d52\",\"status\":\"cancelled\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/7fdc9655d8624d479febfc7cdec2ab35",
+      "status": 200,
+      "body": "{\"research_session_id\":\"7fdc9655d8624d479febfc7cdec2ab35\",\"owner_id\":\"local-user\",\"conversation_id\":\"d1adeccb629d4577bcd1874a5cdb6e2e\",\"trigger_message_id\":\"3baf1a7424c5491b96d9857090c150ef\",\"intake_draft_id\":\"37372832a14b43d1b8aa8ceb2e04d1f3\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/313e507567e4421396e4623e941e035c",
+      "status": 200,
+      "body": "{\"research_session_id\":\"313e507567e4421396e4623e941e035c\",\"owner_id\":\"local-user\",\"conversation_id\":\"069ee0c544894055a6e7c7a6acdf24df\",\"trigger_message_id\":\"8439606d1029458fba321d5ed1b9b43c\",\"intake_draft_id\":\"ce21f746898e45ff8a37a29a1cf918f5\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/1b30f55514e94789aa28ee17d29091df",
+      "status": 200,
+      "body": "{\"research_session_id\":\"1b30f55514e94789aa28ee17d29091df\",\"owner_id\":\"local-user\",\"conversation_id\":\"1cd0846825ff49dcba6d8eae9d695be8\",\"trigger_message_id\":\"74a840450b4e51d998da7341442e14df\",\"intake_draft_id\":\"168ec68865b44f5da95d37800c042a07\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/a728bc0f9313499e8e89e5332e254ee4",
+      "status": 200,
+      "body": "{\"research_session_id\":\"a728bc0f9313499e8e89e5332e254ee4\",\"owner_id\":\"local-user\",\"conversation_id\":\"bc9f4b4638064a19aeea4fdb386adf69\",\"trigger_message_id\":\"acc3af49f8745cb7a8f93f8b5f3e9a6c\",\"intake_draft_id\":\"4bee3bf442674f80b411671548627cab\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/7315ac6f1cfe45468179f755486ca153",
+      "status": 200,
+      "body": "{\"research_session_id\":\"7315ac6f1cfe45468179f755486ca153\",\"owner_id\":\"local-user\",\"conversation_id\":\"35f0fe1923224d1792586f0fc8b562a0\",\"trigger_message_id\":\"b08f9ba2f30b5d81957dcc0daa72154f\",\"intake_draft_id\":\"aab69faf6ad840beb02c31dd00fb67ee\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/26f7b06072a74e44891b11375292d755",
+      "status": 200,
+      "body": "{\"research_session_id\":\"26f7b06072a74e44891b11375292d755\",\"owner_id\":\"local-user\",\"conversation_id\":\"7d2ce9a3ff4a45b79a816891bd67a2cf\",\"trigger_message_id\":\"06a0dc855dbd52dfb2109b29f8479487\",\"intake_draft_id\":\"acd8c9a85351491589261ed387d511d1\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/95e77793bb5d4d4c9ee3127cb59bc5f5",
+      "status": 200,
+      "body": "{\"research_session_id\":\"95e77793bb5d4d4c9ee3127cb59bc5f5\",\"owner_id\":\"local-user\",\"conversation_id\":\"c11f562bac64453884adac76ca149f55\",\"trigger_message_id\":\"4b713fcfd5865bcc8d5f9c77f9c4ab91\",\"intake_draft_id\":\"f5e9f2c64bd44ff38e5ef59266acd0e9\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/b01e538beba642ccb0a8c557081548fd",
+      "status": 200,
+      "body": "{\"research_session_id\":\"b01e538beba642ccb0a8c557081548fd\",\"owner_id\":\"local-user\",\"conversation_id\":\"1cedd1d8537a43aa89bd203bc79e635b\",\"trigger_message_id\":\"36fe0eec53025a2e87fbf59e2dcb9dfb\",\"intake_draft_id\":\"5699663dab40417a99b1aa38e7b7afbd\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/5be3dce9e4ef4da493ca357365f4c787",
+      "status": 200,
+      "body": "{\"research_session_id\":\"5be3dce9e4ef4da493ca357365f4c787\",\"owner_id\":\"local-user\",\"conversation_id\":\"953adff0b8014402b286b43989d35932\",\"trigger_message_id\":\"8851dcf026805226bee65f60cf465576\",\"intake_draft_id\":\"639600503a1b42cbaee425dec45240ed\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/3ba14f2817944df488cc8efcabfdc4df",
+      "status": 200,
+      "body": "{\"research_session_id\":\"3ba14f2817944df488cc8efcabfdc4df\",\"owner_id\":\"local-user\",\"conversation_id\":\"7454ee63043c406c9831e77de0f44812\",\"trigger_message_id\":\"4f4a493a833859b19ae8f20635fb179d\",\"intake_draft_id\":\"63a17e7fdc04417a95d0bbed1e9dfe82\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/d41f6f77f3fb483fb36dd24e478efe76",
+      "status": 200,
+      "body": "{\"research_session_id\":\"d41f6f77f3fb483fb36dd24e478efe76\",\"owner_id\":\"local-user\",\"conversation_id\":\"d6c3a944bbeb4fe29d54cb304b835a56\",\"trigger_message_id\":\"0b0bac2036515cc795d9a545317d81be\",\"intake_draft_id\":\"6e7ed7cc097b452b823e0ca4fe920d51\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/49e3f56441654542925031b11132e77f",
+      "status": 200,
+      "body": "{\"research_session_id\":\"49e3f56441654542925031b11132e77f\",\"owner_id\":\"local-user\",\"conversation_id\":\"eedf7efb96a74932b619115672d134c0\",\"trigger_message_id\":\"cb9e61fac41050269486fe7dd2603c2c\",\"intake_draft_id\":\"a23588aaac104451a72867b7db632760\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/6a7d51e002db4801b1c48ff6ee5da2fd",
+      "status": 200,
+      "body": "{\"research_session_id\":\"6a7d51e002db4801b1c48ff6ee5da2fd\",\"owner_id\":\"local-user\",\"conversation_id\":\"78a59d0406214704b3f4add9cb7fe3e6\",\"trigger_message_id\":\"d924e0bc60705342aeb006f110aa17ea\",\"intake_draft_id\":\"ba48a190900d445392a2a0521708c915\",\"status\":\"completed\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/027775e20232481887cdffac3bd6fe81",
+      "status": 200,
+      "body": "{\"research_session_id\":\"027775e20232481887cdffac3bd6fe81\",\"owner_id\":\"local-user\",\"conversation_id\":\"05122fc2af7a49259b33c9867d331793\",\"trigger_message_id\":\"a5fb36500c1851958b3fead9c8500bac\",\"intake_draft_id\":\"03073766596a44fda310f77a662c70b7\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/fb203383acf141e6893c16527544bf43",
+      "status": 200,
+      "body": "{\"research_session_id\":\"fb203383acf141e6893c16527544bf43\",\"owner_id\":\"local-user\",\"conversation_id\":\"8334ca4a99a74930afa766cbaff4a1de\",\"trigger_message_id\":\"17a8544191895c2c91dddba585dad1f9\",\"intake_draft_id\":\"3de3351ee98c4828ab576fc076645b23\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/57e8540537294fda82c4d0c47c31c56c",
+      "status": 200,
+      "body": "{\"research_session_id\":\"57e8540537294fda82c4d0c47c31c56c\",\"owner_id\":\"local-user\",\"conversation_id\":\"89971fcf8b8240fdad144e286800aae0\",\"trigger_message_id\":\"9d4844d5772f5a328dd4ec9273316881\",\"intake_draft_id\":\"2c94c49b275e411cb9d0063ed4b6484b\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/26005b83c4f148608df01ff0299562be",
+      "status": 200,
+      "body": "{\"research_session_id\":\"26005b83c4f148608df01ff0299562be\",\"owner_id\":\"local-user\",\"conversation_id\":\"cfaa2bcc133c4a04892197d4a0aa9a0d\",\"trigger_message_id\":\"ceb5a60d94a25e6fbeb3c767557aa634\",\"intake_draft_id\":\"a065b45b955a465ca0278179f2e0459b\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/8405b22af6634b24b55eee3f456fbfe2",
+      "status": 200,
+      "body": "{\"research_session_id\":\"8405b22af6634b24b55eee3f456fbfe2\",\"owner_id\":\"local-user\",\"conversation_id\":\"33b669c25e734230a2edae0d94905b9a\",\"trigger_message_id\":\"b2d9f11749c8504f9e456523aa9052ba\",\"intake_draft_id\":\"69ea0ca2237f45b1bea9c7d6747bf9fa\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/cf34667325db4fb89985a5dc7fda38f9",
+      "status": 200,
+      "body": "{\"research_session_id\":\"cf34667325db4fb89985a5dc7fda38f9\",\"owner_id\":\"local-user\",\"conversation_id\":\"20a67e181fba4a369e00715f1a537466\",\"trigger_message_id\":\"1501664afe3a541489b04ad0b6c87e7c\",\"intake_draft_id\":\"8239d322abd948c9aa72b489c35f0972\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/8f358b9b611b400a814f6ed4f72cbecb",
+      "status": 200,
+      "body": "{\"research_session_id\":\"8f358b9b611b400a814f6ed4f72cbecb\",\"owner_id\":\"local-user\",\"conversation_id\":\"e06d6635a7bc4adc9629dfb548854bb9\",\"trigger_message_id\":\"5572f9cce2885aa2abd82eb13b935a82\",\"intake_draft_id\":\"a2592f7341e44fef8991ed1df973534c\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/a93fc08be4394a73a85b9710edaf1af1",
+      "status": 200,
+      "body": "{\"research_session_id\":\"a93fc08be4394a73a85b9710edaf1af1\",\"owner_id\":\"local-user\",\"conversation_id\":\"00e1995b7ba74b01b2ce7d788f48e827\",\"trigger_message_id\":\"23abf884fbe95281bfe2ff84ee9ab5ff\",\"intake_draft_id\":\"b449294693874c769b0e6e11bc7ddf09\",\"status\":\"completed\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/57a1623f1aeb49ca84db831b803b296d",
+      "status": 200,
+      "body": "{\"research_session_id\":\"57a1623f1aeb49ca84db831b803b296d\",\"owner_id\":\"local-user\",\"conversation_id\":\"00e1995b7ba74b01b2ce7d788f48e827\",\"trigger_message_id\":\"f928f4f70e9d568da21a5ca589b6a614\",\"intake_draft_id\":\"2cfb04ba38504608a03c43cd0cb42c9d\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/d0dcba4883a443fda443c7684a1577dd",
+      "status": 200,
+      "body": "{\"research_session_id\":\"d0dcba4883a443fda443c7684a1577dd\",\"owner_id\":\"local-user\",\"conversation_id\":\"1fbcc3ab021f460ea551cebf899cfcef\",\"trigger_message_id\":\"507f1d8faee15b86afa981fe20d4c490\",\"intake_draft_id\":\"dc20378933d942379c277a85f33a9187\",\"status\":\"completed\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/13c13e460f5d4c40be57221ea9935d64",
+      "status": 200,
+      "body": "{\"research_session_id\":\"13c13e460f5d4c40be57221ea9935d64\",\"owner_id\":\"local-user\",\"conversation_id\":\"ccdd7bc785254bca94d4e93c6e3e63c5\",\"trigger_message_id\":\"4a517a4e84c5440eb9e62cf55b39c0ce\",\"intake_draft_id\":\"3636eb0fda8746b69fee728286877d07\",\"status\":\"completed\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/f9c2ec8877fd4c27a6b0f8abb7357db9",
+      "status": 200,
+      "body": "{\"research_session_id\":\"f9c2ec8877fd4c27a6b0f8abb7357db9\",\"owner_id\":\"local-user\",\"conversation_id\":\"2656d2c0326f4f80901781afe08c4c99\",\"trigger_message_id\":\"0598d48e08f05710ac0fcc400feee7cd\",\"intake_draft_id\":\"8f0bc4ca38f54058917d531482805ad1\",\"status\":\"completed\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/a0bac37a6ce84b59b4ddf333d14edbff",
+      "status": 200,
+      "body": "{\"research_session_id\":\"a0bac37a6ce84b59b4ddf333d14edbff\",\"owner_id\":\"local-user\",\"conversation_id\":\"44cf611eb3c647cab72534d622112b12\",\"trigger_message_id\":\"fc6b92c985b2553b9ec2d0ab552edc46\",\"intake_draft_id\":\"e965eabc219943e4ac8a2aefd9b9caaa\",\"status\":\"intake_pending\",\"current_plan_version\":0,\"plan"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/208f35ce3afc4045a6ba51fa5f4cee99",
+      "status": 200,
+      "body": "{\"research_session_id\":\"208f35ce3afc4045a6ba51fa5f4cee99\",\"owner_id\":\"local-user\",\"conversation_id\":\"7451383e897c4d0a9c3905eac9aa2846\",\"trigger_message_id\":\"3f01bd777075522fba2dea6596708f5b\",\"intake_draft_id\":\"35c3b916372847d2987e5d854e31ba26\",\"status\":\"cancelled\",\"current_plan_version\":0,\"plan_mess"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/6b1fcdb096204ed6b4350bdfec637109",
+      "status": 200,
+      "body": "{\"research_session_id\":\"6b1fcdb096204ed6b4350bdfec637109\",\"owner_id\":\"local-user\",\"conversation_id\":\"7451383e897c4d0a9c3905eac9aa2846\",\"trigger_message_id\":\"dc1cd4a47a005d979ad2fbf32e5dd62d\",\"intake_draft_id\":\"4dd9cf7a55344d968c6c5c8397e0a69c\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/efd4dc4619f94640adc3cec73e033279",
+      "status": 200,
+      "body": "{\"research_session_id\":\"efd4dc4619f94640adc3cec73e033279\",\"owner_id\":\"local-user\",\"conversation_id\":\"44cf611eb3c647cab72534d622112b12\",\"trigger_message_id\":\"77b1dd69fdc84e6786e944ce216c1d2b\",\"intake_draft_id\":\"49a92849ca644c998d6369aec2c37b4d\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/ef8d96d9b6e2457e9e53aa83437e6f67",
+      "status": 200,
+      "body": "{\"research_session_id\":\"ef8d96d9b6e2457e9e53aa83437e6f67\",\"owner_id\":\"local-user\",\"conversation_id\":\"7451383e897c4d0a9c3905eac9aa2846\",\"trigger_message_id\":\"c901d93aae6f5078b38c5d144aa52605\",\"intake_draft_id\":\"727f9fca7e8245619ecc5ad8c5ef3159\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/6fe55f285b164d42b14fa857e3113a59",
+      "status": 200,
+      "body": "{\"research_session_id\":\"6fe55f285b164d42b14fa857e3113a59\",\"owner_id\":\"local-user\",\"conversation_id\":\"7451383e897c4d0a9c3905eac9aa2846\",\"trigger_message_id\":\"a13d45d604345595a14c96d7ecf9d3b7\",\"intake_draft_id\":\"adcfe749ec384c9b8ff4fcc76b990391\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/health",
+      "status": 200,
+      "body": "{\"status\":\"ok\",\"model\":\"qwen3.8:27b\",\"models\":[\"qwen3.8:27b-q4_K_M\",\"qwen3.8:27b-mlx\",\"qwen3.8-27b-q4:latest\",\"qwen3.8:27b\",\"oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU\",\"qwen3.8:27b-q4\",\"dengcao/Qwen3-Reranker-0.6B:Q8_0\",\"bge-m3:latest\",\"deepseek-coder-v2:16b\",\"qwen3.5:9b\",\"deepseek-coder:33b\"],\"pap"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/literature-maps/tags",
+      "status": 200,
+      "body": "{\"schema_version\":\"literature-map-v1\",\"tags\":[]}"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/papers/imports",
+      "status": 200,
+      "body": "{\"batches\":[{\"batch_id\":\"1a76e369-c638-4f2c-a430-42552a1e7012\",\"search_id\":\"acm-manual-20260922144403614390\",\"status\":\"waiting_login\",\"state\":\"waiting_login\",\"created_at\":\"2026-09-22T14:44:59Z\",\"updated_at\":\"2026-09-22T14:46:08Z\",\"total_count\":1,\"completed_count\":0,\"failed_count\":0,\"waiting_login_co"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-notifications?after_seq=0&limit=100",
+      "status": 200,
+      "body": "{\"notifications\":[{\"notification_id\":\"106358f651044dbfae6677f573fa6635\",\"research_session_id\":\"670adeba6ebb4adfb45f413e093cc3df\",\"research_task_id\":\"7fc66400a3f75df789b62e293aa80ff9\",\"notification_kind\":\"failed\",\"status\":\"unread\",\"subject_version\":1,\"event_seq\":1,\"payload\":{\"error_code\":\"AGENT_OUTPU"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/kb/papers",
+      "status": 200,
+      "body": "{\"papers\":[{\"authors\":null,\"chunk_count\":107,\"chunkers\":{\"v1\":{\"status\":\"indexed\",\"chunk_count\":107,\"progress\":100,\"error\":null},\"v2\":{\"status\":\"indexed_partial\",\"chunk_count\":289,\"progress\":100,\"error\":\"SOURCE_RANGE_UNRESOLVED\"}},\"conference_id\":null,\"conference_name\":null,\"created_at\":\"2026-09-01T"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/chat/reasoning-options?model=qwen3.8%3A27b",
+      "status": 200,
+      "body": "{\"model\":\"qwen3.8:27b\",\"supported_efforts\":[\"off\",\"low\",\"medium\",\"xhigh\"],\"default_effort\":\"xhigh\",\"source\":\"cache\",\"cached_at\":\"2026-11-11T19:55:21.623469+00:00\"}"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions?limit=100",
+      "status": 200,
+      "body": "{\"research_sessions\":[{\"research_session_id\":\"80ccd8352f474fe6b6c65b8789aa2247\",\"owner_id\":\"local-user\",\"conversation_id\":\"271aade840684c48b2b3188fe690b6dc\",\"trigger_message_id\":\"93f5dc998d314d8db00aec1cb62de3f8\",\"intake_draft_id\":\"ee56091bed3e4f9eb6753ea6d698b37f\",\"status\":\"intake_pending\",\"current"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/0aacf40b47b242caa0aea388ff965a8e",
+      "status": 200,
+      "body": "{\"research_session_id\":\"0aacf40b47b242caa0aea388ff965a8e\",\"owner_id\":\"local-user\",\"conversation_id\":\"7451383e897c4d0a9c3905eac9aa2846\",\"trigger_message_id\":\"17bb730964e353aba162965b684f7269\",\"intake_draft_id\":\"864630d4e8054fdc834ed20ba4bcf583\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/9e81dfed34164b23945981bb2792d9ab",
+      "status": 200,
+      "body": "{\"research_session_id\":\"9e81dfed34164b23945981bb2792d9ab\",\"owner_id\":\"local-user\",\"conversation_id\":\"ccdd7bc785254bca94d4e93c6e3e63c5\",\"trigger_message_id\":\"c50a6353f7b351cfbb8a44a7d4b9ea46\",\"intake_draft_id\":\"bbe342da25cf4553b5dac7244f2f4fa1\",\"status\":\"completed\",\"current_plan_version\":1,\"plan_mess"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/literature-maps",
+      "status": 200,
+      "body": "{\"schema_version\":\"literature-map-v1\",\"maps\":[{\"map_id\":\"4ef8c03bffe24797acb090f4095a3a28\",\"name\":\"地图易用性官方目录验证 task10-official-20261027-130257\",\"topic\":\"fuzzing vulnerability discovery\",\"owner_id\":\"local-user\",\"project_id\":null,\"filters\":{\"conference_ids\":[\"usenix-security\"],\"source_ids\":[\"usenix\"],"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/b8317f1119024702a5d750adc760dd6e",
+      "status": 200,
+      "body": "{\"research_session_id\":\"b8317f1119024702a5d750adc760dd6e\",\"owner_id\":\"local-user\",\"conversation_id\":\"4efe2dc6145141ee8e6684e078425eec\",\"trigger_message_id\":\"96ab4ac300905a5782ba25e3b4343263\",\"intake_draft_id\":\"635fd00f36fa40b2acfcf994d25076c5\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/f5c6b35da05e424d816ec987faf582c4",
+      "status": 200,
+      "body": "{\"research_session_id\":\"f5c6b35da05e424d816ec987faf582c4\",\"owner_id\":\"local-user\",\"conversation_id\":\"ccdd7bc785254bca94d4e93c6e3e63c5\",\"trigger_message_id\":\"0ba8ab45ca9151988e46f78162556bb5\",\"intake_draft_id\":\"ac2dc714cefd4eb1b88754e254153d4b\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/models?probe=1",
+      "status": 200,
+      "body": "{\"current\":\"qwen3.8:27b\",\"groups\":[{\"source\":\"local\",\"label\":\"端侧模型\",\"models\":[{\"id\":\"qwen3.8:27b-q4_K_M\",\"name\":\"qwen3.8:27b-q4_K_M\",\"source\":\"local\",\"provider\":null,\"display_name\":\"qwen3.8:27b-q4_K_M\",\"current\":false,\"status\":\"ready\",\"capabilities\":{\"reasoning_efforts\":[\"off\",\"low\",\"medium\",\"high\","
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/989c2114147e43a6aaa7fc7f754aff8f",
+      "status": 200,
+      "body": "{\"research_session_id\":\"989c2114147e43a6aaa7fc7f754aff8f\",\"owner_id\":\"local-user\",\"conversation_id\":\"0d47f175393940eb8bdf831df4e463ac\",\"trigger_message_id\":\"ba44079a1f375d049f64a138ef0bb6dc\",\"intake_draft_id\":\"4b1dbd23b7e343988a29a926fe1ce562\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/696a067189804463a018992a7876455c",
+      "status": 200,
+      "body": "{\"research_session_id\":\"696a067189804463a018992a7876455c\",\"owner_id\":\"local-user\",\"conversation_id\":\"30d302200f2944339737f3201499674c\",\"trigger_message_id\":\"6d67abf9e7e25ab39de4184738238a7c\",\"intake_draft_id\":\"412180afb992456da24e651fbad15525\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/7738993c198c432caef779fa7e70a162",
+      "status": 200,
+      "body": "{\"research_session_id\":\"7738993c198c432caef779fa7e70a162\",\"owner_id\":\"local-user\",\"conversation_id\":\"1dca4728d18f493080ab4086da556b33\",\"trigger_message_id\":\"9bed53c8b3e75a83a422f45eec0a04a2\",\"intake_draft_id\":\"504930e0832f41fd90556fe1bc7d333a\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/1cf584e62d814afc8f2cf465e71785ba",
+      "status": 200,
+      "body": "{\"research_session_id\":\"1cf584e62d814afc8f2cf465e71785ba\",\"owner_id\":\"local-user\",\"conversation_id\":\"e54af7ac0d364c509277d3d1543bebd0\",\"trigger_message_id\":\"571bd0768403516c8b99f38bc76720cf\",\"intake_draft_id\":\"7b062242d93a45fcbaed35df47633ee8\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/c18cb6d221bc40698e45ddee085d67b0",
+      "status": 200,
+      "body": "{\"research_session_id\":\"c18cb6d221bc40698e45ddee085d67b0\",\"owner_id\":\"local-user\",\"conversation_id\":\"a264ee6e84004c7a80bd4f25e7429c35\",\"trigger_message_id\":\"6b846ef8fa5f516fa415be914bb892f5\",\"intake_draft_id\":\"be4e355da9fd4a5c836784037f497c59\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/projects?limit=100",
+      "status": 200,
+      "body": "{\"projects\":[{\"project_id\":\"a4a1745f801441188dc1f75b0534be11\",\"owner_id\":\"local-user\",\"name\":\"文件记忆验收 20261026\",\"instructions\":null,\"status\":\"active\",\"created_at\":\"2026-10-26T02:02:36.684346+00:00\",\"updated_at\":\"2026-10-26T02:02:36.684346+00:00\",\"last_activity_at\":\"2026-10-26T02:12:55.037537+00:00\"},"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/80ccd8352f474fe6b6c65b8789aa2247",
+      "status": 200,
+      "body": "{\"research_session_id\":\"80ccd8352f474fe6b6c65b8789aa2247\",\"owner_id\":\"local-user\",\"conversation_id\":\"271aade840684c48b2b3188fe690b6dc\",\"trigger_message_id\":\"93f5dc998d314d8db00aec1cb62de3f8\",\"intake_draft_id\":\"ee56091bed3e4f9eb6753ea6d698b37f\",\"status\":\"intake_pending\",\"current_plan_version\":0,\"plan"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/670adeba6ebb4adfb45f413e093cc3df",
+      "status": 200,
+      "body": "{\"research_session_id\":\"670adeba6ebb4adfb45f413e093cc3df\",\"owner_id\":\"local-user\",\"conversation_id\":\"e1e320cb5c53461ba5f892d2d25734b2\",\"trigger_message_id\":\"ecce6349c8e857a7830f5fcc44904702\",\"intake_draft_id\":\"a6e5bd05381b4c35ae43e9c63a7019e4\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/bca8abd0adab4632b6a8d4ba230e8a02",
+      "status": 200,
+      "body": "{\"research_session_id\":\"bca8abd0adab4632b6a8d4ba230e8a02\",\"owner_id\":\"local-user\",\"conversation_id\":\"08ec72d397fc4dc5aa5e11d43643a3d4\",\"trigger_message_id\":\"4bbb6f86218e5243889b1da6b68aa328\",\"intake_draft_id\":\"f7c1d03ac4624118994dac3175208301\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/24c276eb7db448a5a4311b9eb6c56254",
+      "status": 200,
+      "body": "{\"research_session_id\":\"24c276eb7db448a5a4311b9eb6c56254\",\"owner_id\":\"local-user\",\"conversation_id\":\"fe6a7c38a7df4bd7a37a98bcc19befa8\",\"trigger_message_id\":\"850add4877d85a9da177eb288b131043\",\"intake_draft_id\":\"c027a660d0f64a9e85e7fb8adf67f90f\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/4f156cb22a5d4320af49684cedf85b64",
+      "status": 200,
+      "body": "{\"research_session_id\":\"4f156cb22a5d4320af49684cedf85b64\",\"owner_id\":\"local-user\",\"conversation_id\":\"11861ce4c5a34dc1b9f4f8920285114e\",\"trigger_message_id\":\"8e50d86d9f0152ff880e5db072f58afe\",\"intake_draft_id\":\"85c29e9aeb714eafb2a5cab7f8fa7deb\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/3c16035152b3428b8e3ccd5a0f9befaf",
+      "status": 200,
+      "body": "{\"research_session_id\":\"3c16035152b3428b8e3ccd5a0f9befaf\",\"owner_id\":\"local-user\",\"conversation_id\":\"bcfb3317fc8d431dae2243e6318970d7\",\"trigger_message_id\":\"79df6063d3f55a24a1f755f39240077f\",\"intake_draft_id\":\"f0a3e84afbc943299b2943622c56dbde\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/89872cdc80304aed8f0b907640e97983",
+      "status": 200,
+      "body": "{\"research_session_id\":\"89872cdc80304aed8f0b907640e97983\",\"owner_id\":\"local-user\",\"conversation_id\":\"0393928ed6d941e09473926d76e1e43e\",\"trigger_message_id\":\"912e22f248f75fda9b75acd468e31a29\",\"intake_draft_id\":\"e7afca10fe0f498995f0642bcfe6ba7a\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-sessions/518f24556b9343b5b5101f05ebcf4280",
+      "status": 200,
+      "body": "{\"research_session_id\":\"518f24556b9343b5b5101f05ebcf4280\",\"owner_id\":\"local-user\",\"conversation_id\":\"a66f6dd6ae554dac847ad61370df9ad2\",\"trigger_message_id\":\"06f23204ba575f15a473c35bc3f2dcf2\",\"intake_draft_id\":\"a5d4b7245b894ada92eb20d358b6af05\",\"status\":\"plan_pending_approval\",\"current_plan_version\":"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/07cb41e7434342ddb18338dba15049ad",
+      "status": 200,
+      "body": "{\"research_session_id\":\"07cb41e7434342ddb18338dba15049ad\",\"owner_id\":\"local-user\",\"conversation_id\":\"f3ae1621d6e84e7f86965effd2c1b5df\",\"trigger_message_id\":\"9cff8eb275f75e719185ac9790ae88da\",\"intake_draft_id\":\"271cabb67d644b3a89ce75140683ae2b\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/c4e0cde215944a89acb7be0e7a421385",
+      "status": 200,
+      "body": "{\"research_session_id\":\"c4e0cde215944a89acb7be0e7a421385\",\"owner_id\":\"local-user\",\"conversation_id\":\"7c7ef0e693384ba0a8ccfdf3b1a7b8f6\",\"trigger_message_id\":\"a8c0beb6fffb5bd294f763e4d71fbfd4\",\"intake_draft_id\":\"b59cad164e524bc496f5279870758ad0\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/51c4dd4c9b4f49d5940e26199a3f2eca",
+      "status": 200,
+      "body": "{\"research_session_id\":\"51c4dd4c9b4f49d5940e26199a3f2eca\",\"owner_id\":\"local-user\",\"conversation_id\":\"344f57aac0194735b5538bff13e58d84\",\"trigger_message_id\":\"326254a544be565f80183b6768011e67\",\"intake_draft_id\":\"3db623e4f5164ffdbc701686f105dd16\",\"status\":\"partial\",\"current_plan_version\":1,\"plan_messag"
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-sessions/d28342c20f0e477ba33cec5a69cc4f13",
+      "status": 200,
+      "body": "{\"research_session_id\":\"d28342c20f0e477ba33cec5a69cc4f13\",\"owner_id\":\"local-user\",\"conversation_id\":\"06ad02aee8d3472ebd3269208e1e75fe\",\"trigger_message_id\":\"3ba5af1424b35ea59a4a8fa835d6b153\",\"intake_draft_id\":\"3bc9ef7370034ad295505fcb334eb127\",\"status\":\"intake_pending\",\"current_plan_version\":0,\"plan"
+    },
+    {
+      "page": "desktop",
+      "url": "http://127.0.0.1:8000/api/research-notifications/events?after_seq=100",
+      "status": 200,
+      "body": ""
+    },
+    {
+      "page": "mobile",
+      "url": "http://127.0.0.1:8000/api/research-notifications/events?after_seq=100",
+      "status": 200,
+      "body": ""
+    }
+  ],
+  "assets": [
+    {
+      "url": "http://127.0.0.1:8000/assets/literature-maps.css?v=36",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8000/assets/literature-maps.js?v=48",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8000/assets/literature-maps.css?v=36",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8000/assets/literature-maps.js?v=48",
+      "status": 200
+    }
+  ],
+  "errors": [],
+  "health": {
+    "status": 200,
+    "body": "{\"status\":\"ok\",\"model\":\"qwen3.8:27b\",\"models\":[\"qwen3.8:27b-q4_K_M\",\"qwen3.8:27b-mlx\",\"qwen3.8-27b-q4:latest\",\"qwen3.8:27b\",\"oamazonasgabriel/qwen3.8-27b:q4-km-32gbGPU\",\"qwen3.8:27b-q4\",\"dengcao/Qwen3"
+  },
+  "passed": 18,
+  "total": 18,
+  "failed_checks": [],
+  "conclusion": "PASS"
+}

@@ -220,6 +220,7 @@ def test_asset_versions_are_synchronised():
     assert 'href="/assets/styles.css?v=76"' not in INDEX, "旧生效引用 ?v=76 须已同步"
     live_css = re.findall(r'<link rel="stylesheet" href="/assets/styles\.css\?v=(\d+)"', INDEX)
     live_app = re.findall(r'<script src="/assets/app\.js\?v=(\d+)"', INDEX)
+    # 合并后生效脚本为 app.js?v=78；评测视图各旧版本仅作为纯属性兼容 marker 保留在注释中。
     assert live_css == ["77"], f"生效 styles.css 版本唯一且为 77：{live_css}"
     assert live_app == ["78"], f"生效 app.js 版本唯一且为 78：{live_app}"
     # 历史兼容 marker 注释保持原样（不因升版本被误删）

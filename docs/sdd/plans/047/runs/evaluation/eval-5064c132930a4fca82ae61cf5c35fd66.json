@@ -1,0 +1,88 @@
+{
+  "run_id": "eval-5064c132930a4fca82ae61cf5c35fd66",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 relevant_doc_ids（当前 KB 真实片段身份）标注，不能计算检索召回指标"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.8:27b",
+        "answer_source": "live_generation",
+        "generation_model_used": true,
+        "answer_source_note": "评分对象由所选被测模型实时生成，判官固定 qwen3.5:9b 打分",
+        "score_mapping": "backend/eval_042/config.py::ENUM_MAPS[chat_quality]",
+        "generated_count": 0,
+        "generation_failures": 1,
+        "unavailable_calls": 0,
+        "trace_count": 1,
+        "reason": "被测模型实时生成失败 1/1 条（错误类型：TimeoutError）；按失败不伪造原则不出分，不回退评测集冻结 output"
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集 24 条全部为 chat_quality 且无 prior_context / memory_correctness 标注，缺少可判定的记忆真值",
+        "judge_model": "qwen3.5:9b",
+        "under_test_model": "qwen3.8:27b"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "baseline",
+    "label": "基线（v1 / top_k=5 / reranker=off）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "off"
+  },
+  "model": "qwen3.8:27b",
+  "dataset": "chat-quality",
+  "created_at": "2026-11-09T18:55:15.043756Z",
+  "judge_model": "qwen3.5:9b"
+}

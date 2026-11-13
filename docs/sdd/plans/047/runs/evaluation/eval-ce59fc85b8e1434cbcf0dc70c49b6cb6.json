@@ -1,0 +1,282 @@
+{
+  "run_id": "eval-ce59fc85b8e1434cbcf0dc70c49b6cb6",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": false,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=False, reason=disabled）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": false,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=False, reason=disabled）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": false,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=False, reason=disabled）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "group": "intent",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+      }
+    },
+    {
+      "key": "hit_rate@k",
+      "label": "命中率@k",
+      "group": "retrieval",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": false,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=False, reason=disabled）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "ndcg@k",
+      "label": "nDCG@k（二值相关性）",
+      "group": "retrieval",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": false,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=False, reason=disabled）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "retrieval_relevance",
+      "label": "检索片段相关性",
+      "group": "retrieval",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": false,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=False, reason=disabled）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "intent_macro_f1",
+      "label": "意图宏平均 F1",
+      "group": "intent",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "intent_confusion_count",
+      "label": "意图误判样本数",
+      "group": "intent",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "answer_relevance",
+      "label": "回答切题度",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "conciseness",
+      "label": "回答简洁度",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "helpfulness",
+      "label": "回答有用性",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "groundedness",
+      "label": "回答有据性",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "hallucination_free",
+      "label": "无幻觉比例",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "answer_exact_match",
+      "label": "回答字面完全一致率",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "levenshtein_similarity",
+      "label": "回答编辑相似度",
+      "group": "answer_quality",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "generation_success_rate",
+      "label": "实时生成成功率",
+      "group": "generation",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "answer_length_avg",
+      "label": "实时回答平均字符数",
+      "group": "generation",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "toxicity_free",
+      "label": "无有害内容比例",
+      "group": "safety",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    },
+    {
+      "key": "pii_leakage_free",
+      "label": "无个人信息泄漏比例",
+      "group": "safety",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "所选评测集不含 042 判官轨迹，请切换到 chat-quality 评测集查看回答质量维度"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "rerank-on",
+    "label": "启用重排（v1 / top_k=5 / reranker=on）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "on"
+  },
+  "model": "qwen3.8:27b-q4_K_M",
+  "dataset": "rag-retrieval",
+  "created_at": "2026-11-10T07:03:18.223295Z",
+  "judge_model": "qwen3.5:9b"
+}

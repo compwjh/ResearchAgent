@@ -1,0 +1,33 @@
+{
+  "operation": "one-time widget manifest adoption before real --force",
+  "executed_at": "2026-11-09T01:58:46.680023+00:00",
+  "reason": "Spec047 C 修复引入 manifest 时为空；013/045 时期创建的 40 个历史 widget 无 manifest 记录。若不迁移，首次真实 --force 会零删除旧 widget 并新建 40 个，遗留 40 个孤儿（DEFECT 重现）。",
+  "preconditions_verified": {
+    "dashboards": 6,
+    "widgets": 40,
+    "meta_totalItems": 40,
+    "unique_widget_ids": 40,
+    "placement_ids_equal_live_ids": true,
+    "name_multiset_equals_DASHBOARDS_definition": true,
+    "extra_widgets": [],
+    "all_widgets_referenced_by_the_6_dashboards": true
+  },
+  "safety": {
+    "deletion_basis": "manifest ID only",
+    "no_name_based_delete": true,
+    "no_bulk_delete": true,
+    "business_code_changed": false,
+    "evidence_045_dashboard_contract_unchanged": true
+  },
+  "manifest_before": {
+    "schema_version": 1,
+    "project_id": "",
+    "created_at": "2026-11-08T20:49:49.345688+00:00",
+    "source": "setup_langfuse_dashboards.py",
+    "widgets": []
+  },
+  "entries_written": 40,
+  "manifest_after_widget_count": 40,
+  "rollback": "cp docs/sdd/plans/047/runs/task-08/widget-manifest.pre-adoption.json docs/sdd/plans/047/runs/task-02/widget-manifest.json",
+  "baseline_artifact": "docs/sdd/plans/047/runs/task-08/force-baseline.json"
+}

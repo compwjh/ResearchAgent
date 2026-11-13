@@ -675,6 +675,7 @@ def run(
     *,
     items: Sequence[object] | None = None,
     export: Callable[[], object] | Sequence[object] | None = None,
+    gold_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run an offline evaluation and return status plus report paths.
 
@@ -699,7 +700,7 @@ def run(
         "max_items": max_items,
         "source": source_name,
     }
-    writer = ReportWriter(output_dir, metadata=metadata)
+    writer = ReportWriter(output_dir, metadata=metadata, gold_path=gold_path)
     document = writer.document
     overall_failed = False
     active_sources: tuple[object, object, object] = (None, None, None)

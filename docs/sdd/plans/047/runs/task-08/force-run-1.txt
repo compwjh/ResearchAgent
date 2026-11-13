@@ -1,0 +1,22 @@
+[重建] 只读 widget 清单：40 个（仅备份，不用于删除）
+[重建] 01 TTFT 分解与冷启动对比
+[重建] 02 分位数与慢请求
+[重建] 03 吞吐与生成速度
+[重建] 04 输入规模与延迟相关性
+[重建] 05 耗时构成占比
+[重建] 06 调用量与延迟趋势
+[完成] 01 TTFT 分解与冷启动对比 —— 8 个 widget
+       http://127.0.0.1:3000/project/local-proj/dashboards/cmw8m5phi00218o8svo6j9nmd
+[完成] 02 分位数与慢请求 —— 8 个 widget
+       http://127.0.0.1:3000/project/local-proj/dashboards/cmw8m5q1s00308o8sb4ldhgye
+[完成] 03 吞吐与生成速度 —— 6 个 widget
+       http://127.0.0.1:3000/project/local-proj/dashboards/cmw8m5q91003t8o8szr2p4dx9
+[完成] 04 输入规模与延迟相关性 —— 6 个 widget
+       http://127.0.0.1:3000/project/local-proj/dashboards/cmw8m5qeu004k8o8s8c8wf0t1
+[完成] 05 耗时构成占比 —— 6 个 widget
+       http://127.0.0.1:3000/project/local-proj/dashboards/cmw8m5qkt005b8o8ss0g47y4g
+[完成] 06 调用量与延迟趋势 —— 6 个 widget
+       http://127.0.0.1:3000/project/local-proj/dashboards/cmw8m5qr400628o8sp8m2xfya
+
+新建 6 个，跳过 0 个。
+提醒：思考占比 / 成功率 / 错误率依赖自定义 metadata，原生看板无法聚合；真散点与阶段甘特图也无对应图表类型 —— 这些已列入任务 07 自研视图。

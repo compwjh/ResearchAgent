@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-11-08T12:51:15.755424+00:00",
+  "deployed_service": "http://127.0.0.1:8000",
+  "health": 200,
+  "note": "排除 fixtures 合成 trace id=aaaaaaaa...（31 obs / 100 scores，属历史样本），本次部署真实 kb-ask 为 9 observations 的单条 trace",
+  "chat_frames": {
+    "meta": 1,
+    "progress": 5,
+    "token": 30,
+    "done": 1
+  },
+  "chat_status": "completed",
+  "kb_frames": {
+    "meta": 1,
+    "stage": 1,
+    "citations": 1,
+    "token": 148,
+    "debug": 1,
+    "done": 1
+  },
+  "kb_trace_attribution": {
+    "trace_id": "220f5fb27d5543f293a5f9c23cbf0544",
+    "observation_count": 9,
+    "names": [
+      "kb.rerank",
+      "kb.retrieval",
+      "kb.embedding",
+      "kb-ask",
+      "kb.generation",
+      "phase:prefill",
+      "phase:decode",
+      "phase:overhead",
+      "phase:load"
+    ],
+    "phase_spans": [
+      "phase:decode",
+      "phase:load",
+      "phase:overhead",
+      "phase:prefill"
+    ],
+    "root_ended": true,
+    "score_count": 100,
+    "score_names": [
+      "eval_ms",
+      "is_cold_start",
+      "load_ms",
+      "overhead_ms",
+      "prompt_eval_ms",
+      "tokens_per_sec",
+      "ttft_ms"
+    ]
+  },
+  "chat_trace": {
+    "trace_id": "f7e44efc67950b060409ab59a89fc021",
+    "observation_count": 5,
+    "names": [
+      "ollama-chat",
+      "phase:overhead",
+      "phase:prefill",
+      "phase:load",
+      "phase:decode"
+    ],
+    "phase_spans": [
+      "phase:decode",
+      "phase:load",
+      "phase:overhead",
+      "phase:prefill"
+    ],
+    "root_ended": false,
+    "score_count": 100,
+    "score_names": [
+      "eval_ms",
+      "is_cold_start",
+      "load_ms",
+      "overhead_ms",
+      "prompt_eval_ms",
+      "tokens_per_sec",
+      "ttft_ms"
+    ]
+  },
+  "sse_artifacts": [
+    "deploy-chat-sse.txt",
+    "deploy-kb-sse.txt"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "run_id": "eval-d54f3aec2973437fa8868cf995360abc",
+  "metrics": [
+    {
+      "key": "recall@k",
+      "label": "召回率@k",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": true,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=True, reason=connection）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "precision@k",
+      "label": "准确率@k",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": true,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=True, reason=connection）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "mrr@k",
+      "label": "MRR@k",
+      "value": null,
+      "status": "degraded",
+      "sample_count": 0,
+      "detail": {
+        "strategy_id": "rerank-on",
+        "reranker_requested": true,
+        "reranker_available": false,
+        "reranker_config_enabled": true,
+        "reason": "策略请求 reranker=on，但当前 reranker available=false（enabled=True, reason=connection）；hybrid_search 未产生重排收益，不出分、不伪造收益"
+      }
+    },
+    {
+      "key": "intent_accuracy",
+      "label": "意图识别准确率",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 expected_intent 标注，不能计算意图识别准确率"
+      }
+    },
+    {
+      "key": "chat_quality",
+      "label": "回答质量（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "该评测集没有 042 判官轨迹（input/output），不能计算回答质量"
+      }
+    },
+    {
+      "key": "memory_correctness",
+      "label": "记忆正确性（判官均分）",
+      "value": null,
+      "status": "needs_ground_truth",
+      "sample_count": 0,
+      "detail": {
+        "reason": "内置 042 集没有 memory_correctness 标注，缺少可判定的记忆真值"
+      }
+    }
+  ],
+  "strategy": {
+    "id": "rerank-on",
+    "label": "启用重排（v1 / top_k=5 / reranker=on）",
+    "chunker": "v1",
+    "top_k": 5,
+    "reranker": "on"
+  },
+  "model": "qwen3.5:9b",
+  "dataset": "rag-retrieval",
+  "created_at": "2026-11-09T18:23:17.114919Z",
+  "judge_model": "qwen3.5:9b"
+}
