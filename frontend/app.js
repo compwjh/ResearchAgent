@@ -1792,6 +1792,7 @@ function setConversationAnswer(element, content) {
 const INTAKE_FIELD_LABELS = {
   topic: '主题', objective: '研究目标', time_range: '时间范围', language: '语言',
   sources: '来源', depth: '研究深度', output: '输出格式', citations: '引用方式', constraints: '约束',
+  capability_profile: '能力配置', budget_profile: '预算配置', report_profile: '报告配置', degradation_policy: '降级策略',
 };
 const INTAKE_SOURCE_LABELS = {
   user_explicit: '用户明确', context_inferred: '上下文推断', system_default: '系统默认',
@@ -1818,10 +1819,15 @@ function intakeDisplayValue(valueJson) {
   return String(value);
 }
 
-function intakeStatusLabel(status, missing = []) {
+function intakeStatusLabel(status, missing = [], prompt = null) {
   if (status === 'active_conflict') return '已有进行中的研究';
   if (status === 'clarification') return '需要补充说明';
   if (status === 'failed') return '研究 Intake 失败';
+  // 联调裁决 5.4：逐轮询问未结束（存在当前轮 prompt）时显示进度，不能因
+  // missing 已空而误报「参数已齐」。prompt 为当前帧已解析对象，老投影无键时为 null。
+  if (prompt && typeof prompt === 'object') {
+    return `正在确认研究参数 · 第 ${Number(prompt.index) || 0}/${Number(prompt.total) || 0} 项`;
+  }
   if (status === 'completed' || status === 'ready' || (status === 'intake' && !missing.length)) return '参数已齐';
   if (status === 'running') return '正在准备…';
   return '收集中';
@@ -1904,6 +1910,153 @@ async function handleConversationIntakeChoice(assistantMessage, button, choice) 
   }
 }
 
+// Spec-regression / task-AC：深度研究 Intake「逐轮引导式询问」。
+// 投影契约 2.4：payload.prompt（当前轮；9 项全部处理完时为 null）/ quick_actions / progress。
+// 回答协议 2.5：点候选 / 快捷按钮 / 自定义输入都复用
+// sendConversationMessage(text, { appendUser: true })，文本形如
+// 「【研究参数】可读部分 [intake:key=value]」。此处只负责渲染与发消息，
+// 不本地伪造下一轮状态——SSE 回来新 intake 帧会调 updateConversationIntake 重渲染。
+const INTAKE_CUSTOM_MAX = 400;
+const INTAKE_QUICK_ACTION_IDS = { use_recommended: '用推荐', use_all_recommended: '都按推荐' };
+
+function sanitizeIntakeCustom(raw) {
+  return String(raw == null ? '' : raw)
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/[\[\];]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, INTAKE_CUSTOM_MAX)
+    .trim();
+}
+
+function intakeAnswerText(readable, key, value) {
+  return `【研究参数】${readable} [intake:${key}=${value}]`;
+}
+
+function intakeChoiceAnswer(prompt, choice) {
+  const label = String(prompt.label || '研究参数');
+  const key = String(prompt.key || '');
+  const badge = choice.recommended ? '（推荐）' : '';
+  return intakeAnswerText(`${label}：${String(choice.label || '')}${badge}`, key, String(choice.id || ''));
+}
+
+function intakeQuickAnswer(prompt, actionId) {
+  if (actionId === 'use_all_recommended') return intakeAnswerText('全部采用推荐', '__all__', 'use_all_recommended');
+  return intakeAnswerText(`${String(prompt.label || '研究参数')}：用推荐`, String(prompt.key || ''), 'use_recommended');
+}
+
+function intakeCustomAnswer(prompt, raw) {
+  const label = String(prompt.label || '研究参数');
+  const key = String(prompt.key || '');
+  const value = sanitizeIntakeCustom(raw);
+  return intakeAnswerText(`${label}：${value}`, key, `custom:${value}`);
+}
+
+function renderIntakePrompt(promptNode, prompt, quickActions, progress, send) {
+  if (!promptNode) return;
+  promptNode.replaceChildren();
+  if (!prompt || typeof prompt !== 'object') { promptNode.hidden = true; return; }
+  promptNode.hidden = false;
+  promptNode.dataset.busy = 'false';
+  const controls = [];
+  const submit = (text, sourceBtn) => {
+    if (promptNode.dataset.busy === 'true') return;
+    promptNode.dataset.busy = 'true';
+    controls.forEach((el) => { el.disabled = true; });
+    if (sourceBtn) {
+      sourceBtn.classList.add('is-selected');
+      sourceBtn.classList.add('is-loading');
+      sourceBtn.setAttribute('aria-pressed', 'true');
+    }
+    // 等 SSE 新 intake 帧重渲染；发送失败才解除禁用以便重试，不本地伪造下一轮。
+    Promise.resolve(send(text)).catch(() => {
+      promptNode.dataset.busy = 'false';
+      controls.forEach((el) => { el.disabled = false; });
+      if (sourceBtn) sourceBtn.classList.remove('is-loading');
+    });
+  };
+
+  const index = Number(prompt.index);
+  const total = Number(prompt.total ?? (progress && progress.total));
+  const head = document.createElement('div');
+  head.className = 'conversation-intake-prompt-head';
+  const progressEl = document.createElement('span');
+  progressEl.className = 'conversation-intake-prompt-progress';
+  progressEl.textContent = Number.isFinite(index) && Number.isFinite(total) && total > 0
+    ? `第 ${index} / ${total} 项` : '研究参数';
+  const labelEl = document.createElement('strong');
+  labelEl.className = 'conversation-intake-prompt-label';
+  labelEl.textContent = String(prompt.label || '研究参数');
+  head.append(progressEl, labelEl);
+
+  const questionEl = document.createElement('p');
+  questionEl.className = 'conversation-intake-prompt-question';
+  questionEl.textContent = String(prompt.question || '');
+
+  const choicesWrap = document.createElement('div');
+  choicesWrap.className = 'conversation-intake-prompt-choices';
+  const choices = Array.isArray(prompt.choices) ? prompt.choices : [];
+  choices.forEach((choice) => {
+    if (!choice || typeof choice.id !== 'string') return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'conversation-intake-prompt-choice';
+    if (choice.recommended) button.classList.add('is-recommended');
+    button.dataset.intakeChoice = choice.id;
+    button.setAttribute('aria-pressed', 'false');
+    button.textContent = String(choice.label || choice.id) + (choice.recommended ? '（推荐）' : '');
+    const answer = intakeChoiceAnswer(prompt, choice);
+    button.addEventListener('click', () => submit(answer, button));
+    choicesWrap.appendChild(button);
+    controls.push(button);
+  });
+
+  let customWrap = null;
+  if (prompt.allow_custom) {
+    customWrap = document.createElement('div');
+    customWrap.className = 'conversation-intake-prompt-custom';
+    const customInput = document.createElement('input');
+    customInput.type = 'text';
+    customInput.className = 'conversation-intake-prompt-custom-input';
+    customInput.maxLength = INTAKE_CUSTOM_MAX;
+    customInput.placeholder = String(prompt.custom_label || '自定义（直接输入）');
+    customInput.setAttribute('aria-label', String(prompt.custom_label || '自定义输入'));
+    const customSubmit = document.createElement('button');
+    customSubmit.type = 'button';
+    customSubmit.className = 'conversation-intake-prompt-custom-submit';
+    customSubmit.textContent = '提交自定义';
+    customSubmit.addEventListener('click', () => {
+      if (!sanitizeIntakeCustom(customInput.value)) { customInput.focus(); return; }
+      submit(intakeCustomAnswer(prompt, customInput.value), customSubmit);
+    });
+    customInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); customSubmit.click(); }
+    });
+    customWrap.append(customInput, customSubmit);
+    controls.push(customInput, customSubmit);
+  }
+
+  const quickWrap = document.createElement('div');
+  quickWrap.className = 'conversation-intake-prompt-quick';
+  const actions = Array.isArray(quickActions) ? quickActions : [];
+  actions.forEach((action) => {
+    if (!action || !INTAKE_QUICK_ACTION_IDS[action.id]) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'conversation-intake-prompt-quick-action';
+    button.dataset.intakeQuick = action.id;
+    button.textContent = String(action.label || INTAKE_QUICK_ACTION_IDS[action.id]);
+    const answer = intakeQuickAnswer(prompt, action.id);
+    button.addEventListener('click', () => submit(answer, button));
+    quickWrap.appendChild(button);
+    controls.push(button);
+  });
+
+  promptNode.append(head, questionEl, choicesWrap);
+  if (customWrap) promptNode.appendChild(customWrap);
+  if (quickWrap.children.length) promptNode.appendChild(quickWrap);
+}
+
 function createConversationIntake(assistantMessage) {
   if (!assistantMessage) return null;
   const existing = assistantMessage.querySelector('.conversation-intake');
@@ -1945,6 +2098,10 @@ function createConversationIntake(assistantMessage) {
   const question = document.createElement('p');
   question.className = 'conversation-intake-question';
   question.hidden = true;
+  // 逐轮引导式询问区块：仅在 SSE / 历史回放的 intake 帧带 payload.prompt 时显示。
+  const promptBlock = document.createElement('div');
+  promptBlock.className = 'conversation-intake-prompt';
+  promptBlock.hidden = true;
   const choices = document.createElement('div');
   choices.className = 'conversation-intake-choices';
   choices.hidden = true;
@@ -1955,7 +2112,7 @@ function createConversationIntake(assistantMessage) {
   editStatus.className = 'conversation-intake-edit-status';
   editStatus.setAttribute('aria-live', 'polite');
   editStatus.hidden = true;
-  body.append(skill, fields, missing, question, choices, actions, editStatus);
+  body.append(skill, fields, missing, question, promptBlock, choices, actions, editStatus);
   toggle.addEventListener('click', () => {
     const expanded = toggle.getAttribute('aria-expanded') === 'true';
     toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
@@ -1993,7 +2150,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   panel.dataset.subjectVersion = String(Number(payload.subject_version ?? payload.research_session?.current_plan_version) || 0);
   panel.setAttribute('aria-busy', ['running', 'intake'].includes(status) && missingNames.length > 0 ? 'true' : 'false');
   const summary = panel.querySelector('.conversation-intake-summary');
-  summary.textContent = intakeStatusLabel(status, missingNames);
+  summary.textContent = intakeStatusLabel(status, missingNames, payload.prompt);
   const editable = status === 'intake';
   const editableNames = ['topic', 'objective', 'time_range'];
   const fieldList = panel.querySelector('.conversation-intake-fields');
@@ -2102,8 +2259,22 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   missingNode.hidden = !missingNames.length;
   missingNode.textContent = missingNames.length ? `待补充：${missingNames.map((name) => INTAKE_FIELD_LABELS[name] || name).join('、')}` : '';
   const questionNode = panel.querySelector('.conversation-intake-question');
-  questionNode.hidden = !payload.question;
+  const prompt = payload.prompt && typeof payload.prompt === 'object' ? payload.prompt : null;
+  // 契约 2.4：question 与 prompt.question 同源（兼容旧前端）。逐轮询问时由新区块
+  // 承载问句与进度，隐藏旧的重复问句；prompt=null（9 项收齐）时隐藏整个新区块，
+  // 让既有「参数已齐 → /plans/generate」逻辑原样接管。
+  questionNode.hidden = !payload.question || Boolean(prompt);
   questionNode.textContent = payload.question || '';
+  const promptNode = panel.querySelector('.conversation-intake-prompt');
+  if (promptNode) {
+    if (!prompt) {
+      promptNode.hidden = true;
+      promptNode.replaceChildren();
+    } else {
+      renderIntakePrompt(promptNode, prompt, payload.quick_actions, payload.progress,
+        (text) => sendConversationMessage(text, { appendUser: true }));
+    }
+  }
   const choicesNode = panel.querySelector('.conversation-intake-choices');
   const choices = Array.isArray(payload.choices) ? payload.choices.filter((choice) => INTAKE_CHOICE_LABELS[choice?.id]) : [];
   choicesNode.replaceChildren();
@@ -2123,7 +2294,7 @@ function updateConversationIntake(assistantMessage, payload = {}) {
   // A historical Intake projection may predate automatic plan generation. Ask
   // the idempotent Session endpoint once so refresh/reopen can resume the same
   // plan path instead of leaving the user with a completed-looking idle card.
-  if (status === 'intake' && !missingNames.length && panel.dataset.researchSessionId
+  if (status === 'intake' && !prompt && panel.dataset.researchSessionId
       && !assistantMessage.querySelector('.conversation-research-plan')
       && panel.dataset.planRequested !== 'true') {
     panel.dataset.planRequested = 'true';
@@ -2156,7 +2327,10 @@ function finalizeConversationIntake(panel, status = 'completed') {
   const intakeStatus = panel.dataset.status || '';
   const hasMissing = Boolean(panel.querySelector('.conversation-intake-missing:not([hidden])')?.textContent);
   const hasChoices = Boolean(panel.querySelector('.conversation-intake-choice'));
-  const needsUserAction = ['clarification', 'active_conflict'].includes(intakeStatus) || hasMissing || hasChoices;
+  // 联调裁决 5.4：逐轮询问期间存在「可见」的引导区块时同样算待用户操作，
+  // 否则 SSE done 会折叠面板并把 status 改成 completed，用户看不到当前轮提问。
+  const hasPrompt = Boolean(panel.querySelector('.conversation-intake-prompt:not([hidden])'));
+  const needsUserAction = ['clarification', 'active_conflict'].includes(intakeStatus) || hasMissing || hasChoices || hasPrompt;
   const finalStatus = status === 'completed' ? 'completed' : 'failed';
   panel.dataset.status = needsUserAction && finalStatus === 'completed' ? intakeStatus || 'intake' : finalStatus;
   panel.setAttribute('aria-busy', 'false');

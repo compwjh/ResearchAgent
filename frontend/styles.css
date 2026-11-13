@@ -229,6 +229,28 @@ button, select, textarea { font-family: inherit; } button { border: 0; cursor: p
 .conversation-intake-missing { font-weight: 700; }
 .conversation-intake-field.is-readonly .conversation-intake-field-value { color: var(--muted); }
 .conversation-intake-save, .conversation-intake-cancel { padding: 7px 12px; font-size: 11px; }
+/* Spec-regression / task-AC：逐轮引导式询问。复用既有 .conversation-intake-* 同级作用域，
+   选择器只命中 intake 面板内由 app.js 渲染的节点，不污染全局。 */
+.conversation-intake-prompt { display: grid; gap: 7px; margin: 2px 0; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.conversation-intake-prompt[hidden] { display: none !important; }
+.conversation-intake-prompt-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
+.conversation-intake-prompt-progress { color: var(--accent); font: 700 11px/1.4 'DM Mono', monospace; }
+.conversation-intake-prompt-label { color: var(--ink); font-weight: 700; }
+.conversation-intake-prompt-question { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.conversation-intake-prompt-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-intake-prompt-choice { padding: 5px 9px; font: inherit; }
+.conversation-intake-prompt-choice.is-recommended { border-color: var(--accent); color: var(--accent); }
+.conversation-intake-prompt-choice.is-recommended::before { content: '★ '; }
+.conversation-intake-prompt-choice.is-selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.conversation-intake-prompt-choice.is-loading, .conversation-intake-prompt-quick-action.is-loading, .conversation-intake-prompt-custom-submit.is-loading { opacity: .6; cursor: progress; }
+.conversation-intake-prompt-choice[disabled], .conversation-intake-prompt-quick-action[disabled], .conversation-intake-prompt-custom-submit[disabled], .conversation-intake-prompt-custom-input[disabled] { cursor: not-allowed; opacity: .65; }
+.conversation-intake-prompt-custom { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.conversation-intake-prompt-custom-input { flex: 1 1 180px; min-width: 0; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #fff; color: var(--ink); font: 12px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.conversation-intake-prompt-custom-input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.conversation-intake-prompt-custom-submit { padding: 6px 10px; font: inherit; }
+.conversation-intake-prompt-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-intake-prompt-quick-action { padding: 5px 9px; font: inherit; }
+.conversation-intake-prompt-quick-action.is-selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 @media (max-width: 760px) {
   .conversation-intake-field, .conversation-intake-field.is-editable { grid-template-columns: 1fr; }
   .conversation-intake-field-meta { grid-column: 1; }

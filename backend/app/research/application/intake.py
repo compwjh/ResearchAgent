@@ -34,7 +34,179 @@ DEFAULT_FIELDS: dict[str, Any] = {
     "output": "markdown",
     "citations": "inline",
     "constraints": [],
+    # 逐轮引导式询问新增的 4 个计划偏好：值 = 契约 2.2 各项 ★ 推荐值。
+    # 均为简单字符串枚举，禁止嵌套对象。
+    "capability_profile": "full",
+    "budget_profile": "balanced",
+    "report_profile": "standard",
+    "degradation_policy": "balanced",
 }
+
+# 契约 2.2 新增的 4 个计划偏好字段。改前创建的历史会话没有它们；
+# derive_guided_state 据此识别老会话，避免把「缺字段」误判成待询问。
+_PROFILE_FIELDS = frozenset({
+    "capability_profile", "budget_profile", "report_profile", "degradation_policy",
+})
+
+# ---------------------------------------------------------------------------
+# 逐轮引导式询问：9 轮问题目录（确定性常量，零 LLM 调用）。
+#
+# 目录既驱动 projection 的 ``prompt``（契约 2.4），也驱动 ``[intake:...]``
+# 回答协议（契约 2.5）的 choice_id → 目标字段值映射，两端共用同一份事实，
+# 避免出现第二套候选/推荐实现。9 轮的 ``fields`` 合并后恰好覆盖
+# ``INTAKE_FIELDS`` 的全部 13 个字段，重叠字段只问一次。
+#
+# ``values[choice_id]`` 只在后端使用，不会进入对外 projection；``custom``
+# 入口不在此字典中，协议侧特判 ``custom:<文本>``（不允许无文本的 custom）。
+# ---------------------------------------------------------------------------
+_PROMPT_PUBLIC_KEYS = (
+    "key", "index", "total", "label", "question", "choices",
+    "allow_custom", "custom_label",
+)
+
+GUIDED_QUESTIONS: tuple[dict[str, Any], ...] = (
+    {
+        "key": "q_topic", "index": 1, "total": 9,
+        "label": "研究主题", "question": "这次要研究什么主题？",
+        "fields": ("topic",), "custom_field": "topic",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "keep", "label": "沿用我刚才的描述（推荐，未指定则用默认）", "recommended": True},
+            {"id": "custom", "label": "自定义输入", "recommended": False},
+        ),
+        "values": {"keep": {"topic": "深度研究主题"}},
+    },
+    {
+        "key": "q_objective", "index": 2, "total": 9,
+        "label": "研究目标", "question": "这次研究希望达成什么目标？",
+        "fields": ("objective",), "custom_field": "objective",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "keep", "label": "沿用我刚才的描述（推荐，未指定则用默认）", "recommended": True},
+            {"id": "custom", "label": "自定义输入", "recommended": False},
+        ),
+        "values": {"keep": {"objective": "梳理研究目标"}},
+    },
+    {
+        "key": "q_time_range", "index": 3, "total": 9,
+        "label": "时间范围", "question": "这次研究覆盖哪段时间范围？",
+        "fields": ("time_range",), "custom_field": "time_range",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "recent_3y", "label": "近 3 年", "recommended": True},
+            {"id": "recent_5y", "label": "近 5 年", "recommended": False},
+            {"id": "all_time", "label": "不限", "recommended": False},
+        ),
+        # 契约 2.2：当前日期 2026-11-13，沿用 {"from":...,"to":...} 编码。
+        "values": {
+            "recent_3y": {"time_range": {"from": 2023, "to": 2026}},
+            "recent_5y": {"time_range": {"from": 2021, "to": 2026}},
+            "all_time": {"time_range": {"from": 1900, "to": 2026}},
+        },
+    },
+    {
+        "key": "q_language", "index": 4, "total": 9,
+        "label": "报告语言", "question": "报告希望用什么语言撰写？",
+        "fields": ("language",), "custom_field": "language",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "zh", "label": "中文", "recommended": True},
+            {"id": "en", "label": "英文", "recommended": False},
+            {"id": "bilingual", "label": "中英混合", "recommended": False},
+        ),
+        "values": {
+            "zh": {"language": "zh"},
+            "en": {"language": "en"},
+            "bilingual": {"language": "bilingual"},
+        },
+    },
+    {
+        "key": "q_sources_capabilities", "index": 5, "total": 9,
+        "label": "来源与能力", "question": "这次研究要从哪些来源检索、启用哪些能力？",
+        "fields": ("sources", "capability_profile"), "custom_field": "capability_profile",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "full", "label": "全部能力", "recommended": True},
+            {"id": "search_eval", "label": "检索+评估", "recommended": False},
+            {"id": "catalog_only", "label": "仅目录检索", "recommended": False},
+        ),
+        "values": {
+            "full": {"sources": ["usenix"], "capability_profile": "full"},
+            "search_eval": {"sources": ["usenix"], "capability_profile": "search_eval"},
+            "catalog_only": {"sources": ["usenix"], "capability_profile": "catalog_only"},
+        },
+    },
+    {
+        "key": "q_budget_depth", "index": 6, "total": 9,
+        "label": "预算 / 研究深度", "question": "这次研究希望投入多少预算、做多深？",
+        "fields": ("depth", "budget_profile"), "custom_field": "budget_profile",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "balanced", "label": "均衡", "recommended": True},
+            {"id": "fast", "label": "快速", "recommended": False},
+            {"id": "deep", "label": "深度", "recommended": False},
+        ),
+        "values": {
+            "balanced": {"depth": "balanced", "budget_profile": "balanced"},
+            "fast": {"depth": "speed", "budget_profile": "fast"},
+            "deep": {"depth": "quality", "budget_profile": "deep"},
+        },
+    },
+    {
+        "key": "q_paper_count", "index": 7, "total": 9,
+        "label": "目标论文数", "question": "希望以多少篇论文为目标？",
+        "fields": ("constraints",), "custom_field": "constraints",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "p5", "label": "5 篇", "recommended": True},
+            {"id": "p3", "label": "3 篇", "recommended": False},
+            {"id": "p10", "label": "10 篇", "recommended": False},
+        ),
+        # 契约硬约束：沿用 resolve_paper_count_constraints 依赖的既有编码。
+        "values": {
+            "p5": {"constraints": ["target_paper_count:5"]},
+            "p3": {"constraints": ["target_paper_count:3"]},
+            "p10": {"constraints": ["target_paper_count:10"]},
+        },
+    },
+    {
+        "key": "q_report_structure", "index": 8, "total": 9,
+        "label": "报告结构", "question": "希望生成什么结构的报告？",
+        "fields": ("output", "citations", "report_profile"), "custom_field": "report_profile",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "standard", "label": "标准综述", "recommended": True},
+            {"id": "deep", "label": "深度报告", "recommended": False},
+            {"id": "brief", "label": "简报", "recommended": False},
+        ),
+        "values": {
+            "standard": {"output": "markdown", "citations": "inline", "report_profile": "standard"},
+            "deep": {"output": "markdown", "citations": "inline", "report_profile": "deep"},
+            "brief": {"output": "markdown", "citations": "inline", "report_profile": "brief"},
+        },
+    },
+    {
+        "key": "q_degradation", "index": 9, "total": 9,
+        "label": "降级策略", "question": "遇到来源不足时希望如何降级？",
+        "fields": ("degradation_policy",), "custom_field": "degradation_policy",
+        "allow_custom": True, "custom_label": "自定义（直接输入）",
+        "choices": (
+            {"id": "balanced", "label": "平衡", "recommended": True},
+            {"id": "conservative", "label": "保守", "recommended": False},
+            {"id": "flexible", "label": "弹性", "recommended": False},
+        ),
+        "values": {
+            "balanced": {"degradation_policy": "balanced"},
+            "conservative": {"degradation_policy": "conservative"},
+            "flexible": {"degradation_policy": "flexible"},
+        },
+    },
+)
+
+QUICK_ACTIONS: tuple[dict[str, str], ...] = (
+    {"id": "use_recommended", "label": "用推荐"},
+    {"id": "use_all_recommended", "label": "都按推荐"},
+)
 
 ACTIVATE_SKILL_SCHEMA = {
     "type": "object",
@@ -208,6 +380,185 @@ class IntakeResult:
     choices: list[dict[str, str]] = field(default_factory=list)
     error: dict[str, Any] | None = None
     question: str | None = None
+    # 逐轮引导式询问（契约 2.4）：由 derive_guided_state(saved) 确定性推导，
+    # 旧字段（status/session/fields/missing/activation/choices/error/question）
+    # 类型与语义一律不变。
+    prompt: dict[str, Any] | None = None
+    quick_actions: list[dict[str, str]] = field(default_factory=list)
+    progress: dict[str, int] | None = None
+
+
+# ---------------------------------------------------------------------------
+# 逐轮引导式询问：纯确定性推导 + 回答协议解析（零 LLM、零 DB 访问）。
+# ---------------------------------------------------------------------------
+_INTAKE_PROTOCOL_RE = re.compile(r"\[intake:([^\]]+)\]")
+# 带标记但解析失败的消息也必须走「拒绝」路径，绝不能落回抽取器被当成
+# BLOCKING 字段的补充文本（契约 2.5：解析失败不写库、当前轮不变、不抛 500）。
+_INTAKE_MARKER_RE = re.compile(r"\[intake:", re.IGNORECASE)
+_CUSTOM_MAX_LEN = 400
+# 除控制字符外，协议边界符与「伪造参数」分隔符一律拒绝，避免借 custom 注入。
+_CUSTOM_FORBIDDEN_CHARS = frozenset("[];")
+
+
+def _public_prompt(question: dict[str, Any]) -> dict[str, Any]:
+    """Return only the contract-2.4 keys; never leak the value mapping."""
+    prompt = {key: question[key] for key in _PROMPT_PUBLIC_KEYS}
+    prompt["choices"] = [dict(choice) for choice in question["choices"]]
+    return prompt
+
+
+def _round_answered(question: dict[str, Any], by_name: dict[str, IntakeField]) -> bool:
+    """契约 2.1 状态表：user_explicit / confirmed / 历史 not_required 均已回答。"""
+    for name in question["fields"]:
+        item = by_name.get(name)
+        if item is None:
+            return False
+        if item.confirmation_status in {"confirmed", "not_required"}:
+            continue
+        if item.source == "user_explicit":
+            continue
+        return False
+    return True
+
+
+def derive_guided_state(fields: list[IntakeField]) -> dict[str, Any]:
+    """From persisted fields, derive the first pending round and progress.
+
+    Pure function: refresh/replay always yields the same prompt for the same
+    field provenance; no extra state table and no LLM call is involved.
+    """
+    by_name = {item.field_name: item for item in fields}
+    # 契约 2.1 / 5.1 历史兼容：改前创建的历史会话没有 4 个新 profile 字段，
+    # 其默认值是 not_required（新会话写 unconfirmed）。若按「缺字段即待问」
+    # 推导，老会话会被重新追问，/plans/generate 也会误判为引导未收齐而拒绝
+    # 生成计划。此类会话整体视为已收齐（prompt=None），历史回放同理。
+    is_legacy = (
+        bool(fields)
+        and not any(item.field_name in _PROFILE_FIELDS for item in fields)
+        and not any(item.confirmation_status == "unconfirmed" for item in fields)
+    )
+    pending = (
+        []
+        if is_legacy
+        else [item for item in GUIDED_QUESTIONS if not _round_answered(item, by_name)]
+    )
+    answered = len(GUIDED_QUESTIONS) - len(pending)
+    seen: set[str] = set()
+    pending_fields: list[str] = []
+    for question in pending:
+        for name in question["fields"]:
+            if name not in seen:
+                seen.add(name)
+                pending_fields.append(name)
+    return {
+        "prompt": _public_prompt(pending[0]) if pending else None,
+        "quick_actions": [dict(action) for action in QUICK_ACTIONS],
+        "progress": {"answered": answered, "total": len(GUIDED_QUESTIONS)},
+        "pending_fields": pending_fields,
+        "pending_questions": pending,
+    }
+
+
+def _recommended_choice(question: dict[str, Any]) -> dict[str, Any]:
+    return next(choice for choice in question["choices"] if choice["recommended"])
+
+
+def sanitize_custom_text(text: str) -> str | None:
+    """Validate ``custom:`` text (≤400, no control/protocol-injection chars).
+
+    契约 2.5 要求限长并去掉换行与控制字符；此处采用更保守的「检出即拒绝」，
+    使恶意输入整体不落库（任务验收要求），而非静默剥离后写入用户不可见的文本。
+    """
+    if not isinstance(text, str) or len(text) > _CUSTOM_MAX_LEN:
+        return None
+    for char in text:
+        code = ord(char)
+        if code < 32 or code == 127 or char in _CUSTOM_FORBIDDEN_CHARS:
+            return None
+    return text.strip() or None
+
+
+def _parse_intake_answer(message: str) -> dict[str, Any] | None:
+    """Parse the contract-2.5 ``[intake:key=value]`` answer protocol.
+
+    Returns ``None`` for anything that is not exactly one well-formed marker;
+    the caller then leaves the store untouched and re-emits the current prompt.
+    """
+    matches = _INTAKE_PROTOCOL_RE.findall(message or "")
+    if len(matches) != 1:
+        return None
+    token = matches[0].strip()
+    if "=" not in token:
+        return None
+    key, value = (part.strip() for part in token.split("=", 1))
+    if not key or not value:
+        return None
+    by_key = {question["key"]: question for question in GUIDED_QUESTIONS}
+    if value == "use_all_recommended":
+        return {"action": "use_all", "key": key}
+    if key not in by_key:
+        return None
+    if value == "use_recommended":
+        return {"action": "use_recommended", "key": key}
+    if value == "custom" or value.startswith("custom:"):
+        text = value[len("custom:"):] if value.startswith("custom:") else ""
+        return {"action": "custom", "key": key, "text": sanitize_custom_text(text)}
+    return {"action": "choice", "key": key, "choice_id": value}
+
+
+def _resolve_protocol_answer(
+    parsed: dict[str, Any], state: dict[str, Any]
+) -> list[tuple[str, Any, str]] | None:
+    """Map one parsed answer to ``(field_name, value, source)`` writes.
+
+    Only the answered round's declared target fields are ever written; an
+    unknown key / choice / invalid custom text yields ``None`` (no writes).
+    """
+    action = parsed["action"]
+    # 契约 5.2：除 __all__（「都按推荐」）外，回答 key 必须等于当前轮
+    # prompt.key。聊天历史里每条 intake 消息都有自己的引导按钮，点到旧消息
+    # 的按钮会带旧轮次 key，一律按无效输入处理（不写库、不抛 500、当前轮
+    # 不变可重试），避免覆盖已确认字段或错乱推进；9 轮全收齐后 prompt 为
+    # None，同样拒绝。
+    current_prompt = state.get("prompt")
+    if parsed["key"] != "__all__" and (
+        current_prompt is None or parsed["key"] != current_prompt["key"]
+    ):
+        return None
+    if action == "use_all":
+        entries: list[tuple[str, Any, str]] = []
+        for question in state["pending_questions"]:
+            recommended = _recommended_choice(question)
+            entries.extend(
+                (name, value, "system_default")
+                for name, value in question["values"][recommended["id"]].items()
+            )
+        return entries or None
+    by_key = {question["key"]: question for question in GUIDED_QUESTIONS}
+    question = by_key.get(parsed["key"])
+    if question is None:
+        return None
+    if action == "use_recommended":
+        recommended = _recommended_choice(question)
+        return [
+            (name, value, "system_default")
+            for name, value in question["values"][recommended["id"]].items()
+        ]
+    if action == "choice":
+        values = question["values"].get(parsed["choice_id"])
+        if values is None:
+            return None
+        return [(name, value, "user_explicit") for name, value in values.items()]
+    if action == "custom":
+        text = parsed.get("text")
+        if text is None:
+            return None
+        recommended = _recommended_choice(question)
+        values = dict(question["values"][recommended["id"]])
+        # custom 只写该轮声明的目标字段：主字段用净化文本，同轮其余字段用推荐值。
+        values[question["custom_field"]] = text
+        return [(name, value, "user_explicit") for name, value in values.items()]
+    return None
 
 
 class ResearchIntakeCoordinator:
@@ -334,21 +685,20 @@ class ResearchIntakeCoordinator:
             return self._active_conflict(self._active_session(conversation_id, owner_id))
         self._persist_fields(session, fields or {}, message_id, owner_id)
         saved = self.store.list_intake_fields(session.intake_draft_id, owner_id)
-        missing = self._missing_fields(saved)
-        if not missing:
-            self.store.update_intake_status(session.intake_draft_id, owner_id, "complete")
-        return IntakeResult(
-            status="intake",
-            session=session,
-            fields=saved,
-            missing=missing,
-            activation=activation,
-            question=self._question(missing),
-        )
+        return self._finalize_turn(session, owner_id, saved, activation)
 
     def handle_message(
         self, conversation_id: str, owner_id: str, message_id: str, message: str
     ) -> IntakeResult:
+        # 契约 2.5：任何带 [intake: 标记的消息都在「最开头」特判，跳过
+        # classify() / intent_classifier() / active_conflict / draft-complete
+        # 分支。解析失败时 parsed 为 None，由 _handle_intake_answer 走「不写库、
+        # 当前轮不变、可重试」的拒绝路径；这也让「BLOCKING 已齐但 9 轮尚未问完」
+        # 的会话仍能逐轮回答。
+        if _INTAKE_MARKER_RE.search(message or ""):
+            return self._handle_intake_answer(
+                conversation_id, owner_id, message_id, _parse_intake_answer(message)
+            )
         classification = self.classify(message)
         active = self._active_session(conversation_id, owner_id)
         if active is None and classification == "ordinary":
@@ -402,11 +752,67 @@ class ResearchIntakeCoordinator:
                 self._persist_fields(session, self._extract_follow_up(session, message), message_id, owner_id)
 
         saved = self.store.list_intake_fields(session.intake_draft_id, owner_id)
+        return self._finalize_turn(session, owner_id, saved, activation)
+
+    def _handle_intake_answer(
+        self,
+        conversation_id: str,
+        owner_id: str,
+        message_id: str,
+        parsed: dict[str, Any] | None,
+    ) -> IntakeResult:
+        """Apply one protocol answer, then recompute missing/prompt (契约 2.5)."""
+        session = self._active_session(conversation_id, owner_id)
+        if session is None:
+            return IntakeResult(status="ordinary")
+        saved = self.store.list_intake_fields(session.intake_draft_id, owner_id)
+        state = derive_guided_state(saved)
+        entries = _resolve_protocol_answer(parsed, state) if parsed is not None else None
+        if entries is not None:
+            for name, value, source in entries:
+                self.store.upsert_intake_field(
+                    IntakeField(
+                        intake_draft_id=session.intake_draft_id,
+                        field_name=name,
+                        value_json=json.dumps(value, ensure_ascii=False),
+                        source=source,
+                        confidence=1.0,
+                        confirmation_status="confirmed",
+                        updated_by_message_id=message_id,
+                        updated_at="",
+                    ),
+                    owner_id,
+                )
+            saved = self.store.list_intake_fields(session.intake_draft_id, owner_id)
+        # 解析失败/非法输入：不写库、不抛 500，返回当前轮不变（可重试）。
+        try:
+            activation = self.activate_skill()
+        except Exception:
+            activation = None
+        return self._finalize_turn(session, owner_id, saved, activation)
+
+    def _finalize_turn(
+        self,
+        session: ResearchSession,
+        owner_id: str,
+        saved: list[IntakeField],
+        activation: dict[str, Any] | None,
+    ) -> IntakeResult:
+        """Complete the draft only when both legacy fields and all 9 rounds are done."""
         missing = self._missing_fields(saved)
-        if not missing:
+        state = derive_guided_state(saved)
+        # 契约 5.1：draft complete 必须同时满足 BLOCKING 齐备且 9 轮引导全部
+        # 收齐（prompt 为 null）。否则首句说全 topic/objective/time_range 时
+        # missing 为空但引导还有 6 轮，计划会提前用默认值生成并被 replay 缓存。
+        if not missing and state["prompt"] is None:
             draft = self.store.get_intake_draft(session.research_session_id, owner_id)
             if draft is not None and draft.status == "collecting":
                 self.store.update_intake_status(draft.intake_draft_id, owner_id, "complete")
+        # 契约 2.4「旧字段类型与语义一律不变」：question 保持既有 _question
+        # 语义（BLOCKING / constraints 待澄清时「请补充：…」，收齐后 None）；
+        # 当前这一轮的问句由新增的 prompt.question 承载，前端引导区块读它。
+        # 这样旧前端的 editable 逻辑、finalize_intake_message 的「参数齐全」
+        # 文案与历史回放契约都不回归。
         return IntakeResult(
             status="intake",
             session=session,
@@ -414,6 +820,9 @@ class ResearchIntakeCoordinator:
             missing=missing,
             activation=activation,
             question=self._question(missing),
+            prompt=state["prompt"],
+            quick_actions=state["quick_actions"],
+            progress=state["progress"],
         )
 
     def _active_session(self, conversation_id: str, owner_id: str) -> ResearchSession | None:
@@ -453,15 +862,22 @@ class ResearchIntakeCoordinator:
             if name in existing and existing[name].updated_by_message_id == message_id:
                 continue
             source = "user_explicit" if name in values else "system_default"
-            confidence = 1.0 if source == "user_explicit" else 1.0
-            confirmation = "confirmed" if source == "user_explicit" else "not_required"
+            # 契约 2.1：新会话默认字段写 unconfirmed（待询问），用户明确写
+            # confirmed。已确认（用推荐 / 都按推荐 / 点候选）或历史 not_required
+            # 的默认值不能被后续消息重置回 unconfirmed，否则用户的选择会丢失、
+            # 历史会话会被重新追问。
+            if source == "system_default" and name in existing:
+                previous = existing[name]
+                if previous.confirmation_status in {"confirmed", "not_required"}:
+                    continue
+            confirmation = "confirmed" if source == "user_explicit" else "unconfirmed"
             self.store.upsert_intake_field(
                 IntakeField(
                     intake_draft_id=session.intake_draft_id,
                     field_name=name,
                     value_json=json.dumps(value, ensure_ascii=False),
                     source=source,
-                    confidence=confidence,
+                    confidence=1.0,
                     confirmation_status=confirmation,
                     updated_by_message_id=message_id,
                     updated_at="",
@@ -543,6 +959,11 @@ __all__ = [
     "BEGIN_RESEARCH_INTAKE_OUTPUT_SCHEMA",
     "REGISTERED_CAPABILITIES",
     "BLOCKING_FIELDS",
+    "DEFAULT_FIELDS",
+    "GUIDED_QUESTIONS",
+    "QUICK_ACTIONS",
+    "derive_guided_state",
+    "sanitize_custom_text",
     "ResearchIntakeCoordinator",
     "IntakeResult",
     "classify_intake_intent",

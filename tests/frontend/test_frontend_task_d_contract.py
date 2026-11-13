@@ -187,8 +187,8 @@ def test_e2e_clicks_create_tab_before_fill() -> None:
 
 def test_static_asset_versions_frozen() -> None:
     freeze_note = "本批次冻结点；后续改 CSS 必须 bump 并同步本断言、index.html、fixture"
-    assert 'href="/assets/styles.css?v=76"' in INDEX, freeze_note
-    assert 'src="/assets/app.js?v=75"' in INDEX, freeze_note
+    assert 'href="/assets/styles.css?v=77"' in INDEX, freeze_note
+    assert 'src="/assets/app.js?v=78"' in INDEX, freeze_note
     assert 'href="/assets/literature-maps.css?v=34"' in INDEX, freeze_note
     assert 'src="/assets/literature-maps.js?v=47"' in INDEX, freeze_note
 

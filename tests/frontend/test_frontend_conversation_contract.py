@@ -210,7 +210,12 @@ def test_intake_summary_is_safe_and_contains_the_product_contract() -> None:
     for choice in ("modify_current", "cancel_then_new", "new_conversation"):
         assert choice in APP
     assert "innerHTML" not in renderer
-    assert "prompt" not in renderer.lower()
+    # 逐轮引导式询问新增了 UI 区块 `.conversation-intake-prompt` 与 payload.prompt，
+    # 「prompt」字样本身不再是禁词；这里继续守本用例原意：不得把 skill / LLM 的
+    # 提示词模板字段渲染进面板，精确化为具体字段名。
+    assert "skill.prompt" not in renderer.lower()
+    assert "system_prompt" not in renderer.lower()
+    assert "prompt_template" not in renderer.lower()
 
 
 def test_intake_terminal_state_is_collapsible_and_assets_are_bumped() -> None:

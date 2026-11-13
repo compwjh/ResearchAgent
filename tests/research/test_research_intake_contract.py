@@ -199,7 +199,8 @@ def test_conflicting_paper_count_constraints_keep_intake_in_clarification(tmp_pa
         conversation.conversation_id, "owner-a", follow_up.message_id, follow_up.content
     )
     assert fixed.missing == []
-    assert store.get_intake_draft(fixed.session.research_session_id, "owner-a").status == "complete"
+    # 契约 5.1：BLOCKING / constraints 澄清收齐但 9 轮引导未收齐时 draft 保持 collecting。
+    assert store.get_intake_draft(fixed.session.research_session_id, "owner-a").status == "collecting"
 
 
 def test_invalid_paper_count_requires_the_same_constraint_clarification(tmp_path):
@@ -307,7 +308,8 @@ def test_follow_up_messages_restore_and_complete_blocking_fields(tmp_path):
         conversation.conversation_id, "owner-a", third_user.message_id, third_user.content
     )
     assert third.missing == []
-    assert store.get_intake_draft(third.session.research_session_id, "owner-a").status == "complete"
+    # 契约 5.1：draft complete 改由「9 轮引导收齐（prompt 为 null）」驱动。
+    assert store.get_intake_draft(third.session.research_session_id, "owner-a").status == "collecting"
 
 
 def test_skill_activation_locks_target_and_checks_declared_tools(tmp_path):

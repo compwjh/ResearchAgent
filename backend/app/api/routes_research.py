@@ -61,7 +61,7 @@ from backend.app.research.application.entry import (
     ResearchAcquisitionService,
     ResearchServiceError,
 )
-from backend.app.research.application.intake import ResearchIntakeCoordinator
+from backend.app.research.application.intake import ResearchIntakeCoordinator, derive_guided_state
 from backend.app.research.application.intake_projection import finalize_intake_message, persist_plan_projection
 from backend.app.research.application.session_plan_generation import ensure_session_plan
 from backend.app.skills.registry import build_default_tool_registry
@@ -617,10 +617,8 @@ def _task_runtime_observability(research_task_id: str) -> dict:
             # The existing local runtime uses Ollama for a resolved WorkItem;
             # a fallback event below replaces this with the online alias.
             providers[item_id] = "ollama"
-        try:
+        with suppress(TypeError, ValueError):
             retry_count += max(0, int(getattr(item, "retry_count", 0) or 0))
-        except (TypeError, ValueError):
-            pass
         if getattr(item, "status", None) == "waiting_retry":
             retry_at = _safe_runtime_timestamp(getattr(item, "next_retry_at", None))
             if retry_at is not None:
@@ -917,6 +915,9 @@ def _command_error(exc: ResearchCommandError) -> JSONResponse:
 _SESSION_INTAKE_FIELDS = frozenset({
     "topic", "objective", "time_range", "language", "sources", "depth",
     "output", "citations", "constraints",
+    # 逐轮引导式询问新增的 4 个简单字符串枚举（非嵌套对象），
+    # 由 _normalize_session_intake 的通用字符串分支校验长度并 strip。
+    "capability_profile", "budget_profile", "report_profile", "degradation_policy",
 })
 
 
@@ -1071,7 +1072,9 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
         error = result.error or {"code": "SOURCE_UNAVAILABLE", "message": "研究 Intake 暂时不可用"}
         return _api_error(str(error.get("code") or "SOURCE_UNAVAILABLE"), 503, str(error.get("message") or "研究 Intake 暂时不可用"))
     plan_result = None
-    if result.session is not None and not result.missing:
+    # 与 SSE 链路一致：只有 9 轮引导全部处理完（prompt 为 null）才生成计划，
+    # 保证首版计划读到用户最终选择；老结果对象无 prompt 时保持原行为。
+    if result.session is not None and getattr(result, "prompt", None) is None:
         try:
             plan_result = _ensure_session_plan(result.session)
         except Exception:
@@ -1110,7 +1113,7 @@ def _create_unified_session_unlocked(payload: ResearchSessionCreateRequest, *, l
     }
     if plan_result:
         response.update({"status": plan_result.get("status"), "plan": plan_result.get("plan"), "approval": plan_result.get("approval")})
-    elif result.session is not None and not result.missing:
+    elif result.session is not None and getattr(result, "prompt", None) is None:
         response["plan_generation"] = {"status": "failed", "message": "参数已齐，但计划生成失败，可重试。"}
     if result.session is not None:
         _store().save_session_create_request(
@@ -1449,9 +1452,17 @@ def generate_research_session_plan(research_session_id: str):
     """
     try:
         session = _approval_service().get_session(research_session_id, OWNER_ID)
-        result = _ensure_session_plan(session)
+        # 契约 5.1：本端点必须与 SSE / 表单链路同源，以「9 轮引导收齐」为准，
+        # 不得仅凭 draft.status == "complete" 放行；否则首句说全 BLOCKING 时
+        # 计划会提前用默认值生成并被 ensure_session_plan 的 replay 缓存。
+        # 老会话（not_required、无新 profile）推导为 prompt=None，照常生成。
+        result = None
+        if session is not None and derive_guided_state(
+            _store().list_intake_fields(session.intake_draft_id, OWNER_ID)
+        )["prompt"] is None:
+            result = _ensure_session_plan(session)
         if result is None:
-            raise ResearchCommandError("INTAKE_INCOMPLETE", "研究主题、目标和时间范围仍未完整确认")
+            raise ResearchCommandError("INTAKE_INCOMPLETE", "研究参数尚未逐项确认完成，请先完成逐项询问或选择『都按推荐』")
         _persist_recovered_plan_projection(session, result)
         return result
     except ResearchCommandError as exc:

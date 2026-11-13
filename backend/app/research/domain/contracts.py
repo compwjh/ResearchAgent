@@ -199,7 +199,13 @@ INTAKE_TRANSITIONS = {
     "complete": {"superseded", "cancelled"},
     "superseded": set(), "cancelled": set(),
 }
-INTAKE_FIELDS = frozenset({"topic", "objective", "time_range", "language", "sources", "depth", "output", "citations", "constraints"})
+# 末 4 项为「逐轮引导式询问」新增的简单字符串枚举 profile；由 Intake 目录的
+# 9 轮候选写入，计划生成（session_plan_generation）据此替换 4 处硬编码。
+INTAKE_FIELDS = frozenset({
+    "topic", "objective", "time_range", "language", "sources", "depth",
+    "output", "citations", "constraints",
+    "capability_profile", "budget_profile", "report_profile", "degradation_policy",
+})
 INTAKE_SOURCES = frozenset({"user_explicit", "context_inferred", "system_default"})
 INTAKE_CONFIRMATION_STATUSES = frozenset({"unconfirmed", "confirmed", "not_required"})
 

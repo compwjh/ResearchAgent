@@ -423,9 +423,9 @@ def test_new_classes_are_scoped_in_styles_css():
 
 def test_asset_versions_are_bumped():
     assert 'src="/assets/research-tasks.js?v=28"' in INDEX
-    assert 'href="/assets/styles.css?v=76"' in INDEX
+    assert 'href="/assets/styles.css?v=77"' in INDEX
     assert 'src="/assets/research-tasks.js?v=27"' not in INDEX, "旧生效引用须移除"
-    assert 'href="/assets/styles.css?v=75"' not in INDEX, "改了 styles.css 须升版本"
+    assert 'href="/assets/styles.css?v=76"' not in INDEX, "改了 styles.css 须升版本"
 
 
 def test_detector_is_not_vacuous():

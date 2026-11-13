@@ -27,6 +27,43 @@ _DEFAULT_CAPABILITIES = (
     {"skill": "research-report-synthesis", "tools": []},
 )
 
+# 契约 2.6：4 块计划字段改由 Intake 的 4 个简单字符串枚举 profile 驱动。
+# 所有取值都先过白名单，未知 / 恶意文本一律回落到原有硬编码默认值——既保证
+# 老会话结果逐字不变，也避免 custom 输入把 URL 字符串带进 plan 触发护栏。
+# 注意 plan_authoring._validate_bounded_sections 对 budget / report_structure /
+# safe_summary 有严格「键名」白名单，因此只改已有键的「值」，绝不新增键名。
+_CAPABILITY_PROFILE_INDICES = {
+    "full": (0, 1, 2, 3),
+    "search_eval": (0, 1, 3),
+    "catalog_only": (0,),
+}
+_BUDGET_PROFILE_SECONDS = {"fast": 600, "balanced": 1500, "deep": 3600}
+_REPORT_PROFILE_SECTIONS = {
+    "standard": ["研究问题", "方法与来源", "主要发现", "局限与后续工作"],
+    "deep": ["研究问题", "方法与来源", "证据评估", "主要发现", "讨论", "局限与后续工作", "附录"],
+    "brief": ["核心发现", "结论"],
+}
+_OUTPUT_FORMATS = frozenset({"markdown", "html"})
+_CITATION_STYLES = frozenset({"inline", "footnotes", "title_only"})
+_LEGACY_DECISION = "已根据确认的 Intake 生成首版计划，等待用户批准"
+_LEGACY_NOTES = "首版计划使用确定性 Planner；批准后才会创建 ResearchTask 并执行搜索。"
+_DEGRADATION_TEXT = {
+    "balanced": (_LEGACY_DECISION, _LEGACY_NOTES),
+    "conservative": (
+        "保守降级：已根据确认的 Intake 生成首版计划，等待用户批准",
+        "保守策略：来源不足时优先缩减研究范围，不降低证据门槛；批准后才会创建 ResearchTask 并执行搜索。",
+    ),
+    "flexible": (
+        "弹性降级：已根据确认的 Intake 生成首版计划，等待用户批准",
+        "弹性策略：来源不足时允许替换等价来源继续推进；批准后才会创建 ResearchTask 并执行搜索。",
+    ),
+}
+
+
+def _enum_or_default(value: Any, allowed, default: str) -> str:
+    """Whitelist one Intake enum value; unknown values fall back to the default."""
+    return value if isinstance(value, str) and value in allowed else default
+
 # Supported counts are bounded to the number of digits needed by the public
 # 1..20 contract.  Longer tokens deliberately become an unresolved marker and
 # follow the existing clarification path instead of reaching ``int()``.
@@ -241,6 +278,26 @@ def build_session_plan_output(store, session, owner_id: str) -> dict[str, Any]:
             item["depends_on"] = [
                 dependency for dependency in item.get("depends_on", []) if dependency != "c1"
             ] or ["e1"]
+    capability_profile = _enum_or_default(
+        fields.get("capability_profile"), _CAPABILITY_PROFILE_INDICES, "full"
+    )
+    budget_profile = _enum_or_default(
+        fields.get("budget_profile"), _BUDGET_PROFILE_SECONDS, "balanced"
+    )
+    report_profile = _enum_or_default(
+        fields.get("report_profile"), _REPORT_PROFILE_SECTIONS, "standard"
+    )
+    degradation_policy = _enum_or_default(
+        fields.get("degradation_policy"), _DEGRADATION_TEXT, "balanced"
+    )
+    report_format = _enum_or_default(fields.get("output"), _OUTPUT_FORMATS, "markdown")
+    citation_style = _enum_or_default(fields.get("citations"), _CITATION_STYLES, "inline")
+    selected_capabilities = [
+        dict(_DEFAULT_CAPABILITIES[index])
+        for index in _CAPABILITY_PROFILE_INDICES[capability_profile]
+    ]
+    decision, notes = _DEGRADATION_TEXT[degradation_policy]
+
     payload: dict[str, Any] = {
         "schema_version": "session-plan-v1",
         "plan_version": int(session.current_plan_version or 0) + 1,
@@ -254,23 +311,23 @@ def build_session_plan_output(store, session, owner_id: str) -> dict[str, Any]:
             "constraints": constraints,
         },
         "work_items": work_items,
-        "capabilities": [dict(item) for item in _DEFAULT_CAPABILITIES],
+        "capabilities": selected_capabilities,
         "budget": {
             "quality_profile": quality_profile,
             "target_paper_count": draft.target_paper_count,
-            "soft_budget_seconds": 1500,
+            "soft_budget_seconds": _BUDGET_PROFILE_SECONDS[budget_profile],
             "language": language,
         },
         "report_structure": {
-            "sections": ["研究问题", "方法与来源", "主要发现", "局限与后续工作"],
-            "format": "markdown",
-            "citations": "inline",
+            "sections": list(_REPORT_PROFILE_SECTIONS[report_profile]),
+            "format": report_format,
+            "citations": citation_style,
             "language": language,
             "title": "深度研究报告",
         },
         "safe_summary": {
-            "decision": "已根据确认的 Intake 生成首版计划，等待用户批准",
-            "notes": "首版计划使用确定性 Planner；批准后才会创建 ResearchTask 并执行搜索。",
+            "decision": decision,
+            "notes": notes,
             "constraints": constraints,
             "degraded": [],
         },

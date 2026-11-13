@@ -201,6 +201,65 @@ def _conversation_payload(item):
 _INTAKE_STATUSES = frozenset({"intake", "clarification", "active_conflict", "error"})
 _INTAKE_CHOICE_IDS = frozenset({"modify_current", "cancel_then_new", "new_conversation"})
 _INTAKE_FIELD_NAMES = frozenset({"topic", "objective", "time_range", *DEFAULT_FIELDS})
+_INTAKE_QUICK_ACTION_LABELS = {
+    "use_recommended": "用推荐",
+    "use_all_recommended": "都按推荐",
+}
+
+
+def _safe_guided_prompt(value):
+    """Whitelist the contract-2.4 prompt when replaying a stored projection."""
+    if not isinstance(value, dict):
+        return None
+    key = str(value.get("key") or "")[:80]
+    index, total = value.get("index"), value.get("total")
+    if not key or not isinstance(index, int) or isinstance(index, bool):
+        return None
+    if not isinstance(total, int) or isinstance(total, bool):
+        return None
+    choices = []
+    for choice in value.get("choices", []) if isinstance(value.get("choices"), list) else []:
+        if not isinstance(choice, dict):
+            continue
+        choice_id = str(choice.get("id") or "")[:80]
+        if choice_id:
+            choices.append({
+                "id": choice_id,
+                "label": str(choice.get("label") or "")[:120],
+                "recommended": bool(choice.get("recommended")),
+            })
+    if not choices:
+        return None
+    return {
+        "key": key, "index": index, "total": total,
+        "label": str(value.get("label") or "")[:120],
+        "question": str(value.get("question") or "")[:2000],
+        "choices": choices,
+        "allow_custom": bool(value.get("allow_custom")),
+        "custom_label": str(value.get("custom_label") or "")[:120],
+    }
+
+
+def _safe_guided_quick_actions(value):
+    actions = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        action_id = str(item.get("id") or "")
+        if action_id in _INTAKE_QUICK_ACTION_LABELS and action_id not in {a["id"] for a in actions}:
+            actions.append({"id": action_id, "label": _INTAKE_QUICK_ACTION_LABELS[action_id]})
+    return actions
+
+
+def _safe_guided_progress(value):
+    if not isinstance(value, dict):
+        return None
+    answered, total = value.get("answered"), value.get("total")
+    if not isinstance(answered, int) or isinstance(answered, bool):
+        return None
+    if not isinstance(total, int) or isinstance(total, bool):
+        return None
+    return {"answered": max(0, answered), "total": max(0, total)}
 
 
 def _safe_intake_projection(payload):
@@ -267,6 +326,11 @@ def _safe_intake_projection(payload):
         "question": str(payload.get("question") or "")[:2000] or None,
         "skill": skill_snapshot,
         "research_session": session_snapshot,
+        # 契约 2.4：历史回放同样带上当前轮三个增量键；老 projection 无这些键
+        # 时回落为 null / [] / null，前端不渲染引导区块。
+        "prompt": _safe_guided_prompt(payload.get("prompt")),
+        "quick_actions": _safe_guided_quick_actions(payload.get("quick_actions")),
+        "progress": _safe_guided_progress(payload.get("progress")),
     }
 
 
@@ -2062,7 +2126,13 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
                 )
             plan_result = None
             plan_error = None
-            if result.status == "intake" and not result.missing and result.session is not None:
+            # 契约 2.4：只有 9 轮全部处理完（prompt 为 null）才生成计划，
+            # 保证首版计划读到用户最终选择；ensure_session_plan 仍保持幂等。
+            if (
+                result.status == "intake"
+                and getattr(result, "prompt", None) is None
+                and result.session is not None
+            ):
                 yield frame(
                     "processing_step",
                     step_id=f"research-plan:{assistant_message.message_id}",
@@ -2104,6 +2174,9 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
                     missing=[],
                     choices=result.choices,
                     question=None,
+                    prompt=getattr(result, "prompt", None),
+                    quick_actions=list(getattr(result, "quick_actions", []) or []),
+                    progress=getattr(result, "progress", None),
                 )
                 finished = True
                 yield frame(
@@ -2153,6 +2226,9 @@ def _intake_stream(repo, conversation, user_message, assistant_message, result, 
                 missing=result.missing,
                 choices=result.choices,
                 question=result.question,
+                prompt=getattr(result, "prompt", None),
+                quick_actions=list(getattr(result, "quick_actions", []) or []),
+                progress=getattr(result, "progress", None),
             )
             finished = True
             yield frame(

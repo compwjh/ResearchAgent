@@ -181,9 +181,19 @@ class TestIntakeIntentRouting:
         _c, second_user, _a = memory.create_message_pair(
             conversation.conversation_id, OWNER, complete_msg
         )
-        completed = coordinator.handle_message(
+        coordinator.handle_message(
             conversation.conversation_id, OWNER, second_user.message_id, second_user.content
         )
+        # 契约 5.1：BLOCKING 齐备但 9 轮引导未收齐时 draft 仍 collecting；
+        # 收齐后 draft 才 complete（本用例原意图：complete 后不再吸收消息）。
+        _c, all_user, _a = memory.create_message_pair(
+            conversation.conversation_id, OWNER,
+            "【研究参数】全部采用推荐 [intake:__all__=use_all_recommended]",
+        )
+        completed = coordinator.handle_message(
+            conversation.conversation_id, OWNER, all_user.message_id, all_user.content
+        )
+        assert completed.prompt is None
         assert _active_draft_status(store, completed.session) == "complete"
         objective_before = _fields_by_name(store, completed.session.intake_draft_id).get("objective")
         # complete 后再发一条「看似可吸收」的消息，也不应污染字段

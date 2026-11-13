@@ -73,6 +73,19 @@ def build_intake_projection(result) -> dict:
             "intake_draft_id": session.get("intake_draft_id"),
             "status": session.get("status"),
         }
+    # 契约 2.4：增量输出当前轮 / 快捷操作 / 进度。优先用 coordinator 已推导
+    # 的值；若调用方手工构造了不带新字段的结果对象（旧夹具 / 老 projection），
+    # 则从 fields 现场确定性重算，保证刷新与历史回放可重放。
+    prompt = getattr(result, "prompt", None)
+    quick_actions = getattr(result, "quick_actions", None)
+    progress = getattr(result, "progress", None)
+    if prompt is None and getattr(result, "fields", None) and result.status == "intake":
+        from backend.app.research.application.intake import derive_guided_state
+
+        derived = derive_guided_state(result.fields)
+        prompt = derived["prompt"]
+        quick_actions = derived["quick_actions"]
+        progress = derived["progress"]
     return {
         "schema_version": "task03-intake-v1",
         "status": result.status,
@@ -82,6 +95,9 @@ def build_intake_projection(result) -> dict:
         "question": result.question,
         "skill": skill,
         "research_session": session,
+        "prompt": prompt,
+        "quick_actions": list(quick_actions or []),
+        "progress": progress,
     }
 
 
