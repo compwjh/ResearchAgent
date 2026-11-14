@@ -198,6 +198,21 @@ def authorize(
         ), owner_id=owner_id)
         return GuardDecision(GuardOutcome.ALLOW, "READ_ONLY_ALLOWED")
 
+    # 风险信号只影响「必须核验的敏感动作」的可用性，不授予或替代授权。
+    # 检测器故障/超时/未覆盖窗口时暂停敏感动作，不静默放行。
+    from backend.app.guard import signals as _signals
+
+    assessment = _signals.assessment_for(owner_id=owner_id, task_id=task_id)
+    if assessment.requires_hold:
+        _emit(EventDraft(
+            status=EventStatus.BLOCKED, reason_code=_signals.HOLD_REASON,
+            context=_context(task_id), authorization_evidence_ref=assessment.signal_id,
+        ), owner_id=owner_id)
+        return GuardDecision(
+            GuardOutcome.DENY, _signals.HOLD_REASON,
+            message="注入检测不可用，必须核验的动作已暂停；请重试或稍后再试",
+        )
+
     # 只复用仍活跃的授权；终态（拒绝/取消/已消费/失效）后允许重新发起确认，
     # 否则用户在一次拒绝后无法按提示重试同一动作。
     with _lock:
@@ -309,20 +324,33 @@ def consume(action_ref: str, *, owner_id: str, succeeded: bool, result_unknown: 
 
 
 def pending_actions(owner_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
-    """确认 UI 用的最小投影，不含原始参数。"""
-    return [
-        {
+    """确认 UI 用的最小投影，不含原始参数；附风险信号供用户判断。"""
+    from backend.app.guard import signals as _signals
+
+    assessments: dict[str, Any] = {}
+    result = []
+    for row in store.list_actions(owner_id, status=ActionStatus.PENDING.value, limit=limit):
+        task_id = row["task_id"]
+        if task_id not in assessments:
+            assessments[task_id] = _signals.assessment_for(owner_id=owner_id, task_id=task_id)
+        risk = assessments[task_id]
+        result.append({
             "action_ref": row["action_ref"],
-            "task_id": row["task_id"],
+            "task_id": task_id,
             "tool_name": row["tool_name"],
             "target_summary": row["target_summary"],
             "args_hash": row["args_hash"],
             "status": row["status"],
             "scope_version": row["scope_version"],
             "created_at": row["created_at"],
-        }
-        for row in store.list_actions(owner_id, status=ActionStatus.PENDING.value, limit=limit)
-    ]
+            "risk": {
+                "label": risk.label,
+                "reason_code": risk.reason_code,
+                "requires_hold": risk.requires_hold,
+                "evidence_ref": risk.evidence_ref,
+            },
+        })
+    return result
 
 
 def events(owner_id: str, *, limit: int = 50) -> dict[str, Any]:

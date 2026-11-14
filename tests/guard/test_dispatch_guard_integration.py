@@ -105,6 +105,21 @@ def test_default_dispatch_records_failure_without_replay(monkeypatch: pytest.Mon
     assert any(e["reason_code"] == "RESULT_UNKNOWN" and e["status"] == "failed" for e in events)
 
 
+def test_context_roundtrip_preserves_owner_and_task():
+    tokens = hooks.bind("owner-x", "task-y")
+    try:
+        captured = hooks.current()
+        assert captured.owner_id == "owner-x" and captured.task_id == "task-y"
+        inner = hooks.bind(captured.owner_id, captured.task_id)
+        try:
+            assert hooks.current() == captured
+        finally:
+            hooks.reset(inner)
+    finally:
+        hooks.reset(tokens)
+    assert hooks.current().owner_id == "owner-1"  # fixture 绑定的外层上下文
+
+
 def test_check_returns_none_when_disabled():
     assert hooks.check("download_and_import_paper", {}) is None
 

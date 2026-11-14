@@ -2998,8 +2998,21 @@ class ResearchAgentRunner:
                             if readonly:
                                 executed_readonly_calls.add(call_key)
                     if readonly and len(dispatch_pairs) > 1:
+                        # Spec050 Task03：ContextVar 不会自动传播到线程池，
+                        # 显式捕获当前授权上下文并在 worker 内重新绑定，避免丢失校验。
+                        from backend.app.guard import hooks as _guard_hooks
+
+                        guard_context = _guard_hooks.current()
+
+                        def _dispatch_with_context(pair, _context=guard_context):
+                            tokens = _guard_hooks.bind(_context.owner_id, _context.task_id)
+                            try:
+                                return self._dispatch(pair[1], pair[2])
+                            finally:
+                                _guard_hooks.reset(tokens)
+
                         with ThreadPoolExecutor(max_workers=min(len(dispatch_pairs), worker_grant)) as pool:
-                            dispatched = list(pool.map(lambda pair: self._dispatch(pair[1], pair[2]), dispatch_pairs))
+                            dispatched = list(pool.map(_dispatch_with_context, dispatch_pairs))
                         for (index, _entry, _args), value in zip(dispatch_pairs, dispatched, strict=True):
                             values[index] = value
                     else:

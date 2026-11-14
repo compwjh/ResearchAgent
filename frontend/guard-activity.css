@@ -1,0 +1,112 @@
+/* Spec050 Task04：防护活动界面。所有选择器限定在 #guard-activity-root 内。 */
+#guard-activity-root {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  font-family: inherit;
+}
+
+#guard-activity-root[hidden] { display: none; }
+
+#guard-activity-root .guard-activity-toggle {
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 127, 127, .4);
+  background: var(--panel, #fff);
+  color: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
+}
+
+#guard-activity-root .guard-activity-panel {
+  width: min(420px, calc(100vw - 40px));
+  max-height: min(70vh, 620px);
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding: 16px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  border: 1px solid rgba(127, 127, 127, .35);
+  background: var(--panel, #fff);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, .18);
+}
+
+#guard-activity-root .guard-activity-panel[hidden] { display: none; }
+
+#guard-activity-root .guard-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#guard-activity-root .guard-activity-title { margin: 0; font-size: 17px; }
+#guard-activity-root .guard-activity-subtitle { margin: 18px 0 8px; font-size: 15px; }
+
+#guard-activity-root .guard-activity-refresh {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(127, 127, 127, .4);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+#guard-activity-root .guard-action-card {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(127, 127, 127, .3);
+  background: rgba(127, 127, 127, .06);
+}
+
+#guard-activity-root .guard-action-title { margin: 0 0 6px; font-size: 15px; }
+#guard-activity-root .guard-action-target { margin: 0 0 6px; font-size: 13px; opacity: .85; }
+#guard-activity-root .guard-action-risk { margin: 6px 0; font-size: 13px; }
+#guard-activity-root .guard-action-risk-alert { color: #b45309; }
+#guard-activity-root .guard-action-risk-hold { color: #b91c1c; font-weight: 600; }
+#guard-activity-root .guard-action-evidence { margin: 4px 0; font-size: 12px; opacity: .75; }
+#guard-activity-root .guard-action-status { margin: 8px 0 0; font-size: 12px; min-height: 16px; }
+
+#guard-activity-root .guard-action-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#guard-activity-root .guard-action-controls button {
+  min-height: 36px;
+  min-width: 64px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(127, 127, 127, .45);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+#guard-activity-root .guard-action-allow { border-color: #15803d; }
+#guard-activity-root .guard-action-controls button:disabled { opacity: .5; cursor: default; }
+
+#guard-activity-root .guard-activity-empty { margin: 10px 0; font-size: 13px; opacity: .7; }
+
+#guard-activity-root .guard-activity-event-list { margin: 0; padding: 0; list-style: none; }
+
+#guard-activity-root .guard-activity-event {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(127, 127, 127, .18);
+  font-size: 12px;
+}
+
+#guard-activity-root .guard-event-status { font-weight: 600; }
+#guard-activity-root .guard-activity-event[data-event-status="失败"] .guard-event-status,
+#guard-activity-root .guard-activity-event[data-event-status="已拦截"] .guard-event-status { color: #b91c1c; }
+#guard-activity-root .guard-event-module { opacity: .65; }
+
+@media (max-width: 600px) {
+  #guard-activity-root { right: 12px; bottom: 12px; }
+  #guard-activity-root .guard-activity-panel { width: calc(100vw - 24px); }
+}

@@ -17,6 +17,13 @@ from backend.app.guard.service import (
     pending_actions,
     register_scope,
 )
+from backend.app.guard.signals import (
+    RiskAssessment,
+    RiskSignal,
+    assessment_for,
+    mark_unavailable,
+    report,
+)
 
 __all__ = [
     "ActionStatus",
@@ -25,11 +32,16 @@ __all__ = [
     "GuardEvent",
     "GuardOutcome",
     "TaskScope",
+    "RiskAssessment",
+    "RiskSignal",
+    "assessment_for",
     "authorize",
     "consume",
     "decide",
     "events",
     "guard_enabled",
+    "mark_unavailable",
     "pending_actions",
     "register_scope",
+    "report",
 ]
