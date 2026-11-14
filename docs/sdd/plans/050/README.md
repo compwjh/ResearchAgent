@@ -2,7 +2,9 @@
 
 关联：[Spec050](../../specs/050-agent-safety-and-factuality.md) · [三轮讨论记录](grilling-decisions.md)
 
-当前状态：待确认。Task02 技术盘点已完成；Task03/04 已完成实现、定向验收与真实部署 API E2E（Spec050 整体仍待确认、Gate 1/2 未执行，本表不代表 Spec 级验收签字）。第一次交付止于 Task05，第二次交付止于 Task09。
+当前状态：**实施中**（2026-11-15 按用户指示由「待确认」补正；用户 11-14 已以明确指令授权实现，当时未同步状态）。Task02 技术盘点与 Task03/04 已完成实现、定向验收与真实部署 API E2E；Task05 第一次交付验收、Task06–09 待执行。Gate 1/2 正式评审文档与验收签字仍未产出，不倒签通过；本表不代表 Spec 级验收签字。第一次交付止于 Task05，第二次交付止于 Task09。
+
+> `runs/task-02/*`、`piguard-training-evidence.md`、`grilling-decisions.md` 中出现的「Spec050 待确认」是各文档产出当时的状态快照，属历史证据，不随本轮状态补正回写。
 
 | Task | 任务 | 依赖 | 状态 |
 |---|---|---|---|
