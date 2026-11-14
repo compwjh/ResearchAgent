@@ -641,6 +641,18 @@ class PaperDiscoveryToolFacade:
     def dispatch(self, args: Mapping[str, Any]) -> WorkerToolResult:
         operation = args.get("operation") if isinstance(args, Mapping) else None
         source_id = args.get("source_id") if isinstance(args, Mapping) else None
+        # Spec050 Task03：异步 worker 的执行前授权校验。默认关闭时零行为变化。
+        from backend.app.guard import hooks as _guard
+
+        tool_name = "download_and_import_paper" if operation == "import" else "paper_discovery"
+        verdict = _guard.check(tool_name, args if isinstance(args, Mapping) else {})
+        if verdict is not None and verdict.blocking:
+            return self._failed(
+                str(operation or "discover"),
+                canonical_source_id(str(source_id or ""), strict=True),
+                _error(verdict.reason_code, message=_guard.blocking_message(verdict)),
+                time.monotonic(),
+            )
         if operation == "discover":
             return self.discover(str(source_id or ""), args.get("scope"))
         if operation == "import":

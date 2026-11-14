@@ -2044,11 +2044,29 @@ class ResearchAgentRunner:
         return next((item for item in capability.tools if item.get("name") == name), None)
 
     def _dispatch(self, entry: Mapping[str, Any], args: dict[str, Any]) -> Any:
+        # Spec050 Task03：研究运行时是独立分发入口，必须在此校验。
+        # 委托给 build_default_dispatch 的路径由后者自己校验，避免重复。
+        from backend.app.guard import hooks as _guard
+
+        injected_handler = entry.get("execute") or entry.get("call")
+        delegates_to_default = self.tool_executor is None and not callable(injected_handler)
+        verdict = None
+        if not delegates_to_default:
+            verdict = _guard.check(str(entry.get("name", "")), args)
+            if verdict is not None and verdict.blocking:
+                return {
+                    "ok": False,
+                    "error_code": verdict.reason_code,
+                    "summary": _guard.blocking_message(verdict),
+                }
+        succeeded = False
+        result_unknown = False
         try:
             if self.tool_executor is None:
-                method = entry.get("execute") or entry.get("call")
-                if callable(method):
-                    return method(args)
+                if callable(injected_handler):
+                    result = injected_handler(args)
+                    succeeded = bool(getattr(result, "ok", True))
+                    return result
                 # Production fallback is the existing Spec023 dispatch table;
                 # injected FakeTool handlers still take precedence above.
                 from backend.app.skills.tool_dispatch import build_default_dispatch
@@ -2059,16 +2077,24 @@ class ResearchAgentRunner:
                 method = getattr(executor, method_name, None)
                 if callable(method):
                     try:
-                        return method(entry["name"], args)
+                        result = method(entry["name"], args)
                     except TypeError:
-                        return method(args)
+                        result = method(args)
+                    succeeded = bool(getattr(result, "ok", True))
+                    return result
             if callable(executor):
-                return executor(entry["name"], args)
+                result = executor(entry["name"], args)
+                succeeded = bool(getattr(result, "ok", True))
+                return result
             raise AgentRuntimeError("CAPABILITY_NOT_AUTHORIZED", "invalid tool executor")
         except AgentRuntimeError:
+            result_unknown = True
             raise
         except Exception:
+            result_unknown = True
             return {"ok": False, "error_code": "TOOL_EXECUTION_FAILED", "summary": "tool execution failed"}
+        finally:
+            _guard.record_outcome(verdict, succeeded=succeeded, result_unknown=result_unknown)
 
     def _safe_tool_result(self, entry: Mapping[str, Any], value: Any, *, error: str | None = None) -> dict[str, Any]:
         if not isinstance(value, Mapping) and hasattr(value, "ok"):

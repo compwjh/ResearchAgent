@@ -488,20 +488,36 @@ def build_default_dispatch() -> Callable[[str, dict], DispatchResult]:
         adapter = _ADAPTERS.get(name)
         if adapter is None:
             return DispatchResult(ok=False, name=name, error=f"未找到工具「{name}」的执行器。")
+        # Spec050 Task03：工具真正执行前核对任务授权范围与目标。默认关闭时零行为变化。
+        from backend.app.guard import hooks as _guard
+
+        verdict = _guard.check(name, args)
+        if verdict is not None and verdict.blocking:
+            return DispatchResult(ok=False, name=name, error=_guard.blocking_message(verdict))
         # 预期内的业务/输入错误：保留可诊断信息（错误码 + 具体说明），不压成通用一句话。
         from backend.app.paper_discovery.application.paper_discovery_search import (
             PaperDiscoverySearchError,
         )
 
+        succeeded = False
+        result_unknown = False
         try:
-            return adapter(args)
+            result = adapter(args)
+            succeeded = bool(getattr(result, "ok", False))
+            return result
         except PaperDiscoverySearchError as exc:
             # 来源未配置 / 参数非法等可定位原因：直接透传错误码与消息
             error_code = getattr(exc, "error_code", None) or getattr(exc, "code", None) or "SEARCH_INVALID"
             logger.warning("工具 %s 检索参数/来源不可用：%s", name, exc)
+            result_unknown = True
             return DispatchResult(ok=False, name=name, error=f"{error_code}：{exc}")
         except Exception as exc:  # 兜底：非预期异常降级为错误结果，不中断对话
             logger.warning("工具 %s 执行失败，降级：%s", name, exc)
+            result_unknown = True
             return DispatchResult(ok=False, name=name, error=f"执行失败：{type(exc).__name__}: {exc}")
+        finally:
+            _guard.record_outcome(
+                verdict, succeeded=succeeded, result_unknown=result_unknown,
+            )
 
     return dispatch
