@@ -8,6 +8,7 @@ from backend.app.guard.contracts import (
     GuardOutcome,
     TaskScope,
 )
+from backend.app.guard.runtime import activate, ensure_active
 from backend.app.guard.service import (
     authorize,
     consume,
@@ -35,9 +36,11 @@ __all__ = [
     "RiskAssessment",
     "RiskSignal",
     "assessment_for",
+    "activate",
     "authorize",
     "consume",
     "decide",
+    "ensure_active",
     "events",
     "guard_enabled",
     "mark_unavailable",

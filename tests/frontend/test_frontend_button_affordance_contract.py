@@ -209,4 +209,7 @@ def test_asset_versions_are_frozen() -> None:
 
 
 def test_no_new_script_tags() -> None:
-    assert INDEX.count("<script src=") == 10, "no extra <script> file may be introduced"
+    # 冻结基线：原本 10 个脚本，Spec050 Task04 引入 guard-activity.js 护栏脚本后为 11。
+    # 先显式确认这第 11 个脚本的来源，再用总数封顶；以后新增脚本必须同步更新白名单与总数。
+    assert 'src="/assets/guard-activity.js' in INDEX, "guard-activity.js 必须在白名单中（Spec050 Task04 引入的第 11 个脚本）"
+    assert INDEX.count("<script src=") == 11, "10 个既有脚本 + guard-activity.js = 11，不得再新增外部 <script>"

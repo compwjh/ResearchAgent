@@ -6,10 +6,17 @@
   'use strict';
 
   var ROOT_ID = 'guard-activity-root';
+  var STATUS_URL = '/api/guard/status';
+  var STREAM_URL = '/api/guard/stream';
   var ACTIONS_URL = '/api/guard/actions';
   var EVENTS_URL = '/api/guard/events';
   var DECISION_URL = '/api/guard/actions/';
   var POLL_MS = 5000;
+
+  // 仅用于 SSE 通道内按 event_id 去重；刷新/轮询仍由服务端权威重建完整列表，不因本地缓存丢事件。
+  var streamEventIds = Object.create(null);
+  var activeStream = null;
+  var activeTimer = null;
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -82,8 +89,20 @@
     events.setAttribute('aria-label', '防护事件');
     panel.appendChild(events);
 
+    var toast = el('div', 'guard-activity-toast');
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    toast.hidden = true;
+
+    var disabled = el('details', 'guard-activity-disabled');
+    disabled.appendChild(el('summary', 'guard-activity-disabled-summary', '执行防护未启用'));
+    disabled.appendChild(el('p', 'guard-activity-disabled-hint', '执行防护当前未启用，开启后可在此确认动作并查看实时事件。'));
+    disabled.hidden = true;
+
+    root.appendChild(toast);
     root.appendChild(toggle);
     root.appendChild(panel);
+    root.appendChild(disabled);
     (document.body || document.documentElement).appendChild(root);
 
     toggle.addEventListener('click', function () {
@@ -180,6 +199,15 @@
     });
   }
 
+  function eventItem(record) {
+    var item = el('li', 'guard-activity-event');
+    item.setAttribute('data-event-status', labelForStatus(record.status));
+    item.appendChild(el('span', 'guard-event-status', labelForStatus(record.status)));
+    item.appendChild(el('span', 'guard-event-reason', labelForReason(record.reason_code)));
+    item.appendChild(el('span', 'guard-event-module', safeText(record.module, '未知模块')));
+    return item;
+  }
+
   function renderEvents(records) {
     var container = document.querySelector('#' + ROOT_ID + ' .guard-activity-events');
     if (!container) return;
@@ -199,14 +227,57 @@
         if (batchIds[id]) return;
         batchIds[id] = true;
       }
-      var item = el('li', 'guard-activity-event');
-      item.setAttribute('data-event-status', labelForStatus(record.status));
-      item.appendChild(el('span', 'guard-event-status', labelForStatus(record.status)));
-      item.appendChild(el('span', 'guard-event-reason', labelForReason(record.reason_code)));
-      item.appendChild(el('span', 'guard-event-module', safeText(record.module, '未知模块')));
-      list.appendChild(item);
+      list.appendChild(eventItem(record));
     });
     container.appendChild(list);
+  }
+
+  // SSE 增量：按 event_id 去重后追加一条 li，不整体重渲染轮询已渲染的列表。
+  function appendStreamEvent(record) {
+    var container = document.querySelector('#' + ROOT_ID + ' .guard-activity-events');
+    if (!container) return;
+    var id = safeText(record && record.event_id, '');
+    if (id) {
+      if (streamEventIds[id]) return;
+      streamEventIds[id] = true;
+    }
+    var list = container.querySelector('.guard-activity-event-list');
+    if (!list) {
+      // 列表尚未建立（如「暂无事件」占位）：只重建容器骨架，随后继续追加，不覆盖已有数据。
+      container.textContent = '';
+      container.appendChild(el('h3', 'guard-activity-subtitle', '最近事件'));
+      list = el('ul', 'guard-activity-event-list');
+      container.appendChild(list);
+    }
+    list.appendChild(eventItem(record || {}));
+  }
+
+  function updateToast(record) {
+    var toast = document.querySelector('#' + ROOT_ID + ' .guard-activity-toast');
+    if (!toast) return;
+    toast.hidden = false;
+    toast.textContent = labelForStatus(record.status) + ' · ' + labelForReason(record.reason_code);
+  }
+
+  function onGuardEvent(event) {
+    var record = null;
+    try {
+      var payload = JSON.parse(event && event.data);
+      record = payload && payload.record;
+    } catch (e) { return; }
+    if (!record || typeof record !== 'object') return;
+    appendStreamEvent(record);
+    updateToast(record);
+    var root = document.getElementById(ROOT_ID);
+    var panel = root && root.querySelector('.guard-activity-panel');
+    var actionsBox = root && root.querySelector('.guard-activity-actions');
+    var hasPending = actionsBox && actionsBox.querySelector('.guard-action-card');
+    if (panel && hasPending) {
+      panel.hidden = false;
+      var toggle = root.querySelector('.guard-activity-toggle');
+      if (toggle) toggle.setAttribute('aria-expanded', 'true');
+      refreshAll();
+    }
   }
 
   function fetchJson(url) {
@@ -232,20 +303,91 @@
     });
   }
 
-  function mount() {
-    buildRoot();
-    refreshAll();
-    if (!global.__guardActivityTimer) {
-      global.__guardActivityTimer = global.setInterval(refreshAll, POLL_MS);
+  function openStream() {
+    if (activeStream) return;
+    var ES = global.EventSource;
+    if (typeof ES !== 'function') return;  // 无 EventSource（旧浏览器/测试假 DOM）安全跳过
+    try {
+      var source = new ES(STREAM_URL);
+      activeStream = source;
+      source.addEventListener('guard', onGuardEvent);
+      source.onerror = function () {
+        // 连接异常：保留 5s 轮询回退，不刷屏报错；EventSource 重连自动携带 Last-Event-ID 增量。
+        startPolling();
+      };
+    } catch (e) {
+      activeStream = null;
+      startPolling();
     }
-    return document.getElementById(ROOT_ID);
+  }
+
+  function startPolling() {
+    if (activeTimer) return;
+    activeTimer = global.setInterval(refreshAll, POLL_MS);
+  }
+
+  function stopPolling() {
+    if (activeTimer) {
+      global.clearInterval(activeTimer);
+      activeTimer = null;
+    }
+  }
+
+  function showDisabled() {
+    var root = document.getElementById(ROOT_ID);
+    if (!root) return;
+    root.hidden = false;  // 可见，让用户能发现功能
+    var toggle = root.querySelector('.guard-activity-toggle');
+    var panel = root.querySelector('.guard-activity-panel');
+    var disabled = root.querySelector('.guard-activity-disabled');
+    if (toggle) toggle.hidden = true;
+    if (panel) panel.hidden = true;
+    if (disabled) disabled.hidden = false;
+    // 明确 enabled=false：折叠状态入口，零 SSE / 零轮询 / 零数据请求。
+  }
+
+  function activate() {
+    var root = document.getElementById(ROOT_ID);
+    if (!root) return;
+    root.hidden = false;  // P0：真正启用时面板可见
+    var toggle = root.querySelector('.guard-activity-toggle');
+    var disabled = root.querySelector('.guard-activity-disabled');
+    if (toggle) toggle.hidden = false;
+    if (disabled) disabled.hidden = true;
+    openStream();
+    startPolling();
+    refreshAll();
+  }
+
+  function legacyFallback() {
+    // status 失败/字段缺失（旧后端或测试桩）：保持 root 隐藏，退回 5s 轮询，兼容旧行为且不抛异常。
+    startPolling();
+    refreshAll();
+  }
+
+  function mount() {
+    var root = buildRoot();
+    fetchJson(STATUS_URL).then(function (payload) {
+      if (payload && payload.enabled === true) {
+        activate();
+      } else if (payload && payload.enabled === false) {
+        showDisabled();
+      } else {
+        legacyFallback();
+      }
+    }).catch(function () {
+      legacyFallback();
+    });
+    return root;
   }
 
   function resetForTests() {
-    if (global.__guardActivityTimer) {
-      global.clearInterval(global.__guardActivityTimer);
-      global.__guardActivityTimer = null;
+    stopPolling();
+    if (activeStream) {
+      activeStream.close();
+      activeStream = null;
     }
+    streamEventIds = Object.create(null);
   }
 
   global.GuardActivity = {

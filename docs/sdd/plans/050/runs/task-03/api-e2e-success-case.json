@@ -1,0 +1,360 @@
+{
+  "scenario": "Spec050 Task03/04 真实部署版本 API 端到端成功案例",
+  "verified_at": "2026-11-14T16:28:36.692954+00:00",
+  "service": {
+    "base_url": "http://127.0.0.1:8317",
+    "port": 8317,
+    "pid": 8653,
+    "guard_enabled": true,
+    "start_command": "cd /Users/wjh/.codex/worktrees/spec050-task03/ResearchAgent && GUARD_ACTION_AUTHORIZATION_ENABLED=true RERANKER_ENABLED=false nohup /Users/wjh/ResearchAgent/.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8317",
+    "http_smoke": {
+      "/api/health": 200,
+      "/": 200,
+      "/assets/guard-activity.js?v=2": 200,
+      "/assets/guard-activity.css?v=2": 200,
+      "/api/guard/status": {
+        "enabled": true
+      }
+    }
+  },
+  "preparation": {
+    "note": "guard 没有独立创建动作的 HTTP 端点；待确认动作由分发收敛点产生。为可复现验收，先在与真实服务相同的 SQLite 库上模拟一次 download_and_import_paper 分发前校验（runtime.activate + hooks.check），此后所有读取、确认、事件与 SSE 均通过真实 HTTP 完成。",
+    "database": "/Users/wjh/.codex/worktrees/spec050-task03/ResearchAgent/data/guard.sqlite3",
+    "args": {
+      "candidate": {
+        "title": "Spec050 runtime E2E",
+        "pdf_url": "https://www.usenix.org/spec050-e2e.pdf"
+      }
+    },
+    "first_decision": {
+      "outcome": "require_confirmation",
+      "reason_code": "CONFIRMATION_REQUIRED",
+      "action_ref": "gact_dc700cde0cae432d925da2292f5bffff"
+    }
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/guard/actions",
+      "body": null,
+      "status": 200,
+      "response": {
+        "schema_version": "guard-action-v1",
+        "records": [
+          {
+            "action_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "task_id": "local-session",
+            "tool_name": "download_and_import_paper",
+            "target_summary": "download_and_import_paper:www.usenix.org:Spec050 runtime E2E",
+            "args_hash": "cf6f3b7c6633762450c25fd597297933272676859589eab686b03ae0aedd642b",
+            "status": "pending",
+            "scope_version": "scope-v1",
+            "created_at": "2026-11-14T16:28:30.659840+00:00",
+            "risk": {
+              "label": 0,
+              "reason_code": "NO_RISK_SIGNAL",
+              "requires_hold": false,
+              "evidence_ref": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/guard/actions/gact_dc700cde0cae432d925da2292f5bffff/decision",
+      "body": {
+        "choice": "allow",
+        "args_hash": "cf6f3b7c6633762450c25fd597297933272676859589eab686b03ae0aedd642b"
+      },
+      "status": 200,
+      "response": {
+        "action_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+        "outcome": "allow",
+        "reason_code": "ACTION_ALLOWED",
+        "message": ""
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/guard/events?limit=200",
+      "body": null,
+      "status": 200,
+      "response": {
+        "schema_version": "guard-event-v1",
+        "records": [
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "created_at": "2026-11-14T16:28:30.676162+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_67a97890ef2c479f9e0a034c7d51a7e2",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "post_dispatch",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "ACTION_CONSUMED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "executed",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "created_at": "2026-11-14T16:28:30.672568+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_c4b55077aeb6480b899f0d3cd198a2f0",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "confirmation",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "ACTION_ALLOWED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "executed",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "created_at": "2026-11-14T16:28:30.660679+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_3b1af1eef70449f9992d0a9fb49b8d9c",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "pre_dispatch",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "CONFIRMATION_REQUIRED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "blocked",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session"
+          }
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/guard/actions",
+      "body": null,
+      "status": 200,
+      "response": {
+        "schema_version": "guard-action-v1",
+        "records": []
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/api/guard/events?limit=200",
+      "body": null,
+      "status": 200,
+      "response": {
+        "schema_version": "guard-event-v1",
+        "records": [
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "grs_9d008bbbfac94abeaed985842b1e3ae1",
+            "created_at": "2026-11-14T16:28:30.681617+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_998d97da34c54bcd9a19d575b4733b00",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "pre_dispatch",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "GUARD_CHECK_UNAVAILABLE",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "blocked",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session-fault"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "",
+            "created_at": "2026-11-14T16:28:30.681102+00:00",
+            "duration_ms": 0,
+            "event_id": "grs_9d008bbbfac94abeaed985842b1e3ae1",
+            "message_id": "",
+            "model_actual": "",
+            "module": "risk-detection",
+            "phase": "external_content",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "DETECTOR_UNAVAILABLE",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "failed",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session-fault"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_03384d840d4545e0bfe3c39c259d0f3e",
+            "created_at": "2026-11-14T16:28:30.680760+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_2cfcf087b9e3452ab156ba42dfbde3c4",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "pre_dispatch",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "CONFIRMATION_REQUIRED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "blocked",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session-injection"
+          },
+          {
+            "allowlist_count": 1,
+            "authorization_evidence_ref": "doc:spec050-e2e#w1",
+            "created_at": "2026-11-14T16:28:30.679466+00:00",
+            "duration_ms": 0,
+            "event_id": "grs_db822626603343278d0e089dbbd4b764",
+            "message_id": "",
+            "model_actual": "piguard-formal-v1",
+            "module": "risk-detection",
+            "phase": "external_content",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "INJECTION_RISK_DETECTED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "blocked",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session-injection"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "created_at": "2026-11-14T16:28:30.676162+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_67a97890ef2c479f9e0a034c7d51a7e2",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "post_dispatch",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "ACTION_CONSUMED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "executed",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "created_at": "2026-11-14T16:28:30.672568+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_c4b55077aeb6480b899f0d3cd198a2f0",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "confirmation",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "ACTION_ALLOWED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "executed",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session"
+          },
+          {
+            "allowlist_count": 0,
+            "authorization_evidence_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+            "created_at": "2026-11-14T16:28:30.660679+00:00",
+            "duration_ms": 0,
+            "event_id": "gev_3b1af1eef70449f9992d0a9fb49b8d9c",
+            "message_id": "",
+            "model_actual": "",
+            "module": "action-guard",
+            "phase": "pre_dispatch",
+            "policy_version": "guard-policy-v1",
+            "reason_code": "CONFIRMATION_REQUIRED",
+            "request_id": "",
+            "schema_version": "guard-event-v1",
+            "status": "blocked",
+            "step_id": "",
+            "strategy_version": "guard-strategy-v1",
+            "task_id": "local-session"
+          }
+        ]
+      }
+    }
+  ],
+  "entity_ids": {
+    "owner_id": "local-user",
+    "task_id": "local-session",
+    "action_ref": "gact_dc700cde0cae432d925da2292f5bffff",
+    "args_hash": "cf6f3b7c6633762450c25fd597297933272676859589eab686b03ae0aedd642b",
+    "scope_version": "scope-v1",
+    "policy_version": "guard-policy-v1",
+    "event_schema_version": "guard-event-v1"
+  },
+  "final_state": {
+    "confirmation": "ACTION_ALLOWED",
+    "consumed_event": "ACTION_CONSUMED",
+    "pending_after_consumption": [],
+    "injection_case": {
+      "task_id": "local-session-injection",
+      "reason_code": "CONFIRMATION_REQUIRED",
+      "risk_event": "INJECTION_RISK_DETECTED",
+      "semantics": "注入风险不授予授权，仍要求单动作确认"
+    },
+    "detector_fault_case": {
+      "task_id": "local-session-fault",
+      "reason_code": "GUARD_CHECK_UNAVAILABLE",
+      "risk_event": "DETECTOR_UNAVAILABLE",
+      "semantics": "检测器故障暂停敏感动作，不静默放行"
+    },
+    "refresh_recovery": "刷新后重新 GET /api/guard/actions 仍读到同一 pending",
+    "rollback_evidence": "tests/guard/test_guard_api_end_to_end.py 的关闭开关场景：GUARD_ACTION_AUTHORIZATION_ENABLED 未设置时同一工具不产生 pending、保留既有行为；后端受影响领域回归 2326 passed 亦在默认关闭下完成。"
+  },
+  "sse": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "frames": [
+      "id: gev_3b1af1eef70449f9992d0a9fb49b8d9c",
+      "event: guard",
+      "data: {\"type\": \"guard\", \"schema_version\": \"guard-event-v1\", \"record\": {\"allowlist_count\": 0, \"authorization_evidence_ref\": \"gact_dc700cde0cae432d925da2292f5bffff\", \"created_at\": \"2026-11-14T16:28:30.660679+00:00\", \"duration_ms\": 0, \"event_id\": \"gev_3b1af1eef70449f9992d0a9fb49b8d9c\", \"message_id\": \"\", \"model_actual\": \"\", \"module\": \"action-guard\", \"phase\": \"pre_dispatch\", \"policy_version\": \"guard-policy-v1\", \"reason_code\": \"CONFIRMATION_REQUIRED\", \"request_id\": \"\", \"schema_version\": \"guard-event-v1\", \"status\": \"blocked\", \"step_id\": \"\", \"strategy_version\": \"guard-strategy-v1\", \"task_id\": \"local-session\"}}",
+      "id: gev_c4b55077aeb6480b899f0d3cd198a2f0",
+      "event: guard",
+      "data: {\"type\": \"guard\", \"schema_version\": \"guard-event-v1\", \"record\": {\"allowlist_count\": 0, \"authorization_evidence_ref\": \"gact_dc700cde0cae432d925da2292f5bffff\", \"created_at\": \"2026-11-14T16:28:30.672568+00:00\", \"duration_ms\": 0, \"event_id\": \"gev_c4b55077aeb6480b899f0d3cd198a2f0\", \"message_id\": \"\", \"model_actual\": \"\", \"module\": \"action-guard\", \"phase\": \"confirmation\", \"policy_version\": \"guard-policy-v1\", \"reason_code\": \"ACTION_ALLOWED\", \"request_id\": \"\", \"schema_version\": \"guard-event-v1\", \"status\": \"executed\", \"step_id\": \"\", \"strategy_version\": \"guard-strategy-v1\", \"task_id\": \"local-session\"}}",
+      "id: gev_67a97890ef2c479f9e0a034c7d51a7e2",
+      "event: guard",
+      "data: {\"type\": \"guard\", \"schema_version\": \"guard-event-v1\", \"record\": {\"allowlist_count\": 0, \"authorization_evidence_ref\": \"gact_dc700cde0cae432d925da2292f5bffff\", \"created_at\": \"2026-11-14T16:28:30.676162+00:00\", \"duration_ms\": 0, \"event_id\": \"gev_67a97890ef2c479f9e0a034c7d51a7e2\", \"message_id\": \"\", \"model_actual\": \"\", \"module\": \"action-guard\", \"phase\": \"post_dispatch\", \"policy_version\": \"guard-policy-v1\", \"reason_code\": \"ACTION_CONSUMED\", \"request_id\": \"\", \"schema_version\": \"guard-event-v1\", \"status\": \"executed\", \"step_id\": \"\", \"strategy_version\": \"guard-strategy-v1\", \"task_id\": \"local-session\"}}",
+      "id: grs_db822626603343278d0e089dbbd4b764",
+      "event: guard",
+      "data: {\"type\": \"guard\", \"schema_version\": \"guard-event-v1\", \"record\": {\"allowlist_count\": 1, \"authorization_evidence_ref\": \"doc:spec050-e2e#w1\", \"created_at\": \"2026-11-14T16:28:30.679466+00:00\", \"duration_ms\": 0, \"event_id\": \"grs_db822626603343278d0e089dbbd4b764\", \"message_id\": \"\", \"model_actual\": \"piguard-formal-v1\", \"module\": \"risk-detection\", \"phase\": \"external_content\", \"policy_version\": \"guard-policy-v1\", \"reason_code\": \"INJECTION_RISK_DETECTED\", \"request_id\": \"\", \"schema_version\": \"guard-event-v1\", \"status\": \"blocked\", \"step_id\": \"\", \"strategy_version\": \"guard-strategy-v1\", \"task_id\": \"local-session-injection\"}}"
+    ],
+    "contract": "id: {event_id} / event: guard / data: {type, schema_version, record}"
+  },
+  "artifacts": {
+    "this_file": "docs/sdd/plans/050/runs/task-03/api-e2e-success-case.json",
+    "backend_tests": "tests/guard/test_guard_api_end_to_end.py",
+    "frontend_tests": "frontend/contract-tests/guard-activity-interaction.test.mjs",
+    "runtime_policy": "backend/app/guard/runtime.py",
+    "handoff": ".codebuddy/agent-logs/spec-050/task03-handoff.md"
+  },
+  "known_limitations": [
+    "单机单 owner；未显式绑定会话入口时所有动作共用默认 task_id=local-session，任务级隔离留待 Task05/08 按 conversation_id 扩展。",
+    "风险信号按 task 聚合历史故障；检测器恢复机制需在 Task08 PIGuard 接入时定义，本案例用独立 task_id 隔离故障场景。",
+    "默认策略空白名单时不做主机限制，敏感动作仍必须用户确认；由来源白名单在后续任务收紧。"
+  ]
+}

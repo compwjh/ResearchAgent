@@ -47,8 +47,11 @@ class TaskScope:
     allowed_capabilities: frozenset[str] = frozenset()
     allowed_hosts: frozenset[str] = frozenset()
     scope_version: str = "scope-v1"
+    allow_read_only: bool = False
 
     def permits(self, tool_name: str) -> bool:
+        if self.allow_read_only and tool_name not in MUTATING_TOOLS:
+            return True
         return tool_name in self.allowed_capabilities
 
 

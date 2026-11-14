@@ -444,7 +444,27 @@ class CatalogSearchAdapter:
             scope: dict[str, Any] = {"query": request.query, "years": list(years), "limit": request.max_results}
             if request.publication_scope:
                 scope["publication_scope"] = request.publication_scope
+            # Spec050 Task03：此处直接调 worker.discover() 绕过 dispatch() 的 guard check，
+            # 必须在此补执行前校验（只读工具走 ALLOW），并在 finally 归还上下文。
+            from backend.app.guard import hooks as _guard
+            from backend.app.guard import runtime as _runtime
+
+            tokens = None
+            verdict = None
+            succeeded = False
             try:
+                tokens = _runtime.ensure_active()
+                verdict = _guard.check("paper_discovery", {
+                    "operation": "discover", "source_id": source_scope, "scope": scope,
+                })
+                if verdict is not None and verdict.blocking:
+                    return SearchOutcome(
+                        (), 0, degraded=True, error_code="SOURCE_UNAVAILABLE",
+                        diagnostics={
+                            "source": source_scope, "stage": "guard_blocked",
+                            "reason_code": verdict.reason_code,
+                        },
+                    )
                 raw = worker.discover(source_scope, scope)
                 payload = raw.to_dict() if hasattr(raw, "to_dict") else raw
                 from backend.app.paper_discovery.application.worker_tool import validate_worker_tool_result
@@ -452,11 +472,17 @@ class CatalogSearchAdapter:
                 result = validate_worker_tool_result(
                     payload, expected_source=source_scope, expected_operation="discover",
                 )
+                succeeded = True
             except Exception:
                 return SearchOutcome(
                     (), 0, degraded=True, error_code="SOURCE_UNAVAILABLE",
                     diagnostics={"source": source_scope, "stage": "worker_failed"},
                 )
+            finally:
+                # 先 record_outcome（依赖 current().owner_id），再 reset tokens。
+                _guard.record_outcome(verdict, succeeded=succeeded, result_unknown=False)
+                if tokens is not None:
+                    _guard.reset(tokens)
             worker_payload = result.payload if isinstance(result.payload, Mapping) else {}
             candidates = [dict(item) for item in worker_payload.get("candidates", ())
                           if isinstance(item, Mapping)]

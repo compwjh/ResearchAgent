@@ -8,6 +8,21 @@ import vm from 'node:vm';
 
 const FRONTEND = path.resolve(import.meta.dirname, '..');
 
+// 可控 EventSource 假实现：记录实例、支持订阅/重发/关闭，用于验证 SSE 接入与重连去重。
+class FakeEventSource {
+  constructor(url) {
+    this.url = url;
+    this.handlers = {};
+    this.onerror = null;
+    this.closed = false;
+    FakeEventSource.instances.push(this);
+  }
+  addEventListener(evt, fn) { (this.handlers[evt] ||= []).push(fn); }
+  close() { this.closed = true; }
+  emit(evt, data) { (this.handlers[evt] || []).forEach((fn) => fn({ data })); }
+}
+FakeEventSource.instances = [];
+
 class FakeEl {
   constructor(tag = 'div') {
     this.tagName = String(tag).toUpperCase();
@@ -77,7 +92,7 @@ function makeDom() {
   return { document, byId, root };
 }
 
-function loadModule(document, fetchImpl) {
+function loadModule(document, fetchImpl, extraGlobals = {}) {
   const source = fs.readFileSync(path.join(FRONTEND, 'guard-activity.js'), 'utf8');
   const sandbox = {
     document,
@@ -86,6 +101,7 @@ function loadModule(document, fetchImpl) {
     encodeURIComponent, console,
     setInterval: () => 1,
     clearInterval: () => {},
+    ...extraGlobals,
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
@@ -131,6 +147,30 @@ async function setup(actionRecords, eventRecords = []) {
   sandbox.GuardActivity.mount();
   await settle();
   return { dom, sandbox, calls, cleanup: () => sandbox.GuardActivity.resetForTests() };
+}
+
+// enabled/disabled 场景：可控 /status 桩 + 可控 EventSource；state 可变以模拟刷新后服务端状态变化。
+async function setupWith({ status, actions = [], events = [] }) {
+  FakeEventSource.instances.length = 0;
+  const dom = makeDom();
+  const calls = [];
+  const state = { actions, events };
+  const sandbox = loadModule(dom.document, (url, options) => {
+    calls.push({ url, options });
+    if (options && options.method === 'POST') {
+      return jsonResponse({ reason_code: 'ACTION_ALLOWED', outcome: 'allow' });
+    }
+    if (url.includes('/status')) return jsonResponse(status);
+    if (url.includes('/actions')) return jsonResponse({ records: state.actions });
+    return jsonResponse({ records: state.events });
+  }, { EventSource: FakeEventSource });
+  sandbox.GuardActivity.mount();
+  await settle();
+  return {
+    dom, sandbox, calls, state,
+    FakeEventSource,
+    cleanup: () => sandbox.GuardActivity.resetForTests(),
+  };
 }
 
 describe('guard activity contract', () => {
@@ -222,6 +262,97 @@ describe('guard activity contract', () => {
     const { dom, cleanup } = await setup(held);
     const root = dom.document.getElementById('guard-activity-root');
     assert.ok(root.textContent.includes('注入检测不可用，该动作已暂停'));
+    cleanup();
+  });
+
+  test('status enabled=true 时面板可见并建立唯一 SSE 连接', async () => {
+    const { dom, FakeEventSource, cleanup } = await setupWith({ status: { enabled: true } });
+    const root = dom.document.getElementById('guard-activity-root');
+    assert.equal(root.hidden, false, 'enabled 时 root 必须可见（P0 可见性修复）');
+    assert.equal(FakeEventSource.instances.length, 1, '建立且仅建立一个 EventSource');
+    assert.equal(FakeEventSource.instances[0].url, '/api/guard/stream');
+    cleanup();
+  });
+
+  test('同一 event_id 连续推送只插一条，toast 显示状态与原因', async () => {
+    const base = { event_id: 'gev_base', status: 'blocked', reason_code: 'CONFIRMATION_REQUIRED', module: 'm' };
+    const { dom, FakeEventSource, cleanup } = await setupWith({ status: { enabled: true }, events: [base] });
+    const es = FakeEventSource.instances[0];
+    const frame = JSON.stringify({ record: { event_id: 'gev_sse', status: 'executed', reason_code: 'CONFIRMATION_REQUIRED', module: 'm' } });
+    es.emit('guard', frame);
+    es.emit('guard', frame);
+    await settle();
+    const root = dom.document.getElementById('guard-activity-root');
+    const items = root.querySelectorAll('.guard-activity-event');
+    assert.equal(items.length, 2, '轮询渲染的 1 条 + SSE 唯一 1 条，追加不覆盖');
+    const toast = root.querySelector('.guard-activity-toast');
+    assert.ok(toast, 'toast 元素必须存在');
+    assert.ok(toast.textContent.includes('已执行'));
+    assert.ok(toast.textContent.includes('需确认'));
+    cleanup();
+  });
+
+  test('SSE 连接错误后重发的 event_id 不重复插入，新事件仍追加', async () => {
+    const { dom, FakeEventSource, cleanup } = await setupWith({ status: { enabled: true }, events: [] });
+    const es = FakeEventSource.instances[0];
+    const a = JSON.stringify({ record: { event_id: 'gev_a', status: 'executed', reason_code: 'ACTION_CONSUMED', module: 'm' } });
+    const b = JSON.stringify({ record: { event_id: 'gev_b', status: 'failed', reason_code: 'RESULT_UNKNOWN', module: 'm' } });
+    es.emit('guard', a);
+    if (typeof es.onerror === 'function') es.onerror({});  // 断线/重连：不抛异常、轮询回退仍可用
+    es.emit('guard', a);  // 服务端按 Last-Event-ID 重发边界事件
+    es.emit('guard', b);  // 新事件
+    await settle();
+    const root = dom.document.getElementById('guard-activity-root');
+    assert.equal(root.querySelectorAll('.guard-activity-event').length, 2, 'A 不重复 + B 追加');
+    cleanup();
+  });
+
+  test('status enabled=false 显示折叠未启用入口且不建 SSE / 不轮询', async () => {
+    const { dom, FakeEventSource, calls, cleanup } = await setupWith({
+      status: { enabled: false }, actions: ACTIONS, events: EVENTS,
+    });
+    const root = dom.document.getElementById('guard-activity-root');
+    assert.equal(root.hidden, false, 'disabled 时 root 仍可见，让用户能发现功能');
+    assert.equal(FakeEventSource.instances.length, 0, 'disabled 不得建立 EventSource');
+    assert.ok(root.textContent.includes('执行防护未启用'));
+    assert.equal(root.querySelector('.guard-activity-panel').hidden, true, '面板保持折叠');
+    const dataFetches = calls.filter((c) => c.url.includes('/actions') || c.url.includes('/events'));
+    assert.equal(dataFetches.length, 0, 'disabled 零后台数据请求');
+    cleanup();
+  });
+
+  test('enabled 场景刷新从服务端重建完整列表，SSE 去重集合不吞掉历史', async () => {
+    const { dom, sandbox, state, FakeEventSource, cleanup } = await setupWith({ status: { enabled: true }, events: [] });
+    const es = FakeEventSource.instances[0];
+    es.emit('guard', JSON.stringify({ record: { event_id: 'gev_stream', status: 'executed', reason_code: 'ACTION_CONSUMED', module: 'm' } }));
+    await settle();
+    const root = dom.document.getElementById('guard-activity-root');
+    assert.equal(root.querySelectorAll('.guard-activity-event').length, 1);
+    state.events = [
+      { event_id: 'gev_stream', status: 'executed', reason_code: 'ACTION_CONSUMED', module: 'm' },
+      { event_id: 'gev_from_poll', status: 'blocked', reason_code: 'CONFIRMATION_REQUIRED', module: 'm' },
+    ];
+    await sandbox.GuardActivity.refresh();
+    assert.equal(root.querySelectorAll('.guard-activity-event').length, 2, '刷新重建完整列表，不因本地去重丢事件');
+    cleanup();
+  });
+
+  test('SSE 服务端恶意文本只作文本，不创建 DOM 元素', async () => {
+    const { dom, FakeEventSource, cleanup } = await setupWith({ status: { enabled: true }, events: [] });
+    const es = FakeEventSource.instances[0];
+    es.emit('guard', JSON.stringify({ record: {
+      event_id: 'gev_xss',
+      status: '<img src=x onerror=alert(1)>',
+      reason_code: '<script>alert(1)</script>',
+      module: '<svg onload=alert(1)>',
+    } }));
+    await settle();
+    const root = dom.document.getElementById('guard-activity-root');
+    assert.equal(root.querySelectorAll('img').length, 0, 'no element created from SSE server text');
+    assert.equal(root.querySelectorAll('script').length, 0);
+    assert.equal(root.querySelectorAll('svg').length, 0);
+    const toast = root.querySelector('.guard-activity-toast');
+    assert.ok(toast.textContent.includes('<script'), '恶意文本作为纯文本存在');
     cleanup();
   });
 });

@@ -13,10 +13,10 @@ INDEX = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
 
 def test_assets_mounted_once_after_app_js():
-    assert 'href="/assets/guard-activity.css?v=1"' in INDEX
-    assert 'src="/assets/guard-activity.js?v=1"' in INDEX
-    assert INDEX.count('guard-activity.js?v=1') == 1
-    assert INDEX.index('src="/assets/app.js?v=77"') < INDEX.index('src="/assets/guard-activity.js?v=1"')
+    assert 'href="/assets/guard-activity.css?v=2"' in INDEX
+    assert 'src="/assets/guard-activity.js?v=2"' in INDEX
+    assert INDEX.count('guard-activity.js?v=2') == 1
+    assert INDEX.index('src="/assets/app.js?v=77"') < INDEX.index('src="/assets/guard-activity.js?v=2"')
 
 
 def test_no_innerhtml_on_server_text():
@@ -88,3 +88,38 @@ def test_touch_targets_meet_minimum():
 
 def test_narrow_screen_rule_present():
     assert "@media (max-width: 600px)" in CSS
+
+
+def test_guard_status_probe_and_stream_endpoint():
+    # mount 先探测 /status，enabled 时才接实时流；端点与三态判断必须落盘。
+    assert "'/api/guard/status'" in JS
+    assert "'/api/guard/stream'" in JS
+    assert "fetchJson(STATUS_URL)" in JS
+    assert "enabled === true" in JS
+    assert "enabled === false" in JS
+
+
+def test_eventsource_subscription_and_guarded_fallback():
+    # 只在 enabled 且浏览器提供 EventSource 时订阅 'guard'；无 EventSource 安全跳过、onerror 保留轮询回退。
+    assert "EventSource" in JS
+    assert "typeof ES !== 'function'" in JS
+    assert "addEventListener('guard'" in JS
+    assert "activeStream.close()" in JS
+    assert "onerror" in JS
+    assert "startPolling()" in JS
+
+
+def test_stream_dedup_uses_scoped_collection():
+    # SSE 去重集合用新名并随 resetForTests 清理；不得复用会丢刷新历史的全局 seenEventIds。
+    assert "streamEventIds" in JS
+    assert "streamEventIds = Object.create(null)" in JS
+    assert "seenEventIds" not in JS
+    assert "appendStreamEvent" in JS
+
+
+def test_toast_and_disabled_state_present():
+    assert "guard-activity-toast" in JS
+    assert "#guard-activity-root .guard-activity-toast" in CSS
+    assert "执行防护未启用" in JS
+    assert "guard-activity-disabled" in JS
+    assert "#guard-activity-root .guard-activity-disabled" in CSS
